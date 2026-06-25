@@ -1,0 +1,45 @@
+[
+    {
+        "text": "The Map Phase is your primary structural view. Let's make sure we are on the Map Phase.",
+        "target": "#btn-phase-map",
+        "requireClick": false
+    },
+    {
+        "text": "Nodes represent data objects. Want to edit one? Let's open the Inspector.",
+        "target": "#btn-sidebar-toggle",
+        "requireClick": false,
+        "autoClick": false
+    },
+    {
+        "onEnter": "if(!document.getElementById('sidebar').classList.contains('open')) SC.toggleSidebar();",
+        "text": "The Inspector allows you to modify properties, add structural children, or delete nodes.",
+        "target": "#sidebar-content",
+        "requireClick": false
+    },
+    {
+        "text": "To add a node, we first need to open the main tools menu.",
+        "conditionText": [
+            {
+                "condition": "!document.getElementById('top-toolbar') || !document.getElementById('top-toolbar').classList.contains('hidden')",
+                "text": "Your main tools menu is already open! Let's use it to add a node.",
+                "autoClick": false
+            }
+        ],
+        "target": "#btn-mobile-tools",
+        "requireClick": false
+    },
+    {
+        "onEnter": "const tb = document.getElementById('top-toolbar'); if(tb && tb.classList.contains('hidden')) { tb.classList.remove('hidden'); tb.classList.add('flex'); }",
+        "text": "You can add a brand new unconnected node using the 'Add Node' button in the toolbar.",
+        "target": "#btn-add",
+        "requireClick": false,
+        "autoClick": false
+    },
+    {
+        "onEnter": "if(document.getElementById('sidebar').classList.contains('open')) SC.toggleSidebar();",
+        "text": "Let's close the inspector for now.",
+        "target": "#btn-sidebar-toggle",
+        "requireClick": false,
+        "autoClick": false
+    }
+]

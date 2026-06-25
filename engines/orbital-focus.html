@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Orbital Focus Phase Engine</title>
+    <style>
+        body { 
+            margin: 0; padding: 0; overflow: hidden; 
+            background: radial-gradient(circle at 50% 50%, #1e293b 0%, #020617 100%); 
+            font-family: sans-serif;
+        }
+        #canvas { width: 100vw; height: 100vh; position: relative; }
+        
+        .body-node {
+            position: absolute;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            border-width: 1px;
+            border-style: solid;
+            cursor: pointer;
+            transition: all 0.3s;
+            z-index: 10;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        
+        .role-sun {
+            background-color: #1e293b;
+            border-color: #0ea5e9;
+            color: #e0f2fe;
+            width: 120px;
+            height: 120px;
+        }
+        .role-sun.active {
+            box-shadow: 0 0 40px rgba(14, 165, 233, 0.4), inset 0 0 20px rgba(14, 165, 233, 0.2);
+            border-color: #38bdf8;
+            transform: scale(1.05);
+        }
+        
+        /* Magic Circle for Active Sun */
+        .role-sun.active::before,
+        .role-sun.active::after {
+            content: '';
+            position: absolute;
+            top: -20px; left: -20px; right: -20px; bottom: -20px;
+            border-radius: 50%;
+            border: 1px dashed rgba(14, 165, 233, 0.4);
+            animation: orbit-spin 20s linear infinite;
+            pointer-events: none;
+        }
+        .role-sun.active::after {
+            border: 1px solid rgba(14, 165, 233, 0.1);
+            animation: orbit-spin 15s linear infinite reverse;
+            top: -10px; left: -10px; right: -10px; bottom: -10px;
+        }
+        
+        @keyframes orbit-spin {
+            100% { transform: rotate(360deg); }
+        }
+
+        .role-parent {
+            background-color: #0f172a;
+            border-color: rgba(99, 102, 241, 0.5);
+            color: #a5b4fc;
+            width: 60px;
+            height: 60px;
+        }
+        .role-parent:hover { border-color: #818cf8; }
+
+        .role-child {
+            background-color: #0f172a;
+            border-color: rgba(14, 165, 233, 0.3);
+            color: #bae6fd;
+            width: 50px;
+            height: 50px;
+        }
+        .role-child:hover {
+            border-color: #38bdf8;
+            transform: scale(1.1);
+        }
+        
+        .halo {
+            position: absolute;
+            border: 1px dashed rgba(99, 102, 241, 0.2);
+            border-radius: 50%;
+            pointer-events: none;
+            width: 500px;
+            height: 500px;
+            left: calc(50% - 250px);
+            top: calc(50% - 250px);
+        }
+        
+        .orbit-line {
+            position: absolute;
+            background-color: rgba(14, 165, 233, 0.1);
+            height: 1px;
+            pointer-events: none;
+            left: 50%;
+            top: 50%;
+            transform-origin: 0 0;
+        }
+        
+        .node-icon { font-size: 1.25rem; line-height: 1.75rem; }
+        .node-title { font-size: 8px; text-transform: uppercase; margin-top: 4px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 4px; }
+    </style>
+</head>
+<body>
+    <div id="canvas"></div>
+    <script>
+        let currentState = null;
+
+        window.addEventListener('message', (event) => {
+            if (event.data && event.data.type === 'STATE_UPDATE') {
+                currentState = event.data.state;
+                render();
+            }
+        });
+
+        // Use postMessage to request node definition icon from parent, or use a hardcoded fallback mapping
+        const typeIcons = {
+            'root': '🌌', 'person-root': '👤', 'hub': '💠', 'portal': '🌀', 'smart-portal': '🪄',
+            'note': '📝', 'logic-gate': '⚡', 'web-root': '🌐', 'web-nav': '🧭', 'web-hero': '🎉',
+            'web-section': '🪟', 'web-footer': '🦶', 'web-card': '🗂️', 'web-link': '🔗',
+            'web-button': '💡', 'web-text': '¶', 'web-image': '🖼️', 'web-video': '🎥',
+            'web-form': '📝', 'web-input': '⌨️', 'web-grid': '🔲', 'web-list': '📋',
+            'web-modal': '🪟', 'web-carousel': '🎠'
+        };
+
+        function getIcon(type) {
+            return typeIcons[type] || '⚪';
+        }
+
+        function escapeHTML(str) {
+            const d = document.createElement('div');
+            d.textContent = str;
+            return d.innerHTML;
+        }
+
+        function createBody(node, role) {
+            const el = document.createElement('div');
+            el.className = `body-node role-${role}`;
+            el.innerHTML = `<div class="node-icon">${getIcon(node.type)}</div><div class="node-title">${escapeHTML(node.title)}</div>`;
+            el.onclick = () => {
+                window.parent.postMessage({ type: 'SELECT_NODE', id: node.id }, '*');
+            };
+            return el;
+        }
+
+        function render() {
+            if (!currentState) return;
+            const state = currentState;
+            const container = document.getElementById('canvas');
+            container.innerHTML = '';
+            
+            const sunId = state.session.selectedId || (state.nodes[0] ? state.nodes[0].id : null);
+            if (!sunId) { 
+                container.innerHTML = '<div style="color:#64748b; padding:40px; text-align:center;">Select a node to enter orbit.</div>'; 
+                return; 
+            }
+            
+            const sun = state.nodes.find(n => n.id === sunId);
+            if (!sun) return;
+            
+            const parentConn = state.connections.find(c => c.to === sunId && c.type === 'structural');
+            
+            if (parentConn) {
+                const parent = state.nodes.find(n => n.id === parentConn.from);
+                if (parent) {
+                    const halo = document.createElement('div');
+                    halo.className = "halo";
+                    container.appendChild(halo);
+                    
+                    const pEl = createBody(parent, 'parent');
+                    pEl.style.left = "calc(50% - 30px)"; pEl.style.top = "calc(50% - 280px)";
+                    container.appendChild(pEl);
+                }
+            }
+
+            const center = createBody(sun, 'sun');
+            center.classList.add('active');
+            center.style.left = "calc(50% - 60px)"; center.style.top = "calc(50% - 60px)";
+            container.appendChild(center);
+
+            const kids = state.connections.filter(c => c.from === sunId).map(c => state.nodes.find(n => n.id === c.to));
+            kids.forEach((k, i) => {
+                if(!k) return;
+                const angle = (i / kids.length) * Math.PI * 2 - Math.PI / 2;
+                const r = 220;
+                
+                const planet = createBody(k, 'child');
+                planet.style.left = `calc(50% + ${Math.cos(angle) * r}px - 25px)`;
+                planet.style.top = `calc(50% + ${Math.sin(angle) * r}px - 25px)`;
+                
+                const line = document.createElement('div');
+                line.className = "orbit-line";
+                line.style.width = `${r}px`;
+                line.style.transform = `rotate(${angle * 180 / Math.PI}deg)`;
+                
+                container.appendChild(line); 
+                container.appendChild(planet);
+            });
+        }
+    </script>
+</body>
+</html>

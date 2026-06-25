@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-Map | Comprehensive Wiki v14.11</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600&display=swap');
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #0f172a;
+            color: #f8fafc;
+        }
+
+        pre {
+            background: #020617;
+            color: #38bdf8;
+            padding: 1rem;
+            border-radius: 0.75rem;
+            overflow-x: auto;
+            font-size: 0.8rem;
+            line-height: 1.5;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        code {
+            color: #f472b6;
+            font-family: 'Fira Code', monospace;
+            font-size: 0.9em;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 0.1rem 0.3rem;
+            border-radius: 0.2rem;
+        }
+
+        .nav-link {
+            display: block;
+            padding: 0.75rem 1rem;
+            border-left: 2px solid transparent;
+            transition: all 0.2s;
+            color: #94a3b8;
+            font-size: 0.85rem;
+            font-weight: bold;
+        }
+
+        .nav-link:hover {
+            color: #38bdf8;
+            border-left-color: #38bdf8;
+            background: rgba(56, 189, 248, 0.05);
+        }
+
+        .table-header {
+            background: rgba(30, 41, 59, 0.8);
+            text-transform: uppercase;
+            font-size: 0.75rem;
+            letter-spacing: 0.05em;
+            color: #94a3b8;
+        }
+
+        .table-row {
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .table-row:hover {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        /* Custom Scrollbar */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #0f172a;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+
+<body class="flex h-screen overflow-hidden bg-slate-950 relative">
+
+    <!-- Mobile Header Bar -->
+    <div
+        class="md:hidden flex items-center justify-between bg-slate-900/90 backdrop-blur-md border-b border-slate-800 p-4 absolute top-0 w-full z-20">
+        <h1 class="text-lg font-black flex items-center gap-2">
+            <span class="w-6 h-6 rounded bg-sky-600 flex items-center justify-center text-xs text-white">M</span>
+            Multi-Map
+        </h1>
+        <button id="mobile-menu-btn"
+            class="text-slate-400 hover:text-white p-2 transition-colors rounded-lg hover:bg-slate-800">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16">
+                </path>
+            </svg>
+        </button>
+    </div>
+
+    <!-- Mobile Sidebar Overlay -->
+    <div id="sidebar-overlay"
+        class="fixed inset-0 bg-black/60 backdrop-blur-sm z-30 hidden md:hidden transition-opacity opacity-0 duration-300">
+    </div>
+
+    <!-- Sidebar Navigation -->
+    <aside id="sidebar"
+        class="w-72 bg-slate-900 border-r border-slate-800 flex flex-col shrink-0 overflow-y-auto custom-scrollbar fixed inset-y-0 left-0 z-40 transform -translate-x-full md:relative md:translate-x-0 transition-transform duration-300 shadow-2xl md:shadow-none">
+        <div class="p-6 border-b border-slate-800 sticky top-0 bg-slate-900 z-10 flex justify-between items-start">
+            <div>
+                <h1 class="text-xl font-black tracking-tight flex items-center gap-2">
+                    <span
+                        class="w-6 h-6 rounded bg-sky-600 flex items-center justify-center text-xs text-white">M</span>
+                    Multi-Map
+                </h1>
+                <div class="text-[10px] uppercase tracking-widest text-emerald-400 mt-2 font-bold">Docs: v14.11</div>
+            </div>
+            <!-- Close button (Mobile only) -->
+            <button id="close-sidebar-btn"
+                class="md:hidden text-slate-400 hover:text-white p-1 rounded hover:bg-slate-800 transition-colors">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12">
+                    </path>
+                </svg>
+            </button>
+        </div>
+
+        <nav class="flex-1 py-4">
+            <div class="px-6 text-[10px] font-black uppercase text-slate-500 tracking-widest mb-2 mt-2">I. User Guide
+            </div>
+            <a href="#getting-started" class="nav-link pl-8">1. Getting Started</a>
+            <a href="#navigation" class="nav-link pl-8">2. Navigation & Controls</a>
+            <a href="#universal-node" class="nav-link pl-8">3. The Universal Node System</a>
+            <a href="#phase-engines" class="nav-link pl-8">4. Phase Engines</a>
+            <a href="#data-manager" class="nav-link pl-8">5. Profile & Data Manager</a>
+            <a href="#portals" class="nav-link pl-8">6. Submaps and Portals</a>
+
+            <div class="px-6 text-[10px] font-black uppercase text-slate-500 tracking-widest mb-2 mt-6">II. Developer
+                Docs</div>
+            <a href="#architecture" class="nav-link pl-8">6. Core Architecture</a>
+            <a href="#ontology" class="nav-link pl-8">7. Node & Connection Rules</a>
+            <a href="#json-schema" class="nav-link pl-8">8. JSON Schema & Arrays</a>
+            <a href="#physics" class="nav-link pl-8">9. Force-Directed Physics</a>
+            <a href="#federation-library" class="nav-link pl-8">10. Serverless Library Engine</a>
+        </nav>
+
+        <div class="p-4 border-t border-slate-800 bg-slate-900 sticky bottom-0">
+            <a href="sandbox.html"
+                class="block w-full py-2 bg-sky-600 hover:bg-sky-500 text-center text-white rounded text-xs font-bold transition-colors shadow">Launch
+                Sandbox</a>
+            <a href="overview.html"
+                class="block w-full py-2 text-slate-400 hover:text-white text-center rounded text-xs font-bold transition-colors mt-2">←
+                Strategic Overview</a>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="flex-1 overflow-y-auto p-6 pt-24 md:p-10 lg:p-16 scroll-smooth custom-scrollbar w-full"
+        id="main-scroll">
+        <div class="max-w-5xl mx-auto pb-32">
+
+            <header class="mb-16 border-b border-slate-800 pb-8">
+                <h1 class="text-4xl md:text-5xl font-black mb-4 tracking-tight">Multi-Map Master Reference</h1>
+                <p class="text-lg md:text-xl text-slate-400 leading-relaxed">
+                    Welcome to the definitive documentation for Multi-Map v14.11. This wiki serves both daily users
+                    navigating the spatial interface and developers building federated companion applications.
+                </p>
+            </header>
+
+            <!-- ==========================================
+                 PART I: USER GUIDE
+                 ========================================== -->
+            <div class="mb-12">
+                <h2 class="text-sm font-black text-sky-500 uppercase tracking-widest mb-2">Part I</h2>
+                <h3 class="text-3xl md:text-4xl font-black">User Guide</h3>
+            </div>
+
+            <!-- 1. Getting Started -->
+            <section id="getting-started" class="mb-20 pt-8 border-t border-slate-800/50 scroll-mt-24 md:scroll-mt-10">
+                <h3 class="text-2xl font-black mb-4 flex items-center gap-3">1. Getting Started</h3>
+                <p class="text-slate-400 leading-relaxed mb-6">
+                    Multi-Map is a spatial mapping ecosystem. Instead of folders and files, you organize information
+                    into "Constellations" of interconnected nodes. Every map begins with a <strong>Universe
+                        Root</strong>. From there, you can spawn Hubs, Notes, Portals, and structured Web elements.
+                </p>
+            </section>
+
+            <!-- 2. Navigation -->
+            <section id="navigation" class="mb-20 pt-8 border-t border-slate-800/50 scroll-mt-24 md:scroll-mt-10">
+                <h3 class="text-2xl font-black mb-4 flex items-center gap-3">2. Navigation & Controls</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                    <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl">
+                        <h4 class="font-bold text-sky-400 mb-2">Desktop (Mouse)</h4>
+                        <ul class="list-disc pl-5 text-sm text-slate-300 space-y-2">
+                            <li><strong>Pan:</strong> Click and drag the background.</li>
+                            <li><strong>Zoom:</strong> Scroll wheel.</li>
+                            <li><strong>Select Node:</strong> Click a node to open its Radial Menu and Inspector
+                                details.</li>
+                            <li><strong>Move Node:</strong> Click and drag a node to pin it manually (Auto-Arrange will
+                                recalculate from this new position).</li>
+                        </ul>
+                    </div>
+                    <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl">
+                        <h4 class="font-bold text-emerald-400 mb-2">Mobile (Touch)</h4>
+                        <ul class="list-disc pl-5 text-sm text-slate-300 space-y-2">
+                            <li><strong>Pan:</strong> Single-finger swipe on the background.</li>
+                            <li><strong>Zoom:</strong> Dual-finger pinch-to-zoom.</li>
+                            <li><strong>Tap:</strong> Tapping a node (without dragging) opens the context menu. Tapping
+                                the background clears the selection.</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <h4 class="font-bold text-lg mb-2 mt-8">The Radial Menu & Moons</h4>
+                <p class="text-slate-400 text-sm leading-relaxed mb-4">
+                    Selecting a node opens its Radial Menu—a circular array of quick actions (Edit, Link, Add,
+                    Delete, Collapse).
+                    <br><br>
+                    <strong>Non-Destructive Collapse:</strong> When you collapse a node (🌚), its children are hidden
+                    from the map and replaced by orbiting <strong>"Moons"</strong> around the parent. Clicking a Moon
+                    instantly expands the branch and focuses the camera on the child.
+                </p>
+            </section>
+
+            <!-- 3. Linking -->
+            <section id="linking" class="mb-20 pt-8 border-t border-slate-800/50 scroll-mt-24 md:scroll-mt-10">
+                <h3 class="text-2xl font-black mb-4 flex items-center gap-3">3. Two-Step Targeted Linking</h3>
+                <p class="text-slate-400 leading-relaxed mb-6">
+                    While "Add" creates strict hierarchical structures (solid lines), you can draw conceptual
+                    relationships between any two nodes using the Two-Step Linking workflow (dotted lines).
+                </p>
+                <div class="bg-slate-900 border-l-4 border-amber-500 p-6 rounded-r-xl shadow-lg">
+                    <ol class="list-decimal pl-5 text-sm text-slate-300 space-y-3">
+                        <li>Select your source node and click the <strong>Link (🔗)</strong> button on its Radial Menu.
+                        </li>
+                        <li>The system enters <em>Linking Mode</em>. A pulsing gold banner appears at the top of the
+                            screen.</li>
+                        <li>You are free to pan the map, open other nodes, and explore. Your clicks are not hijacked.
+                        </li>
+                        <li>When you find your target node, select it. Its Radial Menu will appear.</li>
+                        <li>Click the pulsing <strong class="text-emerald-400">Green Confirm Link</strong> button to
+                            finalize the connection. (Or click the <strong class="text-red-400">Red Cancel</strong>
+                            button on the original node to abort).</li>
+                    </ol>
+                </div>
+            </section>
+
+            <!-- 4. Phase Engines -->
+            <section id="phase-engines" class="mb-20 pt-8 border-t border-slate-800/50 scroll-mt-24 md:scroll-mt-10">
+                <h3 class="text-2xl font-black mb-4 flex items-center gap-3">4. Phase Engines (Views)</h3>
+                <p class="text-slate-400 leading-relaxed mb-6">
+                    Multi-Map separates your raw data from how it is displayed. "Phases" are different lenses through
+                    which you can view the exact same Mapstate JSON.
+                </p>
+                <ul class="space-y-4">
+                    <li
+                        class="bg-slate-900 border border-slate-800 p-4 rounded-lg flex flex-col sm:flex-row sm:items-start gap-4 shadow">
+                        <span class="text-3xl mt-1">🗺️</span>
+                        <div>
+                            <strong class="text-sky-400 text-base">Celestial Map</strong>
+                            <p class="text-sm text-slate-400 mt-1">The default spatial graph. Free-form dragging,
+                                physics engine enabled.</p>
+                        </div>
+                    </li>
+                    <li
+                        class="bg-slate-900 border border-slate-800 p-4 rounded-lg flex flex-col sm:flex-row sm:items-start gap-4 shadow">
+                        <span class="text-3xl mt-1">🔮</span>
+                        <div>
+                            <strong class="text-purple-400 text-base">Orbital Focus (Magic Circle)</strong>
+                            <p class="text-sm text-slate-400 mt-1">A strict hierarchical view. Displays only the
+                                selected "Sun" node, its immediate "Planets" (children), and its "Halo" (parent).
+                                Clicking planets navigates deep into the tree without visual clutter.</p>
+                        </div>
+                    </li>
+                    <li
+                        class="bg-slate-900 border border-slate-800 p-4 rounded-lg flex flex-col sm:flex-row sm:items-start gap-4 shadow relative overflow-hidden">
+                        <div class="absolute right-0 top-0 text-[120px] opacity-5">🌐</div>
+                        <span class="text-3xl mt-1 relative z-10">🌐</span>
+                        <div class="relative z-10">
+                            <strong class="text-emerald-400 text-base">Web Architect & Spatial Browser</strong>
+                            <p class="text-sm text-slate-400 mt-1 mb-2">A live HTML compiler. If your map uses
+                                <code>web-*</code> nodes, this engine dynamically compiles them into live, rendered
+                                HTML/Tailwind inside an iframe.</p>
+                            <div class="bg-slate-950 p-3 rounded border border-slate-800 text-xs text-slate-300">
+                                <strong class="text-white block mb-1">Advanced Iframe Integration:</strong>
+                                If you input a valid URL (e.g. <code>google.com</code> or
+                                <code>https://wikipedia.org</code>) into the payload of a <code>web-root</code> node,
+                                the engine will automatically mount the live website into the background iframe. Any
+                                children attached to that node will physically render <em>beneath</em> the live website.
+                                If a site employs X-Frame blocking, an "Open in New Tab" escape hatch appears.
+                            </div>
+                        </div>
+                    </li>
+                </ul>
+            </section>
+
+            <!-- 5. Profile & Data Manager -->
+            <section id="data-manager" class="mb-20 pt-8 border-t border-slate-800/50 scroll-mt-24 md:scroll-mt-10">
+                <h3 class="text-2xl font-black mb-4 flex items-center gap-3">5. Profile & Data Manager</h3>
+                <p class="text-slate-400 leading-relaxed mb-6">
+                    Accessible via the "Profile" icon in the top right corner, the right-side drawer serves as your unified command center for Account settings and the Data Manager. It allows you to log in, manage cloud templates, and export the local library.
+                </p>
+                <div class="space-y-6">
+                    <div>
+                        <h4 class="font-bold text-blue-400 mb-2">🌐 Cloud Templates</h4>
+                        <p class="text-sm text-slate-300">Provides read-only master templates. You can import these directly into your active workspace. Click "Upload" to upload external JSON templates to your local library.</p>
+                    </div>
+                    <div>
+                        <h4 class="font-bold text-purple-400 mb-2">📚 Saved Constellations</h4>
+                        <p class="text-sm text-slate-300">Your personal repository. You can Save your active session, Load previous sessions, or click "Export" to download your entire constellation library as a single JSON array.</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 6. Portals & Mapstates -->
+            <section id="portals" class="mb-20 pt-8 border-t border-slate-800/50 scroll-mt-24 md:scroll-mt-10">
+                <h3 class="text-2xl font-black mb-4 flex items-center gap-3">6. Submaps and Portals</h3>
+                <p class="text-slate-400 leading-relaxed mb-6">
+                    Maps in Multi-Map have intrinsic <strong>Subtype Mapstates</strong> (e.g., "Generic", "Web Architecture"). This enforces strict Ontology rules globally across the map.
+                </p>
+                <p class="text-slate-400 leading-relaxed mb-6">
+                    To link maps together, create a <code>Portal</code> node. Using the Portal Inspector, you can either select an existing map as the destination, or create a <strong>New Submap</strong> by selecting a Map Type. Creating a "Web Architecture" map will instantly enforce Web-only rules and generate a <code>web-root</code> node in the new space.
+                </p>
+                <div class="bg-slate-900 border border-slate-800 p-4 rounded-lg">
+                    <strong class="text-emerald-400 text-sm block mb-2">🌀 Enter Portal</strong>
+                    <p class="text-xs text-slate-400">Entering a portal replaces your current workspace with the destination submap. Depending on the submap's Type, Multi-Map will automatically switch your Phase Engine (e.g., jumping into a Web Map auto-activates the Web Architect phase). Click the 🔙 button in the top menu to traverse back up the portal history stack.</p>
+                </div>
+            </section>
+
+
+            <!-- ==========================================
+                 PART II: DEVELOPER DOCS
+                 ========================================== -->
+            <div class="mb-12 mt-24">
+                <h2 class="text-sm font-black text-sky-500 uppercase tracking-widest mb-2">Part II</h2>
+                <h3 class="text-3xl md:text-4xl font-black">Developer Documentation</h3>
+            </div>
+
+            <!-- 6. Architecture -->
+            <section id="architecture" class="mb-20 pt-8 border-t border-slate-800/50 scroll-mt-24 md:scroll-mt-10">
+                <h3 class="text-2xl font-black mb-4 flex items-center gap-3">6. Core Architecture</h3>
+                <p class="text-slate-400 leading-relaxed mb-4">
+                    The platform relies on a Decoupled State Machine pattern. The DOM never dictates truth.
+                </p>
+                <div class="space-y-4">
+                    <div class="bg-slate-900 border border-slate-800 p-5 rounded-lg">
+                        <strong class="text-white text-sm">The Kernel (<code>multi-map-core.js</code>)</strong>
+                        <p class="text-sm text-slate-400 mt-2">Holds the <code>MapState</code> object. Performs all
+                            array mutations, handles UUID generation, runs the <code>resolveOverlaps()</code> physics
+                            loop, and manages the Breadth-First Search (BFS) algorithm for cascading downstream node
+                            deletions. Emits <code>this.notify()</code> on state change.</p>
+                    </div>
+                    <div class="bg-slate-900 border border-slate-800 p-5 rounded-lg">
+                        <strong class="text-white text-sm">The Sandbox (<code>multi-map-sandbox.js</code>)</strong>
+                        <p class="text-sm text-slate-400 mt-2">The View Controller. Subscribes to the Kernel. Utilizes
+                            pure mathematical DOM-Diffing (checking <code>dataset.stateHash</code>) to apply targeted
+                            innerHTML updates without destroying active mobile keyboards or CSS animation frames.</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 7. Ontology -->
+            <section id="ontology" class="mb-20 pt-8 border-t border-slate-800/50 scroll-mt-24 md:scroll-mt-10">
+                <h3 class="text-2xl font-black mb-4 flex items-center gap-3">7. Node & Connection Ontology</h3>
+                <p class="text-slate-400 leading-relaxed mb-6">
+                    Defined in <code>Multi-Map-rules.js</code>, this schema dictates what types of nodes can exist and
+                    how they are allowed to connect. <em>Rule Exception: Any node is allowed to have a child of type
+                        'note'.</em>
+                </p>
+
+                <h4 class="font-bold text-lg mb-3">Connection Types</h4>
+                <ul class="list-disc pl-5 text-sm text-slate-300 space-y-2 mb-6">
+                    <li><strong class="text-sky-400">Structural (Solid):</strong> Strict Parent/Child hierarchy. Acts as
+                        a spring in the physics engine. Triggers cascading deletions.</li>
+                    <li><strong class="text-sky-400">Association (Dashed):</strong> Loose conceptual relation. Ignored
+                        by physics springs and orbital views. Created via 2-Step linking.</li>
+                    <li><strong class="text-sky-400">Flow (Dotted):</strong> Directional sequence logic (reserved for
+                        Logic Gates / execution loops).</li>
+                </ul>
+
+                <h4 class="font-bold text-lg mb-3">Web Architect Nodes</h4>
+                <div class="overflow-x-auto rounded-lg border border-slate-800">
+                    <table class="w-full text-left text-sm text-slate-300 whitespace-nowrap">
+                        <thead class="table-header">
+                            <tr>
+                                <th class="p-3">Node Type</th>
+                                <th class="p-3">HTML Element</th>
+                                <th class="p-3">Allowed Children (Strict)</th>
+                                <th class="p-3">Behavior</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr class="table-row">
+                                <td class="p-3 font-bold text-white">web-root</td>
+                                <td class="p-3"><code>&lt;body&gt;</code> / <code>&lt;iframe&gt;</code></td>
+                                <td class="p-3">nav, hero, section, footer</td>
+                                <td class="p-3">Mounts embedded URLs or basic HTML roots.</td>
+                            </tr>
+                            <tr class="table-row">
+                                <td class="p-3 font-bold text-white">web-nav</td>
+                                <td class="p-3"><code>&lt;nav&gt;</code></td>
+                                <td class="p-3">link, button</td>
+                                <td class="p-3">Sticks to top of compiled page.</td>
+                            </tr>
+                            <tr class="table-row">
+                                <td class="p-3 font-bold text-white">web-section</td>
+                                <td class="p-3"><code>&lt;section&gt;</code></td>
+                                <td class="p-3">text, image, button, link</td>
+                                <td class="p-3">Standard flex container.</td>
+                            </tr>
+                            <tr class="table-row">
+                                <td class="p-3 font-bold text-white">web-text</td>
+                                <td class="p-3"><code>&lt;p&gt;</code> / <code>&lt;h3&gt;</code></td>
+                                <td class="p-3 text-slate-500 italic">None</td>
+                                <td class="p-3">Renders text block w/ line breaks.</td>
+                            </tr>
+                            <tr class="table-row">
+                                <td class="p-3 font-bold text-white">web-link</td>
+                                <td class="p-3"><code>&lt;a&gt;</code></td>
+                                <td class="p-3 text-slate-500 italic">None</td>
+                                <td class="p-3">Content payload acts as href target.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- 8. JSON Schema -->
+            <section id="json-schema" class="mb-20 pt-8 border-t border-slate-800/50 scroll-mt-24 md:scroll-mt-10">
+                <h3 class="text-2xl font-black mb-4 flex items-center gap-3">8. JSON Schema & Arrays</h3>
+                <p class="text-slate-400 leading-relaxed mb-4 text-sm">
+                    The JSON standard for importing/exporting mapstates. The v14.9 system can parse a single object OR
+                    an array `[{...}, {...}]` of mapstates during upload.
+                </p>
+                <pre><code>{
+  "map_id": "u7b9v2z1x",
+  "meta": {
+    "title": "Project Master Plan",
+    "created": "2026-02-24T12:00:00Z",
+    "notes": "System schema reference",
+    "shared": false
+  },
+  "nodes": [
+    {
+      "id": "abc123xyz",
+      "type": "hub",
+      "title": "Central Architecture",
+      "content": "Description payload here...",
+      "data": {
+        "x": 145.2,
+        "y": -22.4,
+        "isCore": true,
+        "collapsed": false
+      },
+      "submaps": [] 
+    }
+  ],
+  "connections": [
+    {
+      "id": "edge_999",
+      "from": "abc123xyz",
+      "to": "def456lmn",
+      "type": "structural"
+    }
+  ],
+  "submaps": [] // Caches templates or local portal configurations
+}</code></pre>
+            </section>
+
+            <!-- 9. Physics -->
+            <section id="physics" class="mb-20 pt-8 border-t border-slate-800/50 scroll-mt-24 md:scroll-mt-10">
+                <h3 class="text-2xl font-black mb-4 flex items-center gap-3">9. Force-Directed Physics</h3>
+                <p class="text-slate-400 leading-relaxed mb-6">
+                    The layout is driven by a custom iterative algorithm found in <code>Kernel.resolveOverlaps()</code>.
+                    It applies two simultaneous forces to form organic trees dynamically.
+                </p>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl">
+                        <h4 class="font-bold text-sky-400 mb-2">1. Universal Repulsion</h4>
+                        <p class="text-sm text-slate-300">An O(N²) calculation where every node pushes away from every
+                            other node if distance &lt; 240px. (kRepel = 0.08).</p>
+                    </div>
+                    <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl">
+                        <h4 class="font-bold text-emerald-400 mb-2">2. Hooke's Law Springs</h4>
+                        <p class="text-sm text-slate-300">Only applies to <code>structural</code> connections. Pulls
+                            connected nodes toward an ideal resting distance of 160px. (kSpring = 0.05).</p>
+                    </div>
+                </div>
+                <p class="text-sm text-slate-400 leading-relaxed mt-4">
+                    Upon node creation, a fast 40-iteration burst runs to clear space. Clicking the "Arrange" UI button
+                    triggers a deep 150-iteration simulation to organically untangle complex webs.
+                </p>
+            </section>
+
+            <!-- 10. Federation Library -->
+            <section id="federation-library"
+                class="mb-20 pt-8 border-t border-slate-800/50 scroll-mt-24 md:scroll-mt-10">
+                <h3 class="text-2xl font-black mb-4 flex items-center gap-3">10. Serverless Library Engine</h3>
+                <p class="text-slate-400 leading-relaxed mb-4">
+                    In v14.7, we deprecated <code>fetch()</code> calls to external JSON files to bypass local
+                    <code>file://</code> CORS restrictions. The engine now uses a globally mounted
+                    <code>MultiMapLibrary</code> object loaded via <code>multi-map-library.js</code>.
+                </p>
+                <div class="bg-slate-900 border border-slate-800 rounded-lg p-5">
+                    <h4 class="font-bold text-white mb-2 text-sm">How AI Integration Works</h4>
+                    <p class="text-sm text-slate-300 leading-relaxed mb-4">
+                        To add new templates generated by an LLM, you have two options:
+                    </p>
+                    <ol class="list-decimal pl-5 text-sm text-slate-300 space-y-3">
+                        <li><strong>Manual Source:</strong> Paste the generated JSON directly into the
+                            <code>defaults: [...]</code> array inside <code>multi-map-library.js</code>.</li>
+                        <li><strong>Runtime Upload:</strong> Save the AI output as a <code>.json</code> file, open the
+                            Data Manager Phase in the app, and click the <strong>Upload Template</strong> button to
+                            write it permanently to your LocalStorage.</li>
+                    </ol>
+                </div>
+            </section>
+
+        </div>
+    </main>
+
+    <!-- Interactive Sidebar Logic -->
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('sidebar-overlay');
+            const menuBtn = document.getElementById('mobile-menu-btn');
+            const closeBtn = document.getElementById('close-sidebar-btn');
+            const navLinks = document.querySelectorAll('.nav-link');
+
+            function openSidebar() {
+                sidebar.classList.remove('-translate-x-full');
+                overlay.classList.remove('hidden');
+                // Small timeout allows the display:block to process before opacity transition
+                setTimeout(() => overlay.classList.remove('opacity-0'), 10);
+            }
+
+            function closeSidebar() {
+                sidebar.classList.add('-translate-x-full');
+                overlay.classList.add('opacity-0');
+                setTimeout(() => overlay.classList.add('hidden'), 300);
+            }
+
+            menuBtn.addEventListener('click', openSidebar);
+            closeBtn.addEventListener('click', closeSidebar);
+            overlay.addEventListener('click', closeSidebar);
+
+            // Automatically close the sidebar when a navigation link is clicked (Mobile only)
+            navLinks.forEach(link => {
+                link.addEventListener('click', () => {
+                    if (window.innerWidth < 768) {
+                        closeSidebar();
+                    }
+                });
+            });
+        });
+    </script>
+</body>
+
+</html>

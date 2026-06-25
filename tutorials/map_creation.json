@@ -1,0 +1,37 @@
+[
+    {
+        "text": "Let's learn how to save your current map and find it later! First, let's switch to the Data Phase.",
+        "target": "#btn-phase-data",
+        "requireClick": false
+    },
+    {
+        "text": "Your maps are stored in the Library. Let's open the Saved Constellations accordion.",
+        "conditionText": [
+            {
+                "condition": "!!(SC.registry.get('data') && SC.registry.get('data').ui.library)",
+                "text": "The Saved Constellations library is already open!",
+                "autoClick": false
+            }
+        ],
+        "target": "#data-accordion-library",
+        "requireClick": false
+    },
+    {
+        "onEnter": "if (SC.registry.get('data') && !SC.registry.get('data').ui.library) SC.registry.get('data').toggle('library');",
+        "text": "Click this button to save a snapshot of your current map. (Go ahead and try it!)",
+        "target": "#btn-save-session",
+        "requireClick": false,
+        "autoClick": false
+    },
+    {
+        "text": "Once saved, your map will appear in this list. You can click on it to rename it, share it, or load it back into the canvas at any time.",
+        "target": "#library-list",
+        "requireClick": false,
+        "autoClick": false
+    },
+    {
+        "text": "Let's switch back to the Map Phase.",
+        "target": "#btn-phase-map",
+        "requireClick": false
+    }
+]

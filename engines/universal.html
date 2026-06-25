@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Universal Phase Engine</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { margin: 0; padding: 0; overflow-y: auto; background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.5); }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(56, 189, 248, 0.3); border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(56, 189, 248, 0.6); }
+    </style>
+</head>
+<body class="custom-scrollbar">
+    <div id="inspector-content"></div>
+
+    <script>
+        let currentState = null;
+        let renderedNodeId = '';
+        let renderedNodeType = '';
+        let activeHighlight = null; // Passed from parent if needed
+
+        function escapeHTML(str) {
+            const d = document.createElement('div');
+            d.textContent = str;
+            return d.innerHTML;
+        }
+
+        window.addEventListener('message', (event) => {
+            if (event.data && event.data.type === 'STATE_UPDATE') {
+                currentState = event.data.state;
+                activeHighlight = event.data.highlight || null;
+                render();
+            }
+        });
+
+        // Communication helpers
+        function notifyUpdate(id, partialData) {
+            window.parent.postMessage({ type: 'UPDATE_NODE', id, data: partialData }, '*');
+        }
+        function notifyAction(action, id, data = null) {
+            window.parent.postMessage({ type: 'ACTION', action, id, data }, '*');
+        }
+
+        // Specifically matching the exact UI of the old UniversalPhaseEngine
+        function render() {
+            if (!currentState) return;
+            const state = currentState;
+            const container = document.getElementById('inspector-content');
+            const node = state.nodes.find(n => n.id === state.session.selectedId);
+
+            if (!node) {
+                container.innerHTML = `
+                    <div class="flex flex-col items-center justify-center h-full text-slate-500 opacity-70 p-6 text-center">
+                        <span class="text-4xl mb-4">✨</span>
+                        <p class="text-sm font-bold tracking-widest uppercase mb-2">No Node Selected</p>
+                        <p class="text-xs">Click on any celestial body in the spatial map to view and edit its properties here.</p>
+                    </div>
+                `;
+                renderedNodeId = '';
+                renderedNodeType = '';
+                return;
+            }
+
+            const isMatch = activeHighlight && activeHighlight.nodeId === node.id;
+
+            // --- FAST DOM DIFFING ---
+            if (renderedNodeId === node.id && renderedNodeType === node.type) {
+                const titleEl = container.querySelector('#edit-title');
+                if (titleEl && document.activeElement !== titleEl) titleEl.value = node.title;
+                
+                const typeEl = container.querySelector('#edit-type');
+                if (typeEl && document.activeElement !== typeEl) typeEl.value = node.type;
+                
+                const ta = container.querySelector('textarea#raw-content');
+                
+                if (node.type === 'person-root') {
+                    let pData = {};
+                    try { pData = JSON.parse(node.content || '{}'); } catch(e) {}
+                    const inputs = container.querySelectorAll('.profile-input');
+                    inputs.forEach(inp => {
+                        const field = inp.dataset.field;
+                        const val = pData[field] || '';
+                        if (document.activeElement !== inp && inp.value !== val) inp.value = val;
+                        
+                        if (isMatch && activeHighlight.query && val.toLowerCase().includes(activeHighlight.query)) {
+                            inp.classList.add('ring-2', 'ring-sky-500', 'shadow-[0_0_15px_rgba(56,189,248,0.5)]', 'animate-pulse');
+                            setTimeout(() => inp.classList.remove('ring-2', 'ring-sky-500', 'shadow-[0_0_15px_rgba(56,189,248,0.5)]', 'animate-pulse'), 3000);
+                        }
+                    });
+                } else if (node.type.startsWith('web-') && node.type !== 'web-root') {
+                    let pData = {};
+                    try { pData = JSON.parse(node.content || '{}'); } catch(e) { pData = { text: node.content || '' }; }
+                    const inputs = container.querySelectorAll('.web-input');
+                    inputs.forEach(inp => {
+                        const field = inp.dataset.field;
+                        const val = pData[field] || '';
+                        if (document.activeElement !== inp && inp.value !== val) inp.value = val;
+                        
+                        if (isMatch && activeHighlight.query && val.toLowerCase().includes(activeHighlight.query)) {
+                            inp.classList.add('ring-2', 'ring-sky-500', 'shadow-[0_0_15px_rgba(56,189,248,0.5)]', 'animate-pulse');
+                            setTimeout(() => inp.classList.remove('ring-2', 'ring-sky-500', 'shadow-[0_0_15px_rgba(56,189,248,0.5)]', 'animate-pulse'), 3000);
+                        }
+                    });
+                } else if (node.type === 'portal' || node.type === 'smart-portal') {
+                    const sel = container.querySelector('#portal-sel');
+                    if (sel) {
+                        const lib = state.session.library || [];
+                        const currentVal = node.content || '';
+                        
+                        const existingOptions = Array.from(sel.options).map(o => o.value).filter(v => v !== '');
+                        const libMapIds = lib.map(c => c.map_id);
+                        
+                        const optionsMatch = existingOptions.length === libMapIds.length && 
+                                             existingOptions.every((val, idx) => val === libMapIds[idx]);
+                        
+                        if (!optionsMatch) {
+                            renderedNodeId = ''; 
+                            renderedNodeType = '';
+                            render();
+                            return;
+                        }
+                        
+                        if (sel.value !== currentVal) {
+                            sel.value = currentVal;
+                        }
+                    }
+                    
+                    if (node.type === 'smart-portal') {
+                        const aiFuncSel = container.querySelector('#ai-func-sel');
+                        if (aiFuncSel) {
+                            const lib = state.session.library || [];
+                            const isLinked = lib.some(c => c.map_id === node.content);
+                            
+                            let selectedFunc = 'expand';
+                            let customText = '';
+                            if (!isLinked && node.content) {
+                                if (node.content.startsWith('custom:')) {
+                                    customText = node.content.substring(7);
+                                    selectedFunc = 'custom';
+                                } else if (node.content === 'expand' || node.content === 'summarize' || node.content === 'pass_prompt') {
+                                    selectedFunc = node.content;
+                                }
+                            }
+                            
+                            if (aiFuncSel.value !== selectedFunc) {
+                                 renderedNodeId = ''; 
+                                 renderedNodeType = '';
+                                 render();
+                                 return;
+                            }
+                            
+                            const aiCustomPrompt = container.querySelector('#ai-custom-prompt');
+                            if (aiCustomPrompt) {
+                                if (document.activeElement !== aiCustomPrompt && aiCustomPrompt.value !== customText) {
+                                    aiCustomPrompt.value = customText;
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    if (ta && document.activeElement !== ta) ta.value = node.content || '';
+                    if (isMatch && activeHighlight.field === 'content' && ta) {
+                        ta.classList.add('ring-2', 'ring-sky-500', 'shadow-[0_0_15px_rgba(56,189,248,0.5)]', 'animate-pulse');
+                        setTimeout(() => ta.classList.remove('ring-2', 'ring-sky-500', 'shadow-[0_0_15px_rgba(56,189,248,0.5)]', 'animate-pulse'), 3000);
+                    }
+                }
+
+                if (isMatch && activeHighlight.field === 'title' && titleEl) {
+                    titleEl.classList.add('ring-2', 'ring-sky-500', 'shadow-[0_0_15px_rgba(56,189,248,0.5)]', 'animate-pulse');
+                    setTimeout(() => titleEl.classList.remove('ring-2', 'ring-sky-500', 'shadow-[0_0_15px_rgba(56,189,248,0.5)]', 'animate-pulse'), 3000);
+                }
+                
+                const actionsContainer = container.querySelector('#node-actions-container');
+                if (actionsContainer) {
+                    const isLinking = state.session.linkingMode; // Assumes parent passes this in state!
+                    let linkBtnClass = "p-2 bg-slate-800 hover:bg-sky-600 rounded text-slate-300 hover:text-white transition-colors border-2 border-transparent flex justify-center items-center";
+                    let linkTitle = "Link to Node";
+                    
+                    if (isLinking) {
+                        if (node.id === state.session.linkingSourceId) {
+                            linkBtnClass = "p-2 bg-slate-900 border-2 border-red-500 text-red-500 rounded font-bold shadow-[0_0_15px_rgba(239,68,68,0.5)] transition-all flex justify-center items-center";
+                            linkTitle = "Cancel Link";
+                        } else {
+                            linkBtnClass = "p-2 bg-slate-900 border-2 border-emerald-500 text-emerald-500 rounded font-bold shadow-[0_0_15px_rgba(16,185,129,0.5)] animate-pulse transition-all flex justify-center items-center";
+                            linkTitle = "Confirm Link";
+                        }
+                    }
+                    
+                    const isNodeRoot = node.type === 'root' || node.type.endsWith('-root') || (node.data && node.data.isCore);
+                    if (isNodeRoot) {
+                        actionsContainer.className = "grid grid-cols-3 gap-2";
+                        actionsContainer.innerHTML = `
+                            <button onclick="notifyAction('LINK', '${node.id}')" class="${linkBtnClass}" title="${linkTitle}">🔗</button>
+                            <button onclick="notifyAction('ADD_CHILD', '${node.id}')" class="p-2 bg-slate-800 hover:bg-emerald-600 rounded text-slate-300 hover:text-white transition-colors flex justify-center items-center" title="Add Child">➕</button>
+                            <button onclick="notifyAction('SAVE_CONSTELLATION', '${node.id}')" class="p-2 bg-slate-800 hover:bg-purple-600 rounded text-slate-300 hover:text-white transition-colors flex justify-center items-center" title="Save as Submap">🌌</button>
+                        `;
+                    } else {
+                        actionsContainer.className = "grid grid-cols-4 gap-2";
+                        actionsContainer.innerHTML = `
+                            <button onclick="notifyAction('LINK', '${node.id}')" class="${linkBtnClass}" title="${linkTitle}">🔗</button>
+                            <button onclick="notifyAction('ADD_CHILD', '${node.id}')" class="p-2 bg-slate-800 hover:bg-emerald-600 rounded text-slate-300 hover:text-white transition-colors flex justify-center items-center" title="Add Child">➕</button>
+                            <button onclick="notifyAction('SAVE_CONSTELLATION', '${node.id}')" class="p-2 bg-slate-800 hover:bg-purple-600 rounded text-slate-300 hover:text-white transition-colors flex justify-center items-center" title="Save as Submap">🌌</button>
+                            <button onclick="notifyAction('DELETE', '${node.id}')" class="p-2 bg-slate-800 hover:bg-red-600 rounded text-slate-300 hover:text-white transition-colors flex justify-center items-center" title="Delete Downstream">🗑️</button>
+                        `;
+                    }
+                }
+                return;
+            }
+
+            renderedNodeId = node.id;
+            renderedNodeType = node.type;
+            const isLinking = state.session.linkingMode;
+            
+            let linkBtnClass = "p-2 bg-slate-800 hover:bg-sky-600 rounded text-slate-300 hover:text-white transition-colors border-2 border-transparent flex justify-center items-center";
+            let linkTitle = "Link to Node";
+            if (isLinking) {
+                if (node.id === state.session.linkingSourceId) {
+                    linkBtnClass = "p-2 bg-slate-900 border-2 border-red-500 text-red-500 rounded font-bold shadow-[0_0_15px_rgba(239,68,68,0.5)] transition-all flex justify-center items-center";
+                    linkTitle = "Cancel Link";
+                } else {
+                    linkBtnClass = "p-2 bg-slate-900 border-2 border-emerald-500 text-emerald-500 rounded font-bold shadow-[0_0_15px_rgba(16,185,129,0.5)] animate-pulse transition-all flex justify-center items-center";
+                    linkTitle = "Confirm Link";
+                }
+            }
+
+            let titleClass = "w-full bg-slate-800 border border-slate-700 text-white p-2 rounded text-sm focus:border-sky-500 outline-none transition-all duration-300";
+            let contentClass = "w-full flex-1 bg-slate-900 border border-slate-700 text-white p-2 rounded text-sm font-mono focus:border-sky-500 outline-none resize-none shadow-inner mt-1 min-h-[100px] transition-all duration-300";
+            
+            if (isMatch) {
+                if (activeHighlight.field === 'title') {
+                    titleClass += " ring-2 ring-sky-500 shadow-[0_0_15px_rgba(56,189,248,0.5)] animate-pulse";
+                } else if (activeHighlight.field === 'content' && node.type !== 'person-root') {
+                    contentClass += " ring-2 ring-sky-500 shadow-[0_0_15px_rgba(56,189,248,0.5)] animate-pulse";
+                }
+            }
+
+            // Expose a global wrapper for inputs so they can postMessage
+            window.updatePersonField = (id, field, val) => {
+                let pData = {};
+                const n = currentState.nodes.find(x => x.id === id);
+                if(n) {
+                    try { pData = JSON.parse(n.content || '{}'); } catch(e) {}
+                    pData[field] = val;
+                    notifyUpdate(id, { content: JSON.stringify(pData) });
+                }
+            };
+            window.updateWebField = (id, field, val) => {
+                let pData = {};
+                const n = currentState.nodes.find(x => x.id === id);
+                if(n) {
+                    try { pData = JSON.parse(n.content || '{}'); } catch(e) { pData = { text: n.content || '' }; }
+                    pData[field] = val;
+                    notifyUpdate(id, { content: JSON.stringify(pData) });
+                }
+            };
+
+            let contentAreaHtml = '';
+            if (node.type === 'person-root') {
+                let pData = {};
+                try { pData = JSON.parse(node.content || '{}'); } catch(e) {}
+                const fields = ['Name', 'Email', 'Phone', 'Address'];
+                contentAreaHtml = `<div class="flex flex-col gap-3 mt-1">`;
+                fields.forEach(f => {
+                    let pInputClass = "profile-input bg-slate-900 border border-slate-700 text-white p-2 rounded text-sm focus:border-sky-500 outline-none shadow-inner transition-all duration-300";
+                    const val = pData[f] || '';
+                    if (isMatch && activeHighlight.query && val.toLowerCase().includes(activeHighlight.query)) {
+                        pInputClass += " ring-2 ring-sky-500 shadow-[0_0_15px_rgba(56,189,248,0.5)] animate-pulse";
+                    }
+                    contentAreaHtml += `
+                        <div class="flex flex-col gap-1">
+                            <label class="text-[10px] font-bold text-slate-500 tracking-wider">${f}</label>
+                            <input type="text" class="${pInputClass}" data-field="${f}" value="${escapeHTML(val)}" oninput="window.updatePersonField('${node.id}', '${f}', this.value)">
+                        </div>
+                    `;
+                });
+                contentAreaHtml += `</div>`;
+            } else if (node.type === 'portal' || node.type === 'smart-portal') {
+                const lib = state.session.library || [];
+                const isLinked = lib.some(c => c.map_id === node.content);
+                
+                contentAreaHtml = `
+                    <div class="flex flex-col gap-1">
+                        <label class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Destination Map</label>
+                        <select id="portal-sel" class="w-full bg-slate-800 border border-slate-700 p-2 rounded text-xs text-white outline-none focus:border-sky-500 mt-1 transition-all duration-300" onchange="notifyUpdate('${node.id}', { content: this.value });">
+                            <option value="">-- Select Destination --</option>
+                            ${lib.map(c => `<option value="${c.map_id}" ${node.content === c.map_id ? 'selected' : ''}>${c.meta.title} (${c.meta.type || 'generic'})</option>`).join('')}
+                        </select>
+                    </div>
+                    <button onclick="notifyAction('ENTER_PORTAL', '${node.id}')" class="mt-3 w-full py-2 bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold rounded shadow transition-colors">Enter Portal 🌀</button>
+                    <div class="mt-4 pt-4 border-t border-slate-800">
+                        <label class="text-[10px] font-bold text-slate-500 uppercase block mb-2">Create New Submap</label>
+                        <div class="flex gap-2">
+                            <select id="portal-new-type" class="flex-1 bg-slate-900 border border-slate-700 p-2 rounded text-xs text-white outline-none focus:border-sky-500">
+                                <option value="generic">Generic Space</option>
+                                <option value="web">Web Architecture</option>
+                                <option value="data">Data Architecture</option>
+                                <option value="file">File System</option>
+                                <option value="prompt">Prompt Engine</option>
+                                <option value="agent">Agent Config</option>
+                            </select>
+                            <button onclick="notifyAction('CREATE_SUBMAP_AND_LINK', '${node.id}', document.getElementById('portal-new-type').value)" class="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded shadow transition-colors">Create</button>
+                        </div>
+                    </div>
+                `;
+                
+                if (node.type === 'smart-portal') {
+                    const aiFunctions = [
+                        { id: 'expand', label: 'Expand / Generate' },
+                        { id: 'summarize', label: 'Summarize' },
+                        { id: 'pass_prompt', label: 'Pass Prompt' },
+                        { id: 'custom', label: 'Custom Instruction' }
+                    ];
+                    
+                    let selectedFunc = 'expand';
+                    let customText = '';
+                    if (!isLinked && node.content) {
+                        if (node.content.startsWith('custom:')) {
+                            customText = node.content.substring(7);
+                            selectedFunc = 'custom';
+                        } else if (aiFunctions.some(f => f.id === node.content)) {
+                            selectedFunc = node.content;
+                        }
+                    }
+                    
+                    contentAreaHtml += `
+                    <div class="mt-4 pt-4 border-t border-slate-800">
+                        <label class="text-[10px] font-bold text-slate-500 uppercase block mb-2">AI Settings</label>
+                        <select id="ai-func-sel" class="w-full bg-slate-800 border border-slate-700 p-2 rounded text-xs text-white outline-none focus:border-sky-500 mt-1 transition-all duration-300" 
+                            onchange="notifyUpdate('${node.id}', { content: this.value === 'custom' ? 'custom:' : this.value });">
+                            ${aiFunctions.map(f => `<option value="${f.id}" ${selectedFunc === f.id ? 'selected' : ''}>${f.label}</option>`).join('')}
+                        </select>
+                        ${selectedFunc === 'custom' ? `
+                            <textarea id="ai-custom-prompt" placeholder="Enter custom instructions..." class="w-full bg-slate-900 border border-slate-700 text-white p-2 rounded text-xs font-mono focus:border-sky-500 outline-none resize-none shadow-inner mt-2 min-h-[60px] transition-all duration-300" oninput="notifyUpdate('${node.id}', { content: 'custom:' + this.value });">${escapeHTML(customText)}</textarea>
+                        ` : ''}
+                        <button onclick="notifyAction('TRIGGER_AI', '${node.id}')" class="mt-3 w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded shadow transition-colors flex justify-center items-center gap-2">✨ Trigger AI</button>
+                    </div>
+                    `;
+                }
+            } else if (node.type.startsWith('web-') && node.type !== 'web-root') {
+                let pData = {};
+                try { pData = JSON.parse(node.content || '{}'); } catch(e) { pData = { text: node.content || '' }; }
+                const fields = ['text', 'classes', 'src', 'href'];
+                contentAreaHtml = `<div class="flex flex-col gap-3 mt-1">`;
+                fields.forEach(f => {
+                    let pInputClass = "web-input bg-slate-900 border border-slate-700 text-white p-2 rounded text-sm focus:border-sky-500 outline-none shadow-inner transition-all duration-300";
+                    const val = pData[f] || '';
+                    if (isMatch && activeHighlight.query && val.toLowerCase().includes(activeHighlight.query)) {
+                        pInputClass += " ring-2 ring-sky-500 shadow-[0_0_15px_rgba(56,189,248,0.5)] animate-pulse";
+                    }
+                    if (f === 'text') {
+                        contentAreaHtml += `
+                            <div class="flex flex-col gap-1">
+                                <label class="text-[10px] font-bold text-slate-500 tracking-wider">${f.toUpperCase()}</label>
+                                <textarea class="${pInputClass} min-h-[60px]" data-field="${f}" oninput="window.updateWebField('${node.id}', '${f}', this.value)">${escapeHTML(val)}</textarea>
+                            </div>
+                        `;
+                    } else {
+                        contentAreaHtml += `
+                            <div class="flex flex-col gap-1">
+                                <label class="text-[10px] font-bold text-slate-500 tracking-wider">${f.toUpperCase()}</label>
+                                <input type="text" class="${pInputClass}" data-field="${f}" value="${escapeHTML(val)}" oninput="window.updateWebField('${node.id}', '${f}', this.value)">
+                            </div>
+                        `;
+                    }
+                });
+                contentAreaHtml += `</div>`;
+            } else {
+                contentAreaHtml = `<textarea id="raw-content" class="${contentClass}" oninput="notifyUpdate('${node.id}', { content: this.value })">${node.content || ''}</textarea>`;
+            }
+
+            let templateHtml = '';
+            const tpls = state.session.remoteTemplates || [];
+            const applicableTemplates = tpls.filter(t => t.target_type === node.type || t.target_type === 'any');
+            
+            if (applicableTemplates.length > 0) {
+                templateHtml = `
+                    <div class="mt-4 pt-4 border-t border-slate-800 shrink-0">
+                        <label class="text-[10px] font-bold text-slate-500 uppercase block mb-2">Apply Structure</label>
+                        <select class="w-full bg-slate-800 border border-slate-700 text-sky-400 p-2 rounded text-xs focus:border-sky-500 outline-none" onchange="if(this.value) { notifyAction('APPLY_TEMPLATE', '${node.id}', this.value); this.value=''; }">
+                            <option value="">-- Choose Template --</option>
+                            ${applicableTemplates.map(t => `<option value="${t.id}">${t.title}</option>`).join('')}
+                        </select>
+                    </div>
+                `;
+            }
+
+            const isNodeRoot = node.type === 'root' || node.type.endsWith('-root') || (node.data && node.data.isCore);
+            const actionColsClass = isNodeRoot ? "grid grid-cols-3 gap-2" : "grid grid-cols-4 gap-2";
+            const deleteButtonHtml = isNodeRoot ? "" : `<button onclick="notifyAction('DELETE', '${node.id}')" class="p-2 bg-slate-800 hover:bg-red-600 rounded text-slate-300 hover:text-white transition-colors flex justify-center items-center" title="Delete Downstream">🗑️</button>`;
+
+            container.innerHTML = `
+                <div class="p-4 flex flex-col min-h-full gap-4 relative">
+                    <div class="shrink-0">
+                        <label class="text-[10px] font-bold text-slate-500 uppercase block mb-1">Title</label>
+                        <input id="edit-title" value="${escapeHTML(node.title)}" class="${titleClass}" oninput="notifyUpdate('${node.id}', { title: this.value })">
+                    </div>
+                    <div class="shrink-0">
+                        <label class="text-[10px] font-bold text-slate-500 uppercase block mb-1">Type</label>
+                        <select id="edit-type" class="w-full bg-slate-800 border border-slate-700 text-white p-2 rounded text-sm focus:border-sky-500 outline-none transition-all duration-300" onchange="notifyUpdate('${node.id}', { type: this.value })"></select>
+                    </div>
+                    
+                    <div class="flex-1 flex flex-col min-h-0 shrink-0">
+                        <label class="text-[10px] font-bold text-slate-500 uppercase block mb-1">Content / Payload</label>
+                        ${contentAreaHtml}
+                    </div>
+                    
+                    ${templateHtml}
+
+                    <div class="pt-4 border-t border-slate-800 mt-auto shrink-0">
+                        <label class="text-[10px] font-bold text-slate-500 uppercase block mb-2">Node Actions</label>
+                        <div id="node-actions-container" class="${actionColsClass}">
+                            <button onclick="notifyAction('LINK', '${node.id}')" class="${linkBtnClass}" title="${linkTitle}">🔗</button>
+                            <button onclick="notifyAction('ADD_CHILD', '${node.id}')" class="p-2 bg-slate-800 hover:bg-emerald-600 rounded text-slate-300 hover:text-white transition-colors flex justify-center items-center" title="Add Child">➕</button>
+                            <button onclick="notifyAction('SAVE_CONSTELLATION', '${node.id}')" class="p-2 bg-slate-800 hover:bg-purple-600 rounded text-slate-300 hover:text-white transition-colors flex justify-center items-center" title="Save as Submap">🌌</button>
+                            ${deleteButtonHtml}
+                        </div>
+                    </div>
+                    <div class="text-[9px] text-slate-600 font-mono text-center pt-2 shrink-0">ID: ${node.id}</div>
+                </div>
+            `;
+
+            // Populate select box (Requires state.session.schemaData to enforce exactly)
+            const sel = container.querySelector('#edit-type');
+            sel.innerHTML = ''; // Clear existing options
+            const schema = state.session.schemaData || (window.parent && window.parent.MultiMapSchema);
+            if (schema && schema.definitions) {
+                let parentType = null;
+                const parentConn = state.connections.find(c => c.to === node.id && c.type === 'structural');
+                if (parentConn) {
+                    const parent = state.nodes.find(n => n.id === parentConn.from);
+                    if (parent) parentType = parent.type;
+                }
+
+                const isNodeRoot = node.type.endsWith('-root') || node.type === 'root';
+                const mapType = state.meta && state.meta.type ? state.meta.type : 'generic';
+                const mapLabel = mapType.toUpperCase();
+
+                if (isNodeRoot) {
+                    // For root nodes: list all root types
+                    const group = document.createElement('optgroup');
+                    group.label = "MAP ROOT TYPES";
+                    Object.keys(schema.definitions).forEach(t => {
+                        const isTargetRoot = t.endsWith('-root') || t === 'root';
+                        if (!isTargetRoot) return;
+                        
+                        const def = schema.definitions[t];
+                        const opt = document.createElement('option');
+                        opt.value = t; opt.textContent = `${def.icon} ${def.label}`;
+                        if (node.type === t) opt.selected = true;
+                        group.appendChild(opt);
+                    });
+                    sel.appendChild(group);
+                } else {
+                    // For regular nodes: split into type-specific and generic groups
+                    const genericTypes = ['hub', 'portal', 'smart-portal', 'note', 'logic-gate'];
+                    
+                    const specificGroup = document.createElement('optgroup');
+                    specificGroup.label = `${mapLabel} NODES`;
+                    
+                    const genericGroup = document.createElement('optgroup');
+                    genericGroup.label = "GENERIC NODES";
+
+                    Object.keys(schema.definitions).forEach(t => {
+                        const isTargetRoot = t.endsWith('-root') || t === 'root';
+                        if (isTargetRoot) return; // Regular nodes cannot become roots
+
+                        const isGeneric = genericTypes.includes(t);
+
+                        // If not generic, check map allowed types and parent constraints
+                        if (!isGeneric) {
+                            if (schema.mapTypes && schema.mapTypes[mapType]) {
+                                const allowedInMap = schema.mapTypes[mapType].allowedNodes || [];
+                                if (!allowedInMap.includes(t)) return;
+                            }
+                            // If parent exists and parent's rules are strict, filter out types that aren't allowed
+                            if (parentType && node.type !== t) {
+                                const rule = schema.rules[parentType];
+                                if (rule && rule.strict && rule.allowed && !rule.allowed.includes(t)) return;
+                            }
+                        }
+
+                        const def = schema.definitions[t];
+                        const opt = document.createElement('option');
+                        opt.value = t; opt.textContent = `${def.icon} ${def.label}`;
+                        if (node.type === t) opt.selected = true;
+
+                        if (isGeneric) {
+                            genericGroup.appendChild(opt);
+                        } else {
+                            specificGroup.appendChild(opt);
+                        }
+                    });
+
+                    // Add groups if they have children
+                    if (specificGroup.children.length > 0) {
+                        sel.appendChild(specificGroup);
+                    }
+                    if (genericGroup.children.length > 0) {
+                        sel.appendChild(genericGroup);
+                    }
+                }
+            } else {
+                // Fallback basic list
+                const opt = document.createElement('option');
+                opt.value = node.type; opt.textContent = node.type.toUpperCase();
+                opt.selected = true; sel.appendChild(opt);
+            }
+        }
+    </script>
+</body>
+</html>

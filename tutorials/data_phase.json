@@ -1,0 +1,37 @@
+[
+    {
+        "text": "The Data Manager allows you to control raw JSON and templates. Let's switch to the Data Phase.",
+        "target": "#btn-phase-data",
+        "requireClick": false
+    },
+    {
+        "text": "This area handles all your core configuration.",
+        "target": "#view-content",
+        "requireClick": false,
+        "autoClick": false
+    },
+    {
+        "text": "You can view the raw JSON matrix for the entire constellation and export it as a file backup. Let's open the JSON editor.",
+        "conditionText": [
+            {
+                "condition": "!!(SC.registry.get('data') && SC.registry.get('data').ui.json)",
+                "text": "The raw JSON editor is already open! You can view the matrix for the entire constellation here.",
+                "autoClick": false
+            }
+        ],
+        "target": "#data-accordion-json",
+        "requireClick": false
+    },
+    {
+        "onEnter": "if (SC.registry.get('data') && !SC.registry.get('data').ui.json) SC.registry.get('data').toggle('json');",
+        "text": "These buttons let you export the current map to a file or import an existing JSON map.",
+        "target": "#json-io-buttons",
+        "requireClick": false,
+        "autoClick": false
+    },
+    {
+        "text": "Let's switch back to the Map Phase.",
+        "target": "#btn-phase-map",
+        "requireClick": false
+    }
+]

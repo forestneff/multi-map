@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Person Profile Engine</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { margin: 0; padding: 0; background: #0b0f19; color: #e2e8f0; font-family: 'Inter', sans-serif; overflow-y: auto; min-height: 100vh; }
+        .glass { background: rgba(30, 41, 59, 0.45); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.08); }
+        .glass:hover { border-color: rgba(255, 255, 255, 0.15); }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.3); }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.3); border-radius: 9999px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.5); }
+    </style>
+</head>
+<body class="custom-scrollbar p-6 md:p-8 flex flex-col items-center">
+    <div id="container" class="w-full max-w-4xl flex flex-col gap-8 pb-16">
+        <!-- Profile Header/Banner -->
+        <div class="relative w-full h-48 md:h-64 rounded-3xl overflow-hidden shadow-2xl border border-slate-800">
+            <img src="https://images.unsplash.com/photo-1579546929518-9e396f3cc809?q=80&w=1200&auto=format&fit=crop" class="w-full h-full object-cover select-none" alt="Cover" />
+            <div class="absolute inset-0 bg-gradient-to-t from-[#0b0f19] via-transparent to-transparent"></div>
+            
+            <!-- Avatar Overlay -->
+            <div class="absolute -bottom-1 left-8 md:left-12 flex items-end gap-5">
+                <div class="w-24 h-24 md:w-32 md:h-32 rounded-3xl bg-slate-800 border-4 border-[#0b0f19] shadow-xl flex items-center justify-center text-4xl md:text-5xl select-none select-none">
+                    👤
+                </div>
+                <div class="mb-2 md:mb-4">
+                    <h1 id="person-display-name" class="text-2xl md:text-4xl font-black tracking-tight text-white mb-1">Loading...</h1>
+                    <p class="text-xs md:text-sm text-sky-400 font-bold uppercase tracking-wider">Identity Constellation</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-4">
+            <!-- Left Side: Profile Details Form -->
+            <div class="md:col-span-2 glass rounded-2xl p-6 md:p-8 flex flex-col gap-6 shadow-xl relative overflow-hidden">
+                <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-sky-500 to-indigo-500"></div>
+                <h2 class="text-xl font-bold text-white tracking-wide border-b border-slate-800 pb-3 flex items-center gap-2">
+                    📝 <span>Core Details</span>
+                </h2>
+                
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-5" id="profile-fields-container">
+                    <!-- Fields injected dynamically -->
+                </div>
+            </div>
+
+            <!-- Right Side: Linked Notes / Sub-nodes -->
+            <div class="glass rounded-2xl p-6 flex flex-col gap-6 shadow-xl relative overflow-hidden">
+                <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 to-purple-500"></div>
+                <h2 class="text-xl font-bold text-white tracking-wide border-b border-slate-800 pb-3 flex items-center gap-2">
+                    🔗 <span>Linked Notes</span>
+                </h2>
+                
+                <div id="linked-notes-container" class="flex flex-col gap-4 max-h-[400px] overflow-y-auto custom-scrollbar pr-1">
+                    <!-- Notes injected dynamically -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentState = null;
+        let activeNodeId = null;
+
+        window.addEventListener('message', (event) => {
+            if (event.data && event.data.type === 'STATE_UPDATE') {
+                currentState = event.data.state;
+                render();
+            }
+        });
+
+        function escapeHTML(str) {
+            if (str === null || str === undefined) return '';
+            const d = document.createElement('div');
+            d.textContent = String(str);
+            return d.innerHTML;
+        }
+
+        function updateField(field, val) {
+            if (!currentState || !activeNodeId) return;
+            const node = currentState.nodes.find(n => n.id === activeNodeId);
+            if (!node) return;
+
+            let pData = {};
+            try { pData = JSON.parse(node.content || '{}'); } catch(e) {}
+            pData[field] = val;
+
+            // Notify parent to update the node content JSON
+            window.parent.postMessage({
+                type: 'UPDATE_NODE',
+                id: activeNodeId,
+                data: { content: JSON.stringify(pData) }
+            }, '*');
+        }
+
+        function selectNode(id) {
+            window.parent.postMessage({ type: 'SELECT_NODE', id: id }, '*');
+        }
+
+        function render() {
+            if (!currentState) return;
+
+            const state = currentState;
+            let rootNode = null;
+
+            // Find selected or default person-root node
+            const selNode = state.nodes.find(n => n.id === state.session.selectedId);
+            if (selNode && selNode.type === 'person-root') rootNode = selNode;
+            if (!rootNode) rootNode = state.nodes.find(n => n.type === 'person-root') || state.nodes[0];
+
+            if (!rootNode || rootNode.type !== 'person-root') {
+                document.body.innerHTML = `
+                    <div class="flex flex-col items-center justify-center min-h-screen text-slate-500 gap-4">
+                        <span class="text-6xl">👤</span>
+                        <div class="text-lg font-bold">No Person Profile Root Found</div>
+                        <p class="text-xs text-slate-600 max-w-sm text-center">To use this engine, make sure your map constellation has a root node of type 'Person'.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            activeNodeId = rootNode.id;
+
+            // Extract content properties
+            let pData = {};
+            try { pData = JSON.parse(rootNode.content || '{}'); } catch(e) {}
+
+            // Update Name display
+            const nameVal = pData.Name || rootNode.title || 'Anonymous Person';
+            document.getElementById('person-display-name').innerText = nameVal;
+
+            // Render Core Input Fields
+            const fields = ['Name', 'Email', 'Phone', 'Address'];
+            const fieldsContainer = document.getElementById('profile-fields-container');
+            fieldsContainer.innerHTML = '';
+            
+            fields.forEach(f => {
+                const val = pData[f] || '';
+                const fieldDiv = document.createElement('div');
+                fieldDiv.className = 'flex flex-col gap-1.5';
+                fieldDiv.innerHTML = `
+                    <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">${f}</label>
+                    <input type="text" 
+                        class="bg-slate-900 border border-slate-700 text-white px-3 py-2.5 rounded-xl text-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-950 outline-none transition-all duration-300 w-full"
+                        value="${escapeHTML(val)}" 
+                        oninput="updateField('${f}', this.value)" 
+                    />
+                `;
+                fieldsContainer.appendChild(fieldDiv);
+            });
+
+            // Find all structurally connected child notes
+            const getKids = (id) => state.connections.filter(c => c.from === id).map(c => state.nodes.find(n => n.id === c.to)).filter(n => n);
+            const childNotes = getKids(rootNode.id).filter(n => n.type === 'note' && !fields.includes(n.title));
+
+            const notesContainer = document.getElementById('linked-notes-container');
+            notesContainer.innerHTML = '';
+
+            if (childNotes.length === 0) {
+                notesContainer.innerHTML = `
+                    <div class="text-center py-8 text-xs text-slate-500 italic border border-dashed border-slate-800 rounded-xl">
+                        No additional linked notes. Add nodes to the Person map to see them here!
+                    </div>
+                `;
+            } else {
+                childNotes.forEach(note => {
+                    const card = document.createElement('div');
+                    card.className = 'bg-slate-900/60 hover:bg-slate-900 border border-slate-800 hover:border-slate-700 p-4 rounded-xl flex flex-col gap-2 transition-all cursor-pointer group relative';
+                    card.onclick = () => selectNode(note.id);
+                    card.innerHTML = `
+                        <div class="flex justify-between items-center">
+                            <span class="font-bold text-xs text-slate-200 truncate pr-4">${escapeHTML(note.title)}</span>
+                            <span class="text-[9px] uppercase font-bold text-slate-500 group-hover:text-indigo-400 transition-colors">Select 🎯</span>
+                        </div>
+                        <p class="text-slate-400 text-xs leading-relaxed line-clamp-3">${escapeHTML(note.content || '(empty note)')}</p>
+                    `;
+                    notesContainer.appendChild(card);
+                });
+            }
+        }
+    </script>
+</body>
+</html>

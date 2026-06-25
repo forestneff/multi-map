@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Web Architect Phase Engine</title>
+    <style>
+        body { margin: 0; padding: 0; overflow: hidden; background: #f8fafc; }
+        #canvas { width: 100vw; height: 100vh; border: none; }
+    </style>
+</head>
+<body>
+    <iframe id="canvas"></iframe>
+    <script>
+        let currentState = null;
+
+        window.addEventListener('message', (event) => {
+            if (event.data && event.data.type === 'STATE_UPDATE') {
+                currentState = event.data.state;
+                render();
+            } else if (event.data && event.data.type === 'WEB_EDIT_MODE') {
+                // Not strictly necessary since we get state updates, but good for future toggles
+                render();
+            }
+        });
+
+        function render() {
+            if (!currentState) return;
+            const state = currentState;
+            
+            let root = null;
+            const selNode = state.nodes.find(n => n.id === state.session.selectedId);
+            if (selNode && selNode.type === 'web-root') root = selNode;
+            if (!root) root = state.nodes.find(n => n.type === 'web-root') || state.nodes[0];
+            
+            if (!root) {
+                document.getElementById('canvas').srcdoc = `<div style="display:flex;align-items:center;justify-content:center;height:100vh;color:#94a3b8;font-family:sans-serif;">No Web Root Found</div>`;
+                return;
+            }
+
+            const htmlContent = generateHTML(root, state).replace(/`/g, '\\`').replace(/\$/g, '\\$');
+            const fullHtml = `<!DOCTYPE html><html><head>
+                <script src="https://cdn.tailwindcss.com"><\/script>
+                <style> 
+                    [data-id] { cursor: pointer; transition: all 0.2s; } 
+                    [data-id]:hover { box-shadow: inset 0 0 0 2px rgba(56,189,248,0.5); } 
+                </style>
+                </head><body style="margin:0; min-height:100vh;">
+                ${htmlContent}
+                <script>
+                    document.body.addEventListener('click', e => {
+                        e.stopPropagation();
+                        const target = e.target.closest('[data-id]');
+                        if(target) {
+                            window.parent.postMessage({ type: 'SELECT_NODE', id: target.getAttribute('data-id') }, '*');
+                        }
+                    });
+                <\/script>
+                </body></html>`;
+            
+            document.getElementById('canvas').srcdoc = fullHtml;
+        }
+
+        function escapeHTML(str) {
+            if (str === null || str === undefined) return '';
+            const d = document.createElement('div');
+            d.textContent = String(str);
+            return d.innerHTML;
+        }
+
+        function generateHTML(root, state) {
+            const getKids = (id) => state.connections.filter(c => c.from === id).map(c => state.nodes.find(n => n.id === c.to)).filter(n => n);
+            
+            const renderNode = (node) => {
+                const kids = getKids(node.id).map(n => {
+                    let childHtml = renderNode(n);
+                    if (node.type === 'web-carousel') return `<div class="snap-center shrink-0">${childHtml}</div>`;
+                    return childHtml;
+                }).join('');
+                
+                const title = escapeHTML(node.title || '');
+                let contentRaw = node.content ? node.content.trim() : '';
+                
+                let data = { text: contentRaw, classes: '', src: '', href: '' };
+                if (node.type.startsWith('web-') && node.type !== 'web-root') {
+                    try {
+                        const pData = JSON.parse(contentRaw);
+                        if (typeof pData === 'object' && pData !== null) {
+                            data = { ...data, ...pData };
+                        }
+                    } catch(e) {}
+                }
+                let content = data.text;
+                let classes = data.classes;
+                let src = data.src;
+                let href = data.href;
+                
+                const isSel = state.session.selectedId === node.id;
+                
+                // Helper to construct attributes including classes and selection styling
+                const getAttrs = (defaultClasses) => {
+                    const finalClasses = `${classes || defaultClasses} ${isSel ? 'ring-4 ring-sky-500 shadow-[0_0_25px_rgba(56,189,248,0.7)]' : ''}`.trim();
+                    return `data-id="${node.id}" class="${escapeHTML(finalClasses)}" style="${isSel ? 'position:relative; z-index:50;' : ''}"`;
+                };
+
+                switch(node.type) {
+                    case 'web-root':
+                        let iframeHtml = '';
+                        let isUrl = false;
+                        let url = contentRaw;
+
+                        if (contentRaw && !/\n/.test(contentRaw)) { 
+                            const hasSpaces = /\s/.test(contentRaw);
+                            const hasProtocol = /^(https?:\/\/|file:\/\/)/i.test(contentRaw);
+                            const startsWithWww = /^www\./i.test(contentRaw);
+                            const isLocalPath = /^(\.\/|\.\.\/|\/)/.test(contentRaw) || /\.html?$/i.test(contentRaw);
+                            const looksLikeDomain = /^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?:\/?.*)?$/.test(contentRaw) && !hasSpaces;
+                            const isLocalHost = /^localhost(:\d+)?/i.test(contentRaw) || /^\d{1,3}(\.\d{1,3}){3}(:\d+)?/.test(contentRaw);
+
+                            if (hasProtocol || isLocalPath) {
+                                isUrl = true;
+                            } else if (startsWithWww || looksLikeDomain) {
+                                isUrl = true;
+                                url = 'https://' + contentRaw;
+                            } else if (isLocalHost && !hasSpaces) {
+                                isUrl = true;
+                                url = 'http://' + contentRaw;
+                            }
+                        }
+
+                        if (isUrl) {
+                            const iframeClass = kids ? 'w-full h-[85vh] border-none block' : 'w-full h-screen border-none block';
+                            
+                            const externalLinkBtn = `
+                                <div id="preview-overlay" class="absolute inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm pointer-events-auto transition-opacity duration-300">
+                                    <div class="bg-slate-900 border border-slate-700 p-8 rounded-2xl shadow-2xl max-w-md w-full flex flex-col items-center text-center relative overflow-hidden">
+                                        <button onclick="const el = document.getElementById('preview-overlay'); if(el) { el.style.opacity='0'; setTimeout(()=>el.style.display='none', 300); }" class="absolute top-3 right-3 text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-full p-1.5 transition-colors" title="Hide Preview to view iframe">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                                        </button>
+                                        <div id="meta-img" class="hidden w-full h-32 bg-cover bg-center rounded-lg mb-4 border border-slate-800 shadow-inner"></div>
+                                        <h2 id="meta-title" class="text-xl font-black text-white mb-2 line-clamp-2 w-full">Loading Link...</h2>
+                                        <p id="meta-desc" class="text-xs text-slate-400 mb-6 line-clamp-3 w-full">Attempting to fetch metadata...</p>
+                                        <div class="flex gap-3 w-full">
+                                            <a href="${url}" target="_blank" rel="noopener noreferrer" class="flex-1 px-4 py-3 bg-sky-600 hover:bg-sky-500 text-white text-sm font-bold rounded-xl shadow-lg transition-colors flex items-center justify-center gap-2">
+                                                <span>Open in New Tab</span>
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                                <script>
+                                    fetch('https://api.allorigins.win/get?url=${encodeURIComponent(url)}')
+                                    .then(r => r.json())
+                                    .then(data => {
+                                        const parser = new DOMParser();
+                                        const doc = parser.parseFromString(data.contents, 'text/html');
+                                        const title = doc.querySelector('title')?.innerText || '${url}';
+                                        let desc = doc.querySelector('meta[name="description"]')?.content || doc.querySelector('meta[property="og:description"]')?.content || doc.querySelector('meta[name="twitter:description"]')?.content || '';
+                                        let img = doc.querySelector('meta[property="og:image"]')?.content || doc.querySelector('meta[name="twitter:image"]')?.content;
+                                        
+                                        if(img && !img.startsWith('http')) {
+                                            try {
+                                                const urlObj = new URL('${url}');
+                                                img = urlObj.origin + (img.startsWith('/') ? '' : '/') + img;
+                                            } catch(e){}
+                                        }
+                                        
+                                        document.getElementById('meta-title').innerText = title;
+                                        if(desc) {
+                                            document.getElementById('meta-desc').innerText = desc;
+                                        } else {
+                                            document.getElementById('meta-desc').innerText = '${url}';
+                                        }
+                                        
+                                        if(img) {
+                                            const imgEl = document.getElementById('meta-img');
+                                            imgEl.style.backgroundImage = 'url(' + img + ')';
+                                            imgEl.classList.remove('hidden');
+                                        }
+                                    })
+                                    .catch(e => {
+                                        document.getElementById('meta-title').innerText = 'External Link';
+                                        document.getElementById('meta-desc').innerText = '${url}';
+                                    });
+                                <\/script>
+                            `;
+                            
+                            iframeHtml = `
+                                <div class="relative w-full h-full">
+                                    ${externalLinkBtn}
+                                    <iframe src="${url}" class="${iframeClass}" title="Embedded Webpage" onload="const el = document.getElementById('preview-overlay'); if(el) { el.style.opacity = '0'; setTimeout(() => el.style.display = 'none', 300); }"></iframe>
+                                </div>
+                            `;
+                        }
+
+                        let textContent = (!isUrl && contentRaw) ? `<div class="py-12 px-8 max-w-5xl mx-auto prose text-slate-700">${contentRaw.replace(/\n/g, '<br>')}</div>` : '';
+                        const kidsContainer = kids ? `<div class="${isUrl ? 'relative z-10 bg-slate-50 shadow-[0_-20px_50px_rgba(0,0,0,0.15)] pt-10' : ''}">${kids}</div>` : '';
+                        
+                        return `<main ${getAttrs('')}>${iframeHtml}${textContent}${kidsContainer}</main>`;
+
+                    case 'web-nav':
+                        return `<nav ${getAttrs('flex flex-wrap items-center justify-between gap-4 md:gap-6 p-4 md:p-6 bg-white shadow-sm sticky top-0 z-50 border-b border-slate-100 w-full')}><div class="font-black text-xl tracking-tighter">MyBrand</div><div class="flex flex-wrap items-center gap-4 md:gap-6">${kids}</div></nav>`;
+
+                    case 'web-hero':
+                        let bgStyle = src ? `style="background-image: url('${escapeHTML(src)}'); background-size: cover; background-position: center;"` : '';
+                        return `<header ${getAttrs('bg-gradient-to-br from-slate-900 to-indigo-950 text-white py-24 md:py-32 px-4 md:px-8 text-center w-full relative')} ${bgStyle}>
+                            ${src ? '<div class="absolute inset-0 bg-slate-900/70 z-0"></div>' : ''}
+                            <div class="relative z-10"><h1 class="text-5xl md:text-7xl font-black mb-6 tracking-tight">${title}</h1><div class="text-lg md:text-xl text-indigo-200 max-w-3xl mx-auto mb-10">${escapeHTML(content || '')}</div><div class="flex flex-wrap justify-center gap-4">${kids}</div></div>
+                        </header>`;
+
+                    case 'web-section':
+                        return `<section ${getAttrs('py-16 md:py-20 px-4 md:px-8 max-w-6xl mx-auto w-full')}><h2 class="text-3xl md:text-4xl font-black mb-10 text-center">${title}</h2><div class="flex flex-col gap-8 w-full">${kids}</div></section>`;
+
+                    case 'web-card':
+                        return `<div ${getAttrs('bg-white border border-slate-100 rounded-2xl p-6 shadow-sm hover:shadow-md hover:border-indigo-100 transition-all flex flex-col gap-3 h-full')}>${title ? `<h3 class="font-bold text-lg text-slate-900 mb-1 leading-snug">${title}</h3>` : ''}${content ? `<p class="text-slate-600 text-sm leading-relaxed">${escapeHTML(content).replace(/\n/g, '<br>')}</p>` : ''}${kids ? `<div class="mt-2 flex flex-col gap-2">${kids}</div>` : ''}</div>`;
+
+                    case 'web-button':
+                        return `<button ${getAttrs('px-6 md:px-8 py-3 bg-indigo-600 text-white font-bold rounded-full shadow-lg shadow-indigo-500/30 hover:bg-indigo-500 hover:-translate-y-0.5 transition-all inline-block')}>${title || content}</button>`;
+
+                    case 'web-link':
+                        let linkHref = href;
+                        if (!linkHref) {
+                            if (state.nodes.find(n => n.id === content)) linkHref = `#${content}`; 
+                            else if (content && !content.match(/^(https?:\/\/|file:\/\/|\/|\.\/|\.\.\/|#)/i)) linkHref = `https://${content}`; 
+                            else linkHref = content;
+                        }
+                        return `<a href="${escapeHTML(linkHref || '#')}" ${getAttrs('text-blue-600 hover:underline block py-1 font-semibold')}>${title}</a>`;
+
+                    case 'web-image':
+                        return `<img src="${escapeHTML(src || content || '')}" alt="${title}" ${getAttrs('max-w-full h-auto rounded-lg shadow-sm mx-auto')} />`;
+
+                    case 'web-video':
+                        return `<video src="${escapeHTML(src || content || '')}" controls ${getAttrs('w-full rounded-lg shadow-sm')}></video>`;
+
+                    case 'web-form':
+                        return `<form ${getAttrs('flex flex-col gap-4 w-full max-w-md mx-auto')}><h3 class="font-bold text-lg mb-2 text-center">${title}</h3>${kids}</form>`;
+
+                    case 'web-input':
+                        return `<input type="text" placeholder="${title || content}" ${getAttrs('border border-slate-300 rounded px-4 py-2 w-full focus:outline-none focus:border-indigo-500')} />`;
+
+                    case 'web-grid':
+                        return `<div ${getAttrs('grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full')}>${kids}</div>`;
+
+                    case 'web-list':
+                        return `<ul ${getAttrs('list-disc pl-5 space-y-2 text-slate-700 w-full')}>${kids}</ul>`;
+
+                    case 'web-modal':
+                        return `<div data-id="${node.id}"><dialog id="${node.id}" class="escape-class-target ${escapeHTML((classes || 'p-6 md:p-8 rounded-2xl shadow-2xl backdrop:bg-slate-900/50 backdrop:backdrop-blur-sm w-[90%] max-w-lg') + (isSel ? ' ring-4 ring-sky-500 shadow-[0_0_25px_rgba(56,189,248,0.7)]' : ''))}" style="${isSel ? 'position:relative; z-index:50;' : ''}"><h3 class="font-bold text-2xl mb-4">${title}</h3>${kids}<form method="dialog" class="mt-6 flex justify-end"><button class="px-4 py-2 bg-slate-200 hover:bg-slate-300 rounded text-slate-800 font-bold transition-colors">Close</button></form></dialog><div class="w-full flex justify-center mt-4"><button onclick="document.getElementById('${node.id}').showModal()" class="px-6 py-3 bg-white border border-slate-200 shadow-sm rounded-lg text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors">Open ${title}</button></div></div>`;
+
+                    case 'web-carousel':
+                        return `<div ${getAttrs('flex overflow-x-auto snap-x snap-mandatory gap-4 pb-4 w-full custom-scrollbar')}>${kids}</div>`;
+
+                    case 'web-footer':
+                        return `<footer ${getAttrs('py-12 px-4 md:px-8 mt-12 border-t border-slate-200 text-center bg-slate-100 w-full')}>${kids || `<p class="text-slate-500 text-sm font-semibold">${escapeHTML(content || title)}</p>`}</footer>`;
+
+                    case 'web-text':
+                        return `<div ${getAttrs('mb-4 w-full')}><h3 class="font-bold text-xl text-slate-800 mb-3">${title}</h3><p class="text-slate-600 leading-relaxed">${escapeHTML(content || '').replace(/\n/g, '<br>')}</p>${kids}</div>`;
+
+                    default:
+                        return `<div ${getAttrs('mb-6')}><h3 class="font-bold text-lg text-slate-800 mb-2">${title}</h3><div class="prose text-slate-600 leading-relaxed">${content ? escapeHTML(content).replace(/\n/g, '<br>') : ''}</div>${kids}</div>`;
+                }
+            };
+            return renderNode(root);
+        }
+    </script>
+</body>
+</html>

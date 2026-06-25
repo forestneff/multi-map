@@ -1,0 +1,23 @@
+[
+    {
+        "text": "Person Profiles have dedicated data mappings. First, ensure you are on the Map Phase.",
+        "target": "#btn-phase-map",
+        "requireClick": false
+    },
+    {
+        "onEnter": "const hasPerson = SC.kernel.state.nodes.some(n => n.type === 'person-root'); if(!hasPerson) { const n = SC.kernel.addNode({ title: 'New Person', type: 'person-root' }); SC.kernel.selectNode(n.id); SC.kernel.bridge.fetchTemplateData('tpl_person_profile').then(data => { SC.kernel.applyTemplateToNode(n.id, data); SC.render(); }); } else { const p = SC.kernel.state.nodes.find(n => n.type === 'person-root'); SC.kernel.selectNode(p.id); SC.render(); }",
+        "text": "Person Profiles are a specialized node type. I've imported a template and selected it for us. Let's inspect it.",
+        "target": "#btn-sidebar-toggle",
+        "requireClick": false
+    },
+    {
+        "text": "The inspector panel dynamically adapts its layout depending on the node type. Person nodes display structured contact details.",
+        "target": "#sidebar-content",
+        "requireClick": false
+    },
+    {
+        "text": "Let's close the inspector to finish up.",
+        "target": "#btn-sidebar-toggle",
+        "requireClick": false
+    }
+]

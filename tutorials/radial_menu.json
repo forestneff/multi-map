@@ -1,0 +1,36 @@
+[
+    {
+        "text": "The Action Bar at the top of the Inspector provides quick access to core tools. Hover over them to see what they do! The plus adds a node, the sparkles run auto-arrange.",
+        "target": "#main-action-bar",
+        "requireClick": false
+    },
+    {
+        "text": "Now let us select a node to inspect it. Click the root node in the center of your screen.",
+        "onEnter": "SC.hideRadialMenu(true); if(SC.kernel.state.nodes.length === 0) { SC.kernel.addNode({title: 'Tutorial Node'}); } const node = SC.kernel.state.nodes[0]; SC.kernel.state.session.viewport.x = window.innerWidth/2; SC.kernel.state.session.viewport.y = window.innerHeight/2; SC.render(); if(window._tutInt) clearInterval(window._tutInt); window._tutInt = setInterval(() => { if(SC.dom && SC.dom.radialMenu && SC.dom.radialMenu.classList.contains('active')) { clearInterval(window._tutInt); window.Tutorials.nextStep(false); } }, 200);",
+        "target": "#viewport",
+        "requireClick": false,
+        "autoClick": false
+    },
+    {
+        "onEnter": "if(window._tutInt) clearInterval(window._tutInt); if(SC.dom && SC.dom.radialMenu && !SC.dom.radialMenu.classList.contains('active') && SC.kernel.state.nodes.length > 0) { SC.showRadialMenu(SC.kernel.state.nodes[0]); }",
+        "text": "Clicking a node brings up the Radial Menu. The buttons around the node let you Trigger special actions, Create Children, Link to other nodes, or Delete them.",
+        "target": "#radial-menu",
+        "shape": "circle",
+        "requireClick": false,
+        "autoClick": false,
+        "expandHalo": 120
+    },
+    {
+        "text": "When a node is selected, its details appear in the Inspector. Here you can edit its Name, Content, and Type.",
+        "target": "#sidebar-content",
+        "requireClick": false,
+        "autoClick": false
+    },
+    {
+        "onEnter": "SC.hideRadialMenu(true);",
+        "text": "Clicking anywhere on the background will close the radial menu and deselect the node.",
+        "target": "#viewport",
+        "requireClick": false,
+        "autoClick": false
+    }
+]

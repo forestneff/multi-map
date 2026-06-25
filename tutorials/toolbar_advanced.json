@@ -1,0 +1,36 @@
+[
+    {
+        "text": "Welcome to the advanced toolbar tutorial! Let's explore each tool.",
+        "target": null
+    },
+    {
+        "text": "First, let's open the toolbar.",
+        "target": "#btn-mobile-tools"
+    },
+    {
+        "onEnter": "const tb = document.getElementById('top-toolbar'); if(tb && tb.classList.contains('hidden')) { tb.classList.remove('hidden'); tb.classList.add('flex'); }",
+        "text": "This is the Add Root Node button. It drops a brand new core concept right into the center of your view.",
+        "target": "#btn-add",
+        "autoClick": false
+    },
+    {
+        "text": "The Arrange button runs a force-directed organic layout algorithm. It untangles messy webs by pushing unrelated nodes apart and pulling linked ones together.",
+        "target": "#btn-arrange",
+        "autoClick": false
+    },
+    {
+        "text": "Made a mistake with Arrange or manual dragging? The Undo button instantly snaps your entire constellation back to its previous layout state.",
+        "target": "#btn-undo",
+        "autoClick": false
+    },
+    {
+        "text": "The Focal toggle controls auto-panning. When active, clicking any node will automatically drift the camera to center on it.",
+        "target": "#btn-focal",
+        "autoClick": false
+    },
+    {
+        "onEnter": "const tb = document.getElementById('top-toolbar'); if(tb && !tb.classList.contains('hidden')) { tb.classList.add('hidden'); tb.classList.remove('flex'); }",
+        "text": "That's all the main tools! You're ready to start building complex knowledge graphs.",
+        "target": null
+    }
+]

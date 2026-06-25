@@ -1,0 +1,74 @@
+{
+    "map_id": "",
+    "meta": {
+        "title": "",
+        "description": "",
+        "created": "",
+        "last_modified": "",
+        "phase_engines": [
+            "web",
+            "tree",
+            "custom"
+        ],
+        "tags": [
+            "all",
+            ""
+        ],
+        "settings": {}
+    },
+    "source": {
+        "server": "",
+        "origin": "",
+        "contributors": [
+            {
+                "user_id": "",
+                "role": "",
+                "joined": ""
+            }
+        ],
+        "policy": {
+            "access": "",
+            "edit": [
+                ""
+            ],
+            "view": [
+                ""
+            ],
+            "federated_origins": [
+                ""
+            ]
+        }
+    },
+    "nodes": [
+        {
+            "id": "",
+            "type": "",
+            "title": "",
+            "content": "",
+            "data": {},
+            "submap": {
+                "map_id": "",
+                "meta": {},
+                "source": {},
+                "nodes": [],
+                "connections": []
+            },
+            "origin": {},
+            "history": [],
+            "tags": []
+        }
+    ],
+    "connections": [
+        {
+            "id": "",
+            "from": "",
+            "to": "",
+            "type": "",
+            "meta": {},
+            "origin": {
+                "created": "",
+                "creator": ""
+            }
+        }
+    ]
+}

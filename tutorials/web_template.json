@@ -1,0 +1,33 @@
+[
+    {
+        "onEnter": "const hasWebRoot = SC.kernel.state.nodes.some(n => n.type === 'web-root'); if(!hasWebRoot) { const n = SC.kernel.addNode({ title: 'New Web App', type: 'web-root' }); SC.kernel.selectNode(n.id); SC.kernel.bridge.fetchTemplateData('tpl_web_standard').then(data => { SC.kernel.applyTemplateToNode(n.id, data); SC.render(); }); } else { const p = SC.kernel.state.nodes.find(n => n.type === 'web-root'); SC.kernel.selectNode(p.id); SC.render(); }",
+        "text": "The Web Phase allows you to construct User Interfaces natively. I've imported a web template for us. Let's switch to the Web Phase to view it.",
+        "target": "#btn-phase-web",
+        "requireClick": false
+    },
+    {
+        "text": "The central viewport transforms into a visual HTML renderer and drag-and-drop workspace.",
+        "target": "#view-content",
+        "requireClick": false
+    },
+    {
+        "text": "To edit the raw HTML, open the Inspector.",
+        "target": "#btn-sidebar-toggle",
+        "requireClick": false
+    },
+    {
+        "text": "You can add raw CSS directly to nodes, and it will be rendered live in the view.",
+        "target": "#sidebar-content",
+        "requireClick": false
+    },
+    {
+        "text": "Let's close the inspector.",
+        "target": "#btn-sidebar-toggle",
+        "requireClick": false
+    },
+    {
+        "text": "Finally, let's return to the Map Phase.",
+        "target": "#btn-phase-map",
+        "requireClick": false
+    }
+]
