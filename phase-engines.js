@@ -119,7 +119,7 @@ class DataPhaseEngine extends PhaseEngineBase {
     constructor(kernel) { 
         super(kernel); 
         this.id = 'data'; 
-        this.ui = { templates: true, api: false, json: false, library: true, openItems: {} };
+        this.ui = { templates: true, api: false, json: false, library: true, projectsSub: true, pagesSub: true, openItems: {} };
     }
     
     toggle(section) {
@@ -189,10 +189,13 @@ class DataPhaseEngine extends PhaseEngineBase {
                                 
                                 <!-- Top Section: Projects Panel -->
                                 <div class="flex flex-col gap-2 min-h-0 bg-slate-950/20 p-3 rounded-xl border border-slate-800/40 shrink-0">
-                                    <div class="flex justify-between items-center shrink-0">
-                                        <h3 class="text-purple-400 font-bold uppercase text-[10px] tracking-widest flex items-center gap-1">📁 Projects</h3>
-                                        <button onclick="SC.actionCreateProject()" class="text-[9px] bg-purple-600 hover:bg-purple-500 text-white px-2 py-0.5 rounded transition-all font-bold uppercase tracking-wider">+ New Project</button>
+                                    <div class="flex justify-between items-center shrink-0 cursor-pointer select-none hover:opacity-85 transition-opacity" onclick="SC.registry.get('data').toggle('projectsSub')">
+                                        <h3 class="text-purple-400 font-bold uppercase text-[10px] tracking-widest flex items-center gap-1.5">
+                                            📁 Projects <span class="text-slate-500 text-[8px]">${this.ui.projectsSub ? '▼' : '▶'}</span>
+                                        </h3>
+                                        <button onclick="event.stopPropagation(); SC.actionCreateProject()" class="text-[9px] bg-purple-600 hover:bg-purple-500 text-white px-2 py-0.5 rounded transition-all font-bold uppercase tracking-wider">+ New Project</button>
                                     </div>
+                                    ${this.ui.projectsSub ? `
                                     <div class="flex flex-col gap-1.5 overflow-y-auto max-h-[150px] custom-scrollbar pr-1" id="projects-list-container">
                                         ${projects.map(proj => {
                                             const isActive = proj.project_id === activeProjId;
@@ -225,17 +228,21 @@ class DataPhaseEngine extends PhaseEngineBase {
                                             `;
                                         }).join('')}
                                     </div>
+                                    ` : ''}
                                 </div>
                                 
                                 <!-- Bottom Section: Pages Panel -->
                                 <div class="flex flex-col gap-2 min-h-0 bg-slate-950/20 p-3 rounded-xl border border-slate-800/40 shrink-0">
-                                    <div class="flex justify-between items-center shrink-0 gap-2">
+                                    <div class="flex justify-between items-center shrink-0 gap-2 cursor-pointer select-none hover:opacity-85 transition-opacity" onclick="SC.registry.get('data').toggle('pagesSub')">
                                         <div class="flex flex-col min-w-0">
-                                            <h3 class="text-sky-400 font-bold uppercase text-[10px] tracking-widest flex items-center gap-1">📄 Pages</h3>
+                                            <h3 class="text-sky-400 font-bold uppercase text-[10px] tracking-widest flex items-center gap-1.5">
+                                                📄 Pages <span class="text-slate-500 text-[8px]">${this.ui.pagesSub ? '▼' : '▶'}</span>
+                                            </h3>
                                             <span class="text-[8px] text-slate-400 truncate font-semibold">Active Project: ${activeProjTitle}</span>
                                         </div>
-                                        <button onclick="SC.actionCreatePage()" class="text-[9px] bg-sky-600 hover:bg-sky-500 text-white px-2 py-0.5 rounded transition-all font-bold uppercase tracking-wider shrink-0">+ New Page</button>
+                                        <button onclick="event.stopPropagation(); SC.actionCreatePage()" class="text-[9px] bg-sky-600 hover:bg-sky-500 text-white px-2 py-0.5 rounded transition-all font-bold uppercase tracking-wider shrink-0">+ New Page</button>
                                     </div>
+                                    ${this.ui.pagesSub ? `
                                     <div class="flex flex-col gap-2 overflow-y-auto max-h-[250px] custom-scrollbar pr-1" id="pages-list-container">
                                         ${(!pages || pages.length === 0) ? '<div class="text-center text-slate-600 text-xs py-10 italic border border-dashed border-slate-800 rounded-lg">No pages found in this project.</div>' : ''}
                                         ${pages.map(page => {
@@ -271,6 +278,7 @@ class DataPhaseEngine extends PhaseEngineBase {
                                             `;
                                         }).join('')}
                                     </div>
+                                    ` : ''}
                                 </div>
 
                                 <!-- Project Export/Import Panel -->
