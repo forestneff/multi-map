@@ -376,13 +376,9 @@ class MultiMapAI {
         msgs.scrollTop = msgs.scrollHeight;
 
         try {
-
-
             let jsonString = '';
-
             const contextStr = this.buildContextString();
             const contextualPrompt = text + (contextStr ? "\n\n" + contextStr : "");
-
             let mode = 'generate';
 
             if (this.selectedModel === 'native-mock') {
@@ -440,11 +436,15 @@ class MultiMapAI {
                     </div>
                 `;
 
-                document.getElementById('ai-loading').remove();
+                if (document.getElementById('ai-loading')) {
+                    document.getElementById('ai-loading').remove();
+                }
                 this.addMessage('system', `Map generated: **${aiData.meta?.title || 'Map'}** (${aiData.nodes.length} nodes). How would you like to deploy it?`, actionHtml);
             } else if (aiData.message) {
                 // New Analyze or Edit Mode
-                document.getElementById('ai-loading').remove();
+                if (document.getElementById('ai-loading')) {
+                    document.getElementById('ai-loading').remove();
+                }
 
                 // Print Message
                 this.addMessage('system', aiData.message);
@@ -472,8 +472,36 @@ class MultiMapAI {
             }
 
         } catch (e) {
-            document.getElementById('ai-loading').remove();
-            this.addMessage('system', `Error: Failed to generate valid MapState. ${e.message}`);
+            if (document.getElementById('ai-loading')) {
+                document.getElementById('ai-loading').remove();
+            }
+            
+            if (e.message === "RATE_LIMIT_EXCEEDED" && e.quota) {
+                const isUserAnon = window.FirebaseAuth && window.FirebaseAuth.currentUser && window.FirebaseAuth.currentUser.isAnonymous;
+                const isGuest = !window.FirebaseAuth || !window.FirebaseAuth.currentUser;
+                
+                let limitMsg = '';
+                let actionHtml = '';
+                
+                if (isUserAnon || isGuest) {
+                    limitMsg = `**Quota reached (5/5 requests).** You've used your free AI credits for today. Create a free account to get 25/day!`;
+                    actionHtml = `
+                        <div class="mt-3 border-t border-indigo-500/30 pt-3 flex justify-center">
+                            <button onclick="toggleDrawer('profile-drawer'); window.AI.toggleChat();" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-bold shadow transition-colors text-[11px] uppercase tracking-wider">
+                                🔑 Create Free Account
+                            </button>
+                        </div>
+                    `;
+                } else {
+                    const resetDate = new Date(e.quota.reset_at);
+                    const localResetStr = resetDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    limitMsg = `**Rate limit reached (25/25 requests).** Your daily quota resets at ${localResetStr}.`;
+                }
+                
+                this.addMessage('system', limitMsg, actionHtml);
+            } else {
+                this.addMessage('system', `Error: Failed to generate valid MapState. ${e.message}`);
+            }
         }
     }
 
@@ -722,14 +750,18 @@ class MultiMapAI {
     async getAuthToken() {
         if (typeof window.getFirebaseAuthToken === 'function') {
             const token = await window.getFirebaseAuthToken();
-            if (token) return token;
+            if (token) {
+                return { scheme: 'Bearer', value: token };
+            }
         }
 
-        const storedToken = localStorage.getItem('MULTI_MAP_AUTH_TOKEN');
-        if (storedToken) return storedToken;
-
-        console.warn("No Auth Token found. Cloud Agent will likely reject this request unless running in unauthenticated dev mode.");
-        return "dev-placeholder-token";
+        // Guest / Anonymous fallback
+        let anonSessionId = localStorage.getItem('mm_anon_session_id');
+        if (!anonSessionId) {
+            anonSessionId = 'anon-' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+            localStorage.setItem('mm_anon_session_id', anonSessionId);
+        }
+        return { scheme: 'Anonymous', value: anonSessionId };
     }
 
     async geminiAPIGeneration(prompt, contextStr) {
@@ -740,26 +772,35 @@ class MultiMapAI {
         let CLOUD_AGENT_URL = "https://us-central1-mm-multi-map.cloudfunctions.net/generateMapState";
 
         // Auto-detect local development
-        if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
-            // Change this to match your Firebase project ID (e.g., multimap-app)
-            const projectId = "mm-multi-map"; // Update if your project ID is different!
-            CLOUD_AGENT_URL = `http://127.0.0.1:5001/${projectId}/us-central1/generateMapState`;
+        if (window.location.hostname !== "mm.forestneff.com") {
+            const projectId = "mm-multi-map";
+            const host = (window.location.hostname === "0.0.0.0" || window.location.hostname === "[::1]" || !window.location.hostname) ? "127.0.0.1" : window.location.hostname;
+            CLOUD_AGENT_URL = `http://${host}:5001/${projectId}/us-central1/generateMapState`;
         }
 
-        const authToken = await this.getAuthToken();
+        const auth = await this.getAuthToken();
+        const authHeaderValue = `${auth.scheme} ${auth.value}`;
 
         const response = await fetch(CLOUD_AGENT_URL, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${authToken}`
+                'Authorization': authHeaderValue
             },
             body: JSON.stringify({
                 prompt: prompt,
                 contextStr: contextStr,
-                model: this.selectedModel
+                model: this.selectedModel,
+                mapId: this.kernel?.state?.map_id || 'unknown'
             })
         });
+
+        if (response.status === 429) {
+            const errorData = await response.json().catch(() => ({}));
+            const err = new Error("RATE_LIMIT_EXCEEDED");
+            err.quota = errorData;
+            throw err;
+        }
 
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({}));

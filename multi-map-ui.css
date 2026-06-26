@@ -108,7 +108,7 @@ body {
     touch-action: none;
     pointer-events: auto;
     transform: translate(-50%, -50%);
-    transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+    transition: transform 0.15s ease-out, border-color 0.15s ease-out, box-shadow 0.15s ease-out, opacity 0.15s ease-out;
 }
 
 .node:hover {

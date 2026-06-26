@@ -112,8 +112,10 @@
                         const existingOptions = Array.from(sel.options).map(o => o.value).filter(v => v !== '');
                         const libMapIds = lib.map(c => c.map_id);
                         
-                        const optionsMatch = existingOptions.length === libMapIds.length && 
-                                             existingOptions.every((val, idx) => val === libMapIds[idx]);
+                        const existingSorted = [...existingOptions].sort();
+                        const libSorted = [...libMapIds].sort();
+                        const optionsMatch = existingSorted.length === libSorted.length && 
+                                             existingSorted.every((val, idx) => val === libSorted[idx]);
                         
                         if (!optionsMatch) {
                             renderedNodeId = ''; 
@@ -279,13 +281,32 @@
             } else if (node.type === 'portal' || node.type === 'smart-portal') {
                 const lib = state.session.library || [];
                 const isLinked = lib.some(c => c.map_id === node.content);
+                const activeProjId = state.session.activeProjectId || 'default_project';
+                const projects = state.session.projects || [];
+                
+                const activeProj = projects.find(p => p.project_id === activeProjId) || { meta: { title: "My Project" } };
+                const activeProjTitle = activeProj.meta?.title || "My Project";
+                
+                const sameProjectPages = lib.filter(p => p.meta?.project_id === activeProjId || (!p.meta?.project_id && activeProjId === 'default_project'));
+                const otherProjectPages = lib.filter(p => p.meta?.project_id && p.meta?.project_id !== activeProjId);
                 
                 contentAreaHtml = `
                     <div class="flex flex-col gap-1">
                         <label class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Destination Map</label>
                         <select id="portal-sel" class="w-full bg-slate-800 border border-slate-700 p-2 rounded text-xs text-white outline-none focus:border-sky-500 mt-1 transition-all duration-300" onchange="notifyUpdate('${node.id}', { content: this.value });">
                             <option value="">-- Select Destination --</option>
-                            ${lib.map(c => `<option value="${c.map_id}" ${node.content === c.map_id ? 'selected' : ''}>${c.meta.title} (${c.meta.type || 'generic'})</option>`).join('')}
+                            <optgroup label="${escapeHTML(activeProjTitle)} (Active)">
+                                ${sameProjectPages.map(c => `<option value="${c.map_id}" ${node.content === c.map_id ? 'selected' : ''}>${escapeHTML(c.meta.title)} (${c.meta.type || 'generic'})</option>`).join('')}
+                            </optgroup>
+                            ${otherProjectPages.length > 0 ? `
+                            <optgroup label="Other Projects">
+                                ${otherProjectPages.map(c => {
+                                    const proj = projects.find(p => p.project_id === c.meta.project_id);
+                                    const pTitle = proj ? proj.meta?.title : "Other Project";
+                                    return `<option value="${c.map_id}" ${node.content === c.map_id ? 'selected' : ''}>${escapeHTML(c.meta.title)} (${escapeHTML(pTitle)})</option>`;
+                                }).join('')}
+                            </optgroup>
+                            ` : ''}
                         </select>
                     </div>
                     <button onclick="notifyAction('ENTER_PORTAL', '${node.id}')" class="mt-3 w-full py-2 bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold rounded shadow transition-colors">Enter Portal 🌀</button>

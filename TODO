@@ -1,11 +1,11 @@
-# Meta-Mind — Feature TODO
+# Multi Map — Feature TODO
 > A living document for proposed features, improvements, and design intentions.
 > Add items freely. Expand into detail before implementation.
 > Items are ordered by dependency and recommended execution sequence.
 
 ---
 
-## [ ] 1. Refine Map UI — Auto-Collapse on Deep Downstream Nodes & During Highlighting
+## [x] 1. Refine Map UI — Auto-Collapse on Deep Downstream Nodes & During Highlighting
 
 **Intent:** Reduce visual clutter in large maps by automatically collapsing nodes that
 are far from the current focal point, and aggressively collapsing non-relevant branches
@@ -21,7 +21,6 @@ immediately.
   expanded them.
 - Expanding a deep node pushes its descendants' collapse threshold outward dynamically
   (lazy expansion pattern).
-- Visual indicator on collapsed nodes: a badge showing child count (e.g. `+5`).
 
 ### Collapse During Highlighting / Selection
 - When a node is selected or a search highlight is active, collapse all branches that
@@ -63,7 +62,7 @@ immediately.
 
 ---
 
-## [ ] 2. Fully Set Up Login / Sign-Up
+## [x] 2. Fully Set Up Login / Sign-Up
 
 **Intent:** Complete the Firebase Authentication integration so users can create accounts,
 sign in, and have their data securely scoped to their identity. This is a hard prerequisite
@@ -116,7 +115,7 @@ maintainable foundation for logging, rate-limiting, AI proxying, and future admi
 
 ---
 
-## [ ] 4. AI Logging & Rate Limiting
+## [x] 4. AI Logging & Rate Limiting
 
 **Intent:** Add server-side infrastructure to log every AI prompt and response payload
 for data analysis and regression testing, and enforce per-user daily rate limits —
@@ -272,7 +271,7 @@ full data model is in place before designing the offline cache strategy.
 - Sync queue: changes made offline are written to a local queue and flushed to Firestore
   when connectivity returns (using the Background Sync API where supported).
 - Offline indicator in the nav bar status area (already has `#host-status` dot).
-- Install prompt: after 3 sessions, show a subtle "Install Meta-Mind" banner.
+- Install prompt: after 3 sessions, show a subtle "Install Multi Map" banner.
 
 ---
 
@@ -327,7 +326,7 @@ Depends on #2 (auth) and #5 (project/pages) for the Firestore path structure.
 - "Share" action in the Data Manager generates a unique `share_token` (UUID), sets
   `shared: true`, and writes the map to a public Firestore collection:
   `shared_maps/{share_token}` — read-only, no auth required.
-- Public URL format: `https://meta-mind.app/view/{share_token}`.
+- Public URL format: `https://mm.forestneff.com/view/{share_token}`.
 - A lightweight `view.html` page renders the shared map in read-only map mode
   (no inspector, no AI, no editing controls).
 - Shared maps show a "Fork to my workspace" button for authenticated visitors.
@@ -380,3 +379,15 @@ should document the finished product, not a moving target.
 ---
 
 *Last updated: 2026-06-25 — reordered by dependency, added items 7 (PWA), 8 (Search), 9 (Undo/Redo), 10 (Map Sharing), new item 3 (Functions Refactor)*
+
+
+---
+
+### Ideas:
+
+- Dynamic portals and smart roots. Metadata on root w/ smart summary option, passable by portals. Portals as map endpoints - no user map editing past a portal (remove add button from portal radial), all dynamic subcontent (auto spawn children, dynaamic behavior from payload, pass/pull metadata etc. - based on payload root node type & metadata, etc.).
+
+- Extract smart portal behavior into dynamic agent and prompt type systems and sub-node-types. Depreciate smart portal, all portals "smart", see above (dynamic portals).
+
+- Link user profiles to Person system and refine that system into map-native Contacts & Communities system(social network, file sharing, and collaboration). Expand Person system into map-native Contacts system with Person, Groups/Community/Organization pages, etc., their relationships, resources (maps, assets, etc.), and connections (including map-native multi-user map editing and shared project spaces). Should be able to build and launch a community as a mapstate that links users together and has its own specialized phase engine. The simplest version of this would be a single user w/ many contacts (perhaps categorized?), viewable as a map.
+

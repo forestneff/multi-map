@@ -843,6 +843,11 @@ class SandboxController {
         for (let newMap of maps) {
             if (!newMap.map_id || !newMap.nodes) continue;
 
+            if (target !== 'template') {
+                if (!newMap.meta) newMap.meta = {};
+                newMap.meta.project_id = this.kernel.activeProjectId;
+            }
+
             let existingMaps = [];
             if (target === 'template') {
                 existingMaps = typeof MultiMapLibrary !== 'undefined' ? MultiMapLibrary.getCustomTemplates() : [];
@@ -861,20 +866,14 @@ class SandboxController {
                 if (confirm(msg)) {
                     if (target === 'template') MultiMapLibrary.saveCustomTemplate(newMap);
                     else {
-                        let lib = this.kernel.getLibrary();
-                        let idx = lib.findIndex(m => m.map_id === newMap.map_id);
-                        if (idx > -1) lib[idx] = newMap;
-                        else lib.push(newMap);
-                        localStorage.setItem("mm_constellation_lib", JSON.stringify(lib));
+                        await this.kernel.saveMapToLibrary(newMap);
                     }
                     overwritten++;
                 } else { skipped++; }
             } else {
                 if (target === 'template') MultiMapLibrary.saveCustomTemplate(newMap);
                 else {
-                    let lib = this.kernel.getLibrary();
-                    lib.push(newMap);
-                    localStorage.setItem("mm_constellation_lib", JSON.stringify(lib));
+                    await this.kernel.saveMapToLibrary(newMap);
                 }
                 added++;
             }
@@ -962,7 +961,209 @@ class SandboxController {
     actionLoadFromLibrary(id) {
         const lib = this.kernel.getLibrary();
         const map = lib.find(m => m.map_id === id);
-        if(map) { this.kernel.loadMapState(map); this.setView('map'); }
+        if (map) { 
+            this.kernel.activeProjectId = map.meta?.project_id || 'default_project';
+            this.kernel.loadMapState(map); 
+            this.setView('map'); 
+        }
+    }
+
+    actionSetActiveProject(projId) {
+        this.kernel.activeProjectId = projId;
+        const pages = this.kernel.getPages(projId);
+        if (pages.length > 0) {
+            const hasActivePage = pages.some(p => p.map_id === this.kernel.state.map_id);
+            if (!hasActivePage) {
+                this.kernel.loadMapState(pages[0]);
+            }
+        } else {
+            this.kernel.state = this.kernel.getEmptyState();
+            this.kernel.state.meta.project_id = projId;
+            this.kernel.notify();
+        }
+        this.render();
+    }
+
+    actionCreateProject() {
+        const name = prompt("Enter Project Name:", "New Project");
+        if (name) {
+            const desc = prompt("Enter Project Description:", "");
+            this.kernel.createProject(name, desc);
+        }
+    }
+
+    actionPromptRenameProject(projId) {
+        const projects = this.kernel.getProjects();
+        const proj = projects.find(p => p.project_id === projId);
+        if (proj) {
+            const name = prompt("Rename Project:", proj.meta.title);
+            if (name) {
+                const desc = prompt("Update Description:", proj.meta.description || "");
+                this.kernel.renameProject(projId, name, desc, proj.meta.icon, proj.meta.color);
+            }
+        }
+    }
+
+    actionDeleteProject(projId) {
+        if (confirm("Are you sure you want to delete this project and all its pages? This action cannot be undone.")) {
+            this.kernel.deleteProject(projId);
+        }
+    }
+
+    actionCreatePage() {
+        const title = prompt("Enter Page Name:", "New Space");
+        if (title) {
+            const type = prompt("Enter Page Type (generic, web, person, prompt, agent):", "generic");
+            this.kernel.createPage(this.kernel.activeProjectId, title, type).then(page => {
+                this.kernel.loadMapState(page);
+                this.setView('map');
+            });
+        }
+    }
+
+    actionPromptRenamePage(pageId) {
+        const lib = this.kernel.getLibrary();
+        const page = lib.find(p => p.map_id === pageId);
+        if (page) {
+            const newTitle = prompt("Rename Page:", page.meta?.title || "");
+            if (newTitle) {
+                this.kernel.updateLibraryItem(pageId, { title: newTitle });
+            }
+        }
+    }
+
+    actionMovePageToProject(event, targetProjId) {
+        event.preventDefault();
+        const pageId = event.dataTransfer.getData("text/plain");
+        if (!pageId) return;
+        
+        const projects = this.kernel.getProjects();
+        let fromProjId = null;
+        for (const p of projects) {
+            if (p.page_ids && p.page_ids.includes(pageId)) {
+                fromProjId = p.project_id;
+                break;
+            }
+        }
+        
+        if (!fromProjId) {
+            const lib = this.kernel.getLibrary();
+            const page = lib.find(p => p.map_id === pageId);
+            if (page) fromProjId = page.meta?.project_id || 'default_project';
+        }
+        
+        if (fromProjId && fromProjId !== targetProjId) {
+            this.kernel.movePage(pageId, fromProjId, targetProjId);
+        }
+    }
+
+    actionDownloadProject() {
+        const activeProjId = this.kernel.activeProjectId;
+        const proj = this.kernel.getProjects().find(p => p.project_id === activeProjId);
+        if (!proj) return;
+        
+        const pages = this.kernel.getPages(activeProjId);
+        const payload = {
+            type: "multimap_project",
+            project: proj,
+            pages: pages
+        };
+        
+        const json = JSON.stringify(payload, null, 2);
+        const blob = new Blob([json], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        let safeTitle = proj.meta.title.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+        a.download = `multi_map_project_${safeTitle}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+
+    actionUploadProjectOrPageFile(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            try {
+                const parsed = JSON.parse(e.target.result);
+                if (parsed.type === "multimap_project") {
+                    await this.processProjectImport(parsed);
+                } else {
+                    await this.processMapImport(parsed, 'constellation');
+                }
+            } catch (err) {
+                alert("Invalid JSON format.");
+                console.error(err);
+            }
+        };
+        reader.readAsText(file);
+        event.target.value = '';
+    }
+
+    async processProjectImport(parsedData) {
+        const { project, pages } = parsedData;
+        if (!project || !project.project_id || !Array.isArray(pages)) {
+            alert("Invalid project file format.");
+            return;
+        }
+        
+        let targetProjId = project.project_id;
+        const existingProjects = this.kernel.getProjects();
+        const conflict = existingProjects.some(p => p.project_id === targetProjId);
+        
+        if (conflict) {
+            if (confirm(`Project "${project.meta.title}" already exists. Overwrite?`)) {
+                await this.kernel.deleteProject(targetProjId);
+            } else {
+                targetProjId = this.kernel.generateId();
+                project.project_id = targetProjId;
+                project.meta.title += " (Copy)";
+            }
+        }
+        
+        project.page_ids = pages.map(p => p.map_id);
+        project.created_at = new Date().toISOString();
+        project.updated_at = new Date().toISOString();
+        
+        if (window.FirebaseAuth && window.FirebaseAuth.currentUser && !window.FirebaseAuth.currentUser.isAnonymous) {
+            const uid = window.FirebaseAuth.currentUser.uid;
+            try {
+                const projRef = window.Firestore.doc(window.FirebaseDb, "users", uid, "projects", targetProjId);
+                await window.Firestore.setDoc(projRef, project);
+                this.kernel.firestoreProjects.push(project);
+                this.kernel.firestorePagesByProject[targetProjId] = [];
+                
+                for (const page of pages) {
+                    if (!page.meta) page.meta = {};
+                    page.meta.project_id = targetProjId;
+                    const pageRef = window.Firestore.doc(window.FirebaseDb, "users", uid, "projects", targetProjId, "pages", page.map_id);
+                    await window.Firestore.setDoc(pageRef, page);
+                    this.kernel.firestorePagesByProject[targetProjId].push(page);
+                }
+            } catch(e) {
+                console.error("Firestore project import failed:", e);
+            }
+        } else {
+            this.kernel.projects.push(project);
+            localStorage.setItem("mm_projects", JSON.stringify(this.kernel.projects));
+            
+            let lib = this.kernel.getLibrary();
+            for (const page of pages) {
+                if (!page.meta) page.meta = {};
+                page.meta.project_id = targetProjId;
+                lib.push(page);
+            }
+            this.kernel.saveLibrary(lib);
+        }
+        
+        this.kernel.activeProjectId = targetProjId;
+        if (pages.length > 0) {
+            this.kernel.loadMapState(pages[0]);
+        }
+        alert(`Project "${project.meta.title}" imported successfully!`);
+        this.render();
     }
     
     actionDeleteFromLibrary(id) {
@@ -1061,8 +1262,29 @@ class SandboxController {
     render() {
         this.updatePhaseButtons();
         this.updateSmartActionButton();
+        
+        // Update breadcrumbs in navbar
+        const mapTitleEl = document.getElementById('map-title');
+        if (mapTitleEl) {
+            const activeProjId = this.kernel.activeProjectId;
+            const projects = this.kernel.getProjects();
+            const proj = projects.find(p => p.project_id === activeProjId) || { meta: { title: "My Project" } };
+            const projTitle = proj.meta?.title || "My Project";
+            const pageTitle = this.kernel.state.meta?.title || "Untitled Space";
+            mapTitleEl.innerHTML = `<span class="opacity-65 hover:text-purple-400 cursor-pointer transition-colors" onclick="toggleDrawer('data-manager-drawer')">${this.escapeHTML(projTitle)}</span> <span class="mx-1 text-slate-500">›</span> <span class="text-white">${this.escapeHTML(pageTitle)}</span>`;
+        }
+
         const inspector = this.registry.get('inspector');
         if (inspector && this.dom.panelProperties) inspector.render(this.dom.panelProperties, this.kernel.state);
+
+        // Auto-update Data Manager drawer if it is currently open
+        const dataDrawer = document.getElementById('data-manager-drawer');
+        if (dataDrawer && !dataDrawer.classList.contains('translate-x-full')) {
+            const dmContent = document.getElementById('data-manager-content');
+            if (dmContent && window.Auth) {
+                window.Auth.renderDataManager(dmContent);
+            }
+        }
 
         if (this.viewMode === 'map') {
             this.dom.viewMap.style.display = 'block';
@@ -1082,25 +1304,28 @@ class SandboxController {
 
         const selId = state.session.selectedId;
 
-        const visibleNodes = new Set();
-        state.nodes.forEach(n => visibleNodes.add(n.id));
-
-        state.nodes.forEach(n => {
-            if (n.data.collapsed) {
-                const queue = [n.id];
-                while(queue.length > 0) {
-                    const curr = queue.shift();
-                    const kids = state.connections.filter(c => c.from === curr && c.type === 'structural').map(c => c.to);
-                    kids.forEach(k => { visibleNodes.delete(k); queue.push(k); });
-                }
-            }
-        });
-
         const structuralEdges = state.connections.filter(c => c.type === 'structural');
         // True roots = nodes with no incoming structural edges (used for root highlight in selection mode)
         const hasIncomingEdge = new Set(structuralEdges.map(e => e.to));
         const trueRootIds = new Set(state.nodes.filter(n => !hasIncomingEdge.has(n.id)).map(n => n.id));
 
+        // Compute absolute depth of each node from the root node(s) for depth auto-collapse
+        const depth = new Map();
+        trueRootIds.forEach(id => depth.set(id, 0));
+        let depthQueue = [...trueRootIds];
+        while (depthQueue.length > 0) {
+            const curr = depthQueue.shift();
+            const currDepth = depth.get(curr);
+            const kids = structuralEdges.filter(c => c.from === curr).map(c => c.to);
+            for (const kid of kids) {
+                if (!depth.has(kid)) {
+                    depth.set(kid, currDepth + 1);
+                    depthQueue.push(kid);
+                }
+            }
+        }
+
+        // Active focal nodes calculation
         let focalNodes = [];
         if (state.session.selectedId) {
             focalNodes = [state.session.selectedId];
@@ -1132,6 +1357,77 @@ class SandboxController {
                 }
             }
         }
+
+        // Path Nodes calculation (ancestors + selected/highlighted node)
+        const pathNodes = new Set();
+        const highlightNodeId = this.activeSearchHighlight ? this.activeSearchHighlight.nodeId : null;
+        const activeFocalId = state.session.selectedId || highlightNodeId;
+
+        if (activeFocalId) {
+            let currId = activeFocalId;
+            while (currId) {
+                pathNodes.add(currId);
+                const parentEdge = structuralEdges.find(e => e.to === currId);
+                currId = parentEdge ? parentEdge.from : null;
+            }
+        }
+
+        const autoCollapseDepth = this.kernel.config.autoCollapseDepth || 3;
+
+        // Auto-collapse logic matching TODO specs
+        const isNodeCollapsed = (nid) => {
+            const n = state.nodes.find(node => node.id === nid);
+            if (!n) return false;
+            
+            // 1. Manual collapse takes precedence
+            if (n.data.collapsed === true) return true;
+            
+            // 2. Selection-driven collapse/re-expansion if a selection/highlight is active
+            if (activeFocalId) {
+                if (pathNodes.has(nid)) {
+                    return false; // fully expanded path node
+                }
+                
+                // Downstream of selection
+                if (distances.has(nid)) {
+                    const distVal = distances.get(nid);
+                    if (distVal >= autoCollapseDepth) {
+                        return !n.data.expanded; // collapsed beyond threshold unless explicitly expanded
+                    }
+                    return false;
+                }
+                
+                // Sibling branch (neither on path nor downstream of selection)
+                return true; // collapsed
+            }
+            
+            // 3. Depth-based auto-collapse if no selection is active
+            const depthVal = depth.has(nid) ? depth.get(nid) : 0;
+            if (depthVal >= autoCollapseDepth) {
+                return !n.data.expanded;
+            }
+            return false;
+        };
+
+        const visibleNodes = new Set();
+        state.nodes.forEach(n => visibleNodes.add(n.id));
+
+        state.nodes.forEach(n => {
+            if (isNodeCollapsed(n.id)) {
+                // Sibling branch nodes are collapsed (fade to 20% opacity), but they do NOT prune their subtrees
+                const isSiblingBranch = activeFocalId && !pathNodes.has(n.id) && !distances.has(n.id) && n.data.collapsed !== true;
+                if (isSiblingBranch) {
+                    return;
+                }
+                
+                const queue = [n.id];
+                while(queue.length > 0) {
+                    const curr = queue.shift();
+                    const kids = state.connections.filter(c => c.from === curr && c.type === 'structural').map(c => c.to);
+                    kids.forEach(k => { visibleNodes.delete(k); queue.push(k); });
+                }
+            }
+        });
 
         let structuredCoords = null;
         if (state.session.layoutMode === 'structured') {
@@ -1187,7 +1483,13 @@ class SandboxController {
                     const isLinking = this.kernel.linkingMode;
                     const distS = distances.has(s.id) ? distances.get(s.id) : -1;
                     const distT = distances.has(t.id) ? distances.get(t.id) : -1;
-                    if (!isLinking && (distS === -1 || distT === -1)) {
+                    
+                    const onPathOrDownstreamS = pathNodes.has(s.id) || distances.has(s.id);
+                    const onPathOrDownstreamT = pathNodes.has(t.id) || distances.has(t.id);
+                    
+                    if (!isLinking && activeFocalId && (!onPathOrDownstreamS || !onPathOrDownstreamT)) {
+                        l.style.strokeOpacity = "0.2"; // Sibling branch edges are faded to 20%
+                    } else if (!isLinking && (distS === -1 || distT === -1)) {
                         l.style.strokeOpacity = "0.48";
                     }
                     this.dom.edgeSvg.appendChild(l);
@@ -1224,17 +1526,25 @@ class SandboxController {
             } else if (dist === -1) {
                 // Background (upstream / unrelated) nodes
                 const isRoot = trueRootIds.has(node.id) && state.session.selectedId;
+                const isSibling = activeFocalId && !pathNodes.has(node.id);
+                
                 if (isRoot) {
                     // Root node gets a slightly bigger, brighter treatment so it stays findable
                     scale = 0.85;
                     color = '#e2e8f0';
                     el.style.opacity = '0.85';
                     el.style.backgroundColor = `rgba(30, 41, 59, 0.75)`;
-                } else {
+                } else if (isSibling) {
+                    // Sibling branches fade to 20% opacity
                     scale = 0.5;
                     color = '#475569';
-                    el.style.opacity = '0.6';
-                    el.style.backgroundColor = `rgba(30, 41, 59, 0.45)`;
+                    el.style.opacity = '0.2';
+                    el.style.backgroundColor = `rgba(30, 41, 59, 0.2)`;
+                } else {
+                    scale = 0.8;
+                    color = '#cbd5e1';
+                    el.style.opacity = '0.9';
+                    el.style.backgroundColor = `rgba(30, 41, 59, 0.7)`;
                 }
             } else {
                 scale = Math.max(0.3, 1.4 * Math.pow(0.7, dist));
@@ -1260,10 +1570,13 @@ class SandboxController {
                 el.style.boxShadow = `0 0 10px ${color}40`;
             } else {
                 const isRoot = trueRootIds.has(node.id) && state.session.selectedId;
+                const isSibling = activeFocalId && !pathNodes.has(node.id);
                 if (isRoot) {
                     el.style.boxShadow = `0 0 12px ${color}60`;
-                } else {
+                } else if (isSibling) {
                     el.style.boxShadow = 'none';
+                } else {
+                    el.style.boxShadow = `0 0 8px ${color}30`;
                 }
             }
             
@@ -1285,7 +1598,10 @@ class SandboxController {
                 el.classList.remove('smart-action-halo');
                 el.style.removeProperty('--halo-color');
             }
-            if (node.data.collapsed) el.classList.add('collapsed');
+            
+            const collapsed = isNodeCollapsed(node.id);
+            if (collapsed) el.classList.add('collapsed');
+            else el.classList.remove('collapsed');
             
             const bp = this.kernel.getBlueprint(node.type);
             let labelEl = el.querySelector('.node-label');
@@ -1301,7 +1617,7 @@ class SandboxController {
 
             el.querySelectorAll('.moon-btn').forEach(m => m.remove());
 
-            if (node.data.collapsed) {
+            if (collapsed) {
                 const children = state.connections
                     .filter(c => c.from === node.id && c.type === 'structural')
                     .map(c => state.nodes.find(n => n.id === c.to));
@@ -1321,7 +1637,7 @@ class SandboxController {
                     moon.innerHTML = this.kernel.getBlueprint(child.type).icon;
                     moon.onpointerdown = (e) => {
                         e.stopPropagation();
-                        this.kernel.updateNode(node.id, { data: { ...node.data, collapsed: false }});
+                        this.kernel.updateNode(node.id, { data: { ...node.data, collapsed: false, expanded: true }});
                         this.kernel.selectNode(child.id);
                         this.render();
                     };

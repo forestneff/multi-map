@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Multi-Map Workspace</title>
+    <title>Multi Map Web Sandbox</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="multi-map-ui.css">
 
@@ -36,17 +36,17 @@
 
             <!-- M-M Home Link -->
             <a href="index.html"
-                class="w-7 h-7 md:w-8 md:h-8 bg-sky-600 rounded flex items-center justify-center text-white font-black shadow-lg shadow-sky-900/50 text-[10px] md:text-xs no-underline hover:bg-sky-500 transition-colors shrink-0">M-M</a>
+                class="w-7 h-7 md:w-8 md:h-8 bg-sky-600 rounded flex items-center justify-center text-white font-black shadow-lg shadow-sky-900/50 text-[10px] md:text-xs no-underline hover:bg-sky-500 transition-colors shrink-0">MM</a>
 
             <div class="flex flex-col">
                 <!-- Desktop Title -->
                 <span id="map-title"
-                    class="text-sm font-bold text-slate-200 leading-none hidden sm:block mt-0.5">Multi-Map</span>
+                    class="text-sm font-bold text-slate-200 leading-none hidden sm:block mt-0.5">Multi Map</span>
                 <!-- Mobile Stacked Title -->
                 <div
                     class="flex flex-col sm:hidden text-[9px] font-black text-slate-200 leading-tight uppercase tracking-widest mt-0.5">
-                    <span>Meta</span>
-                    <span>Mind</span>
+                    <span>Multi</span>
+                    <span>Map</span>
                 </div>
                 <div class="hidden sm:flex gap-2 mt-1">
                     <span id="save-status"
@@ -118,7 +118,7 @@
         </div>
 
         <!-- Data Manager Drawer -->
-        <div id="data-manager-drawer" class="absolute top-0 right-0 h-full w-[350px] max-w-full bg-slate-900 border-l border-slate-700 shadow-2xl transform translate-x-full transition-transform duration-300 z-50 flex flex-col pointer-events-auto">
+        <div id="data-manager-drawer" class="absolute top-0 right-0 h-full w-full md:w-[650px] max-w-full bg-slate-900 border-l border-slate-700 shadow-2xl transform translate-x-full transition-transform duration-300 z-50 flex flex-col pointer-events-auto">
             <div class="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-950/50">
                 <h2 class="text-white font-black flex items-center gap-2"><span>📚</span> Data Manager</h2>
                 <button onclick="document.getElementById('data-manager-drawer').classList.add('translate-x-full');" class="text-slate-500 hover:text-white transition-colors">✕</button>
@@ -177,6 +177,8 @@
                     <button id="btn-arrange-organic" class="w-9 h-9 bg-slate-800 border border-slate-700 text-slate-300 rounded-full flex items-center justify-center shadow hover:bg-slate-700 hover:text-white transition-all tooltip-btn" title="Organic Arrange">🌳</button>
                     <!-- Arrange Structured -->
                     <button id="btn-arrange-tree" class="w-9 h-9 bg-slate-800 border border-slate-700 text-slate-300 rounded-full flex items-center justify-center shadow hover:bg-slate-700 hover:text-white transition-all tooltip-btn" title="Structured Arrange">🖧</button>
+                    <!-- Expand All -->
+                    <button id="btn-expand-all" class="w-9 h-9 bg-slate-800 border border-slate-700 text-slate-300 rounded-full flex items-center justify-center shadow hover:bg-slate-700 hover:text-white transition-all tooltip-btn" title="Expand All">🔆</button>
                     <!-- Add Node -->
                     <button id="btn-add" class="w-9 h-9 bg-indigo-900 border border-indigo-500 text-indigo-200 rounded-full flex items-center justify-center shadow hover:bg-indigo-600 hover:text-white transition-all tooltip-btn" title="Add Node">➕</button>
                 </div>
@@ -280,6 +282,9 @@
                 document.getElementById('btn-arrange-tree').onclick = () => { 
                     Kernel.state.session.layoutMode = 'structured';
                     Kernel.notify();
+                };
+                document.getElementById('btn-expand-all').onclick = () => {
+                    SC.actionExpandAll();
                 };
 
                 document.getElementById('btn-add').onclick = () => {

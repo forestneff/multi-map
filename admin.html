@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi Map — AI Admin Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800;900&family=Space+Grotesk:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Outfit', 'sans-serif'],
+                        mono: ['Space Grotesk', 'monospace'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #020617;
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.15) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(6, 182, 212, 0.12) 0px, transparent 50%);
+            background-attachment: fixed;
+        }
+        .glass {
+            background: rgba(15, 23, 42, 0.65);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        .glass-hover:hover {
+            background: rgba(30, 41, 59, 0.8);
+            border-color: rgba(99, 102, 241, 0.3);
+        }
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.3);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(99, 102, 241, 0.4);
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(99, 102, 241, 0.6);
+        }
+    </style>
+</head>
+<body class="text-slate-100 min-height-screen font-sans">
+    <div class="max-w-[1600px] mx-auto p-4 md:p-8 flex flex-col gap-6 h-screen max-h-screen">
+        
+        <!-- Header -->
+        <header class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-800/80 pb-6 shrink-0">
+            <div>
+                <h1 class="text-3xl font-black tracking-tight bg-gradient-to-r from-indigo-400 via-purple-400 to-cyan-400 bg-clip-text text-transparent">
+                    MULTI MAP WEB SANDBOX
+                </h1>
+                <p class="text-xs text-slate-400 font-medium uppercase tracking-widest mt-1">AI Request Audit & Regression Testing Dashboard</p>
+            </div>
+            <div class="flex items-center gap-3">
+                <a href="sandbox.html" class="px-4 py-2 bg-slate-900 border border-slate-800 hover:bg-slate-800/60 rounded-xl text-xs font-bold transition-all flex items-center gap-2">
+                    🏠 Sandbox Workspace
+                </a>
+                <button onclick="loadLogs()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition-all shadow-[0_0_15px_rgba(79,70,229,0.4)]">
+                    🔄 Refresh Logs
+                </button>
+            </div>
+        </header>
+
+        <!-- Filters Bar -->
+        <section class="glass p-4 rounded-2xl flex flex-wrap items-center gap-4 shrink-0 shadow-lg">
+            <div class="flex flex-col gap-1 min-w-[200px]">
+                <label class="text-[10px] text-slate-400 uppercase font-black tracking-wider">Skill / Intent</label>
+                <select id="filter-skill" onchange="loadLogs()" class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-indigo-500">
+                    <option value="">All Skills</option>
+                    <option value="generate-mapstate">Generate Map</option>
+                    <option value="generate-web-mapstate">Generate Web</option>
+                    <option value="edit-mapstate">Edit Map</option>
+                    <option value="analyze-mapstate">Analyze Map</option>
+                    <option value="faq">FAQ</option>
+                    <option value="out-of-scope">Out of Scope</option>
+                </select>
+            </div>
+            <div class="flex flex-col gap-1 min-w-[200px]">
+                <label class="text-[10px] text-slate-400 uppercase font-black tracking-wider">User / UID</label>
+                <input type="text" id="filter-uid" placeholder="Filter by User UID" oninput="loadLogs()" class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-indigo-500">
+            </div>
+            <div class="flex items-center gap-2 mt-4">
+                <input type="checkbox" id="filter-golden" onchange="loadLogs()" class="w-4 h-4 accent-indigo-500 bg-slate-950 border-slate-800 rounded cursor-pointer">
+                <label for="filter-golden" class="text-xs text-slate-300 font-bold select-none cursor-pointer">⭐ Golden Prompts Only</label>
+            </div>
+            <div class="flex flex-col gap-1 min-w-[100px] ml-auto">
+                <label class="text-[10px] text-slate-400 uppercase font-black tracking-wider">Count Limit</label>
+                <select id="filter-limit" onchange="loadLogs()" class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-indigo-500">
+                    <option value="25">25 logs</option>
+                    <option value="50" selected>50 logs</option>
+                    <option value="100">100 logs</option>
+                </select>
+            </div>
+        </section>
+
+        <!-- Main Workspace -->
+        <div class="flex flex-1 gap-6 min-h-0 overflow-hidden pb-4">
+            
+            <!-- Left Side: Logs Table -->
+            <section class="glass flex-1 rounded-2xl overflow-hidden flex flex-col shadow-xl">
+                <div class="flex-1 overflow-y-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead class="sticky top-0 bg-slate-950/80 backdrop-blur-md border-b border-slate-800/80 z-10">
+                            <tr class="text-[10px] text-slate-400 uppercase font-bold tracking-wider">
+                                <th class="p-4">Time</th>
+                                <th class="p-4">User Status</th>
+                                <th class="p-4">Skill</th>
+                                <th class="p-4">Prompt</th>
+                                <th class="p-4 text-center">Tokens</th>
+                                <th class="p-4 text-center">Latency</th>
+                                <th class="p-4 text-center">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="logs-body">
+                            <!-- Populated dynamically -->
+                            <tr>
+                                <td colspan="7" class="p-8 text-center text-slate-500 text-xs italic">Loading logs...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Right Side: Details & Side-by-Side Comparison -->
+            <section id="detail-panel" class="w-[500px] glass rounded-2xl p-6 shadow-xl flex flex-col gap-6 overflow-y-auto hidden">
+                <!-- Detailed info header -->
+                <div class="flex justify-between items-start border-b border-slate-800 pb-4">
+                    <div>
+                        <span id="detail-skill" class="px-2 py-0.5 bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 rounded text-[10px] font-bold uppercase tracking-wider">SKILL</span>
+                        <div id="detail-time" class="text-xs text-slate-400 mt-2 font-medium">Timestamp</div>
+                        <div id="detail-uid" class="text-[11px] text-slate-500 font-mono mt-1 truncate max-w-[350px]">UID: 123</div>
+                    </div>
+                    <button id="btn-toggle-golden" onclick="toggleGoldenStatus()" class="px-3 py-1.5 border rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all">
+                        ⭐ Mark Golden
+                    </button>
+                </div>
+
+                <!-- Prompt Section -->
+                <div>
+                    <h3 class="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Prompt</h3>
+                    <div id="detail-prompt" class="bg-slate-950 border border-slate-800/50 rounded-xl p-3 text-xs font-mono whitespace-pre-wrap max-h-[120px] overflow-y-auto leading-relaxed text-slate-300"></div>
+                </div>
+
+                <!-- Responses Section -->
+                <div class="flex flex-col gap-4 flex-1">
+                    <div class="flex justify-between items-center">
+                        <h3 class="text-xs font-black text-slate-400 uppercase tracking-widest">Response Comparison</h3>
+                        <button id="btn-replay" onclick="replayPrompt()" class="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-all shadow-[0_0_10px_rgba(16,185,129,0.3)]">
+                            ⚡ Replay Prompt
+                        </button>
+                    </div>
+
+                    <!-- Tabs/Panels for Comparison -->
+                    <div class="flex-1 flex flex-col gap-3 min-h-0">
+                        <div class="flex border-b border-slate-800 text-xs">
+                            <button id="tab-original" onclick="switchViewTab('original')" class="px-3 py-1.5 border-b-2 border-indigo-500 text-indigo-400 font-bold transition-all">Original</button>
+                            <button id="tab-rerun" onclick="switchViewTab('rerun')" class="px-3 py-1.5 border-b-2 border-transparent text-slate-400 hover:text-slate-300 transition-all hidden">Re-Run Output</button>
+                            <button id="tab-diff" onclick="switchViewTab('diff')" class="px-3 py-1.5 border-b-2 border-transparent text-slate-400 hover:text-slate-300 transition-all hidden">Diff Highlight</button>
+                        </div>
+
+                        <!-- Viewer containers -->
+                        <div class="flex-1 min-h-[200px] bg-slate-950 border border-slate-800 rounded-xl overflow-hidden flex flex-col font-mono text-[11px] leading-relaxed">
+                            <div id="panel-original" class="p-3 overflow-y-auto flex-1 h-full text-emerald-400 whitespace-pre-wrap"></div>
+                            <div id="panel-rerun" class="p-3 overflow-y-auto flex-1 h-full text-cyan-400 whitespace-pre-wrap hidden"></div>
+                            <div id="panel-diff" class="p-3 overflow-y-auto flex-1 h-full whitespace-pre-wrap hidden"></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <!-- Script layer -->
+    <script>
+        let currentLogs = [];
+        let selectedLog = null;
+        let rerunResponseText = '';
+        let activeTab = 'original';
+
+        // Auto-detect Local Cloud Function Endpoint
+        const getBaseUrl = () => {
+            const projectId = "mm-multi-map";
+            return `http://127.0.0.1:5001/${projectId}/us-central1/generateMapState`;
+        };
+
+        // Format relative timestamp
+        function formatRelativeTime(isoString) {
+            if (!isoString) return 'Unknown';
+            const date = new Date(isoString);
+            const now = new Date();
+            const diffMs = now - date;
+            const diffMin = Math.floor(diffMs / 60000);
+            if (diffMin < 1) return 'Just now';
+            if (diffMin < 60) return `${diffMin}m ago`;
+            const diffHours = Math.floor(diffMin / 60);
+            if (diffHours < 24) return `${diffHours}h ago`;
+            return date.toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        }
+
+        // Load Logs list from Admin API
+        async function loadLogs() {
+            const logsBody = document.getElementById('logs-body');
+            
+            const skill = document.getElementById('filter-skill').value;
+            const uid = document.getElementById('filter-uid').value;
+            const isGolden = document.getElementById('filter-golden').checked;
+            const limit = document.getElementById('filter-limit').value;
+
+            let query = `?limit=${limit}`;
+            if (skill) query += `&skill=${skill}`;
+            if (uid) query += `&uid=${uid}`;
+            if (isGolden) query += `&is_golden=true`;
+
+            try {
+                const res = await fetch(`${getBaseUrl()}/admin/logs${query}`);
+                if (!res.ok) throw new Error(`API Error ${res.status}`);
+                
+                const data = await res.json();
+                currentLogs = data.logs || [];
+
+                if (currentLogs.length === 0) {
+                    logsBody.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-slate-500 text-xs italic">No matching logs found.</td></tr>`;
+                    return;
+                }
+
+                logsBody.innerHTML = currentLogs.map(log => {
+                    const isAnon = log.uid.startsWith('anon-') || log.uid === 'anonymous';
+                    const userTagClass = isAnon ? 'bg-slate-800 text-slate-400 border-slate-700' : 'bg-indigo-500/10 border-indigo-500/30 text-indigo-400';
+                    const userLabel = isAnon ? 'Guest' : 'Authenticated';
+                    
+                    const isErr = !!log.error;
+                    const statusClass = isErr ? 'bg-rose-500/10 text-rose-400 border-rose-500/30' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30';
+                    const statusText = isErr ? 'Error' : '200 OK';
+
+                    const promptSnippet = log.prompt.length > 55 ? log.prompt.substring(0, 52) + '...' : log.prompt;
+                    const goldenStar = log.is_golden ? '⭐ ' : '';
+
+                    return `
+                        <tr onclick="selectLog('${log.id}')" class="border-b border-slate-900/60 hover:bg-indigo-600/5 cursor-pointer transition-colors text-xs text-slate-300">
+                            <td class="p-4 whitespace-nowrap text-slate-400">${formatRelativeTime(log.timestamp)}</td>
+                            <td class="p-4 whitespace-nowrap">
+                                <span class="px-2 py-0.5 border rounded text-[10px] font-bold ${userTagClass}">${userLabel}</span>
+                            </td>
+                            <td class="p-4 whitespace-nowrap font-semibold text-slate-200 uppercase tracking-wider text-[10px]">${log.skill}</td>
+                            <td class="p-4 truncate max-w-[280px]" title="${log.prompt}">${goldenStar}${promptSnippet}</td>
+                            <td class="p-4 text-center font-mono">${log.tokens_in + log.tokens_out}</td>
+                            <td class="p-4 text-center font-mono">${log.latency_ms}ms</td>
+                            <td class="p-4 text-center">
+                                <span class="px-2 py-0.5 border rounded text-[10px] font-bold ${statusClass}">${statusText}</span>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+
+            } catch (err) {
+                console.error(err);
+                logsBody.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-rose-400 border border-rose-950/20 bg-rose-950/10 text-xs italic">Failed to load logs: ${err.message}</td></tr>`;
+            }
+        }
+
+        // Select a log and open details panel
+        function selectLog(id) {
+            selectedLog = currentLogs.find(l => l.id === id);
+            if (!selectedLog) return;
+
+            document.getElementById('detail-panel').classList.remove('hidden');
+            
+            document.getElementById('detail-skill').innerText = selectedLog.skill;
+            document.getElementById('detail-time').innerText = new Date(selectedLog.timestamp).toLocaleString();
+            document.getElementById('detail-uid').innerText = `UID: ${selectedLog.uid}`;
+            
+            // Toggle golden button design
+            updateGoldenButtonUI(selectedLog.is_golden);
+
+            document.getElementById('detail-prompt').innerText = selectedLog.prompt;
+            
+            // Format JSON prettily if possible
+            let formattedResponse = selectedLog.response;
+            try {
+                const parsed = JSON.parse(selectedLog.response);
+                formattedResponse = JSON.stringify(parsed, null, 2);
+            } catch (e) {}
+            
+            document.getElementById('panel-original').innerText = formattedResponse || (selectedLog.error ? `Error Payload: ${selectedLog.error}` : 'No response content.');
+
+            // Reset replay state
+            rerunResponseText = '';
+            document.getElementById('tab-rerun').classList.add('hidden');
+            document.getElementById('tab-diff').classList.add('hidden');
+            switchViewTab('original');
+        }
+
+        function updateGoldenButtonUI(isGolden) {
+            const btn = document.getElementById('btn-toggle-golden');
+            if (isGolden) {
+                btn.className = "px-3 py-1.5 bg-yellow-500/10 border border-yellow-500/30 text-yellow-500 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all";
+                btn.innerHTML = "⭐ Golden Prompt";
+            } else {
+                btn.className = "px-3 py-1.5 border border-slate-700 hover:border-slate-600 text-slate-400 hover:text-slate-300 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all";
+                btn.innerHTML = "☆ Mark Golden";
+            }
+        }
+
+        // Toggle Golden Status on Document
+        async function toggleGoldenStatus() {
+            if (!selectedLog) return;
+            const newGoldenState = !selectedLog.is_golden;
+
+            try {
+                const res = await fetch(`${getBaseUrl()}/admin/golden`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ logId: selectedLog.id, isGolden: newGoldenState })
+                });
+
+                if (!res.ok) throw new Error("Failed to toggle status");
+                selectedLog.is_golden = newGoldenState;
+                updateGoldenButtonUI(newGoldenState);
+                
+                // Refresh logs list without resetting details view
+                const index = currentLogs.findIndex(l => l.id === selectedLog.id);
+                if (index !== -1) currentLogs[index].is_golden = newGoldenState;
+                
+                // Re-render rows to update indicators
+                loadLogs();
+            } catch (e) {
+                alert(`Error: ${e.message}`);
+            }
+        }
+
+        // Replay prompt against live model
+        async function replayPrompt() {
+            if (!selectedLog) return;
+
+            const btn = document.getElementById('btn-replay');
+            const originalText = btn.innerText;
+            btn.innerText = '⚡ Replaying...';
+            btn.disabled = true;
+
+            try {
+                const res = await fetch(`${getBaseUrl()}/admin/replay`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        prompt: selectedLog.prompt,
+                        skill: selectedLog.skill,
+                        model: 'gemini-2.5-flash'
+                    })
+                });
+
+                if (!res.ok) throw new Error(`Replay request failed with code ${res.status}`);
+                const data = await res.json();
+                
+                let text = data.text;
+                try {
+                    const parsed = JSON.parse(text);
+                    text = JSON.stringify(parsed, null, 2);
+                } catch(e) {}
+                
+                rerunResponseText = text;
+                document.getElementById('panel-rerun').innerText = rerunResponseText;
+                
+                // Render Simple Diff view
+                renderDiff(selectedLog.response, data.text);
+
+                // Show tabs
+                document.getElementById('tab-rerun').classList.remove('hidden');
+                document.getElementById('tab-diff').classList.remove('hidden');
+
+                // Switch to re-run tab
+                switchViewTab('rerun');
+            } catch (e) {
+                alert(`Replay Error: ${e.message}`);
+            } finally {
+                btn.innerText = originalText;
+                btn.disabled = false;
+            }
+        }
+
+        // Simple text diff renderer
+        function renderDiff(oldStr, newStr) {
+            let oldFormatted = oldStr;
+            let newFormatted = newStr;
+            try {
+                oldFormatted = JSON.stringify(JSON.parse(oldStr), null, 2);
+                newFormatted = JSON.stringify(JSON.parse(newStr), null, 2);
+            } catch (e) {}
+
+            const diffPanel = document.getElementById('panel-diff');
+            
+            // Very simple line-by-line diffing for illustrative side-by-side highlighting
+            const oldLines = oldFormatted.split('\n');
+            const newLines = newFormatted.split('\n');
+            
+            let html = '';
+            const maxLines = Math.max(oldLines.length, newLines.length);
+            
+            for (let i = 0; i < maxLines; i++) {
+                const oldLine = oldLines[i];
+                const newLine = newLines[i];
+                
+                if (oldLine === newLine) {
+                    html += `<div class="text-slate-500">${escapeHtml(oldLine)}</div>`;
+                } else {
+                    if (oldLine !== undefined) {
+                        html += `<div class="bg-rose-950/40 text-rose-400 border-l-2 border-rose-500 pl-1">- ${escapeHtml(oldLine)}</div>`;
+                    }
+                    if (newLine !== undefined) {
+                        html += `<div class="bg-emerald-950/40 text-emerald-400 border-l-2 border-emerald-500 pl-1">+ ${escapeHtml(newLine)}</div>`;
+                    }
+                }
+            }
+            diffPanel.innerHTML = html;
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            return text
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
+        // Switch active response view tab
+        function switchViewTab(tab) {
+            activeTab = tab;
+            const tabs = ['original', 'rerun', 'diff'];
+            
+            tabs.forEach(t => {
+                const btn = document.getElementById(`tab-${t}`);
+                const panel = document.getElementById(`panel-${t}`);
+                
+                if (t === tab) {
+                    btn.className = "px-3 py-1.5 border-b-2 border-indigo-500 text-indigo-400 font-bold transition-all";
+                    panel.classList.remove('hidden');
+                } else {
+                    btn.className = "px-3 py-1.5 border-b-2 border-transparent text-slate-400 hover:text-slate-300 transition-all";
+                    panel.classList.add('hidden');
+                }
+            });
+        }
+
+        // Initial Load
+        loadLogs();
+    </script>
+</body>
+</html>

@@ -85,6 +85,8 @@ class IframePhaseEngine extends PhaseEngineBase {
             state.session.library = this.kernel.getLibrary();
             state.session.linkingMode = this.kernel.linkingMode;
             state.session.linkingSourceId = this.kernel.linkingSourceId;
+            state.session.activeProjectId = this.kernel.activeProjectId;
+            state.session.projects = this.kernel.getProjects();
         }
 
         if (!this.iframe) {
@@ -132,96 +134,166 @@ class DataPhaseEngine extends PhaseEngineBase {
         if (container) this.render(container, this.kernel.state);
     }
     
+    handlePageDrop(event, targetProjectId) {
+        event.preventDefault();
+        const pageId = event.dataTransfer.getData("text/plain");
+        if (!pageId) return;
+        
+        const projects = this.kernel.getProjects();
+        let fromProjId = null;
+        for (const p of projects) {
+            if (p.page_ids && p.page_ids.includes(pageId)) {
+                fromProjId = p.project_id;
+                break;
+            }
+        }
+        
+        if (!fromProjId) {
+            const lib = this.kernel.getLibrary();
+            const page = lib.find(p => p.map_id === pageId);
+            if (page) fromProjId = page.meta?.project_id || 'default_project';
+        }
+        
+        if (fromProjId && fromProjId !== targetProjectId) {
+            this.kernel.movePage(pageId, fromProjId, targetProjectId);
+            const container = document.getElementById('data-manager-content');
+            if (container) this.render(container, this.kernel.state);
+        }
+    }
+    
     render(container, state) {
-        const lib = this.kernel.getLibrary();
+        const activeProjId = this.kernel.activeProjectId;
+        const projects = this.kernel.getProjects();
+        const pages = this.kernel.getPages(activeProjId);
+        
+        const activeProj = projects.find(p => p.project_id === activeProjId) || projects[0] || { meta: { title: "My Project" } };
+        const activeProjTitle = activeProj.meta?.title || "My Project";
         
         container.innerHTML = `
             <div class="w-full flex flex-col gap-4 pb-10">
-                <p class="text-slate-400 text-xs px-1">Manage local sessions, import assets, map APIs, and process raw JSON.</p>
+                <p class="text-slate-400 text-xs px-1">Manage workspace projects, organize nested pages, and package system configurations.</p>
                 <div class="flex flex-col gap-4">
                         
-                        <!-- 1. Sessions Accordion -->
-                        <div class="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-hidden transition-all flex flex-col">
-                            <div id="data-accordion-library" class="p-4 bg-slate-800/50 hover:bg-slate-800 cursor-pointer flex justify-between items-center transition-colors select-none" onclick="SC.registry.get('data').toggle('library')">
-                                <h2 class="text-purple-400 font-bold uppercase text-xs tracking-widest flex items-center gap-2">📚 Sessions</h2>
+                        <!-- 1. Workspace Library Collapsible Accordion -->
+                        <div class="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-hidden transition-all flex flex-col shrink-0">
+                            <div class="p-4 bg-slate-800/50 hover:bg-slate-800 cursor-pointer flex justify-between items-center transition-colors select-none" onclick="SC.registry.get('data').toggle('library')">
+                                <h2 class="text-purple-400 font-bold uppercase text-xs tracking-widest flex items-center gap-2">📁 Workspace Library</h2>
                                 <div class="flex items-center gap-3">
-                                    <span class="bg-slate-800 text-slate-400 px-2 py-0.5 rounded text-[10px] border border-slate-700">${lib.length} Items</span>
+                                    <span class="bg-slate-800 text-slate-400 px-2 py-0.5 rounded text-[10px] border border-slate-700">${projects.length} Projects</span>
                                     <span class="text-slate-500 text-xs">${this.ui.library ? '▼' : '▶'}</span>
                                 </div>
                             </div>
                             
                             ${this.ui.library ? `
-                            <div class="p-5 border-t border-slate-800 flex flex-col gap-4 bg-slate-900">
+                            <div class="p-4 border-t border-slate-800 flex flex-col gap-4 bg-slate-900/40">
                                 
-                                <div class="flex flex-col sm:flex-row gap-2">
-                                    <button id="btn-save-session" onclick="SC.actionSaveCurrentToLibrary()" class="flex-1 py-3 border border-purple-500/50 hover:bg-purple-600/20 text-purple-400 hover:text-purple-300 font-bold text-xs uppercase tracking-widest rounded-lg transition-colors bg-slate-950 flex justify-center items-center gap-2">
-                                        ➕ <span class="hidden sm:inline">Save Current Session</span>
-                                    </button>
-                                    <div class="flex flex-1 gap-2">
-                                        <button onclick="SC.actionDownloadLibrary()" class="flex-1 py-3 bg-slate-800 hover:bg-sky-600 text-white font-bold text-xs uppercase tracking-widest rounded-lg transition-colors border border-slate-700 shadow flex justify-center items-center gap-2" title="Export entire library as a single JSON file">
-                                            💾 <span class="hidden sm:inline">Export</span>
-                                        </button>
-<label class="flex-1 py-3 bg-slate-800 hover:bg-emerald-600 text-white font-bold text-xs uppercase tracking-widest rounded-lg transition-colors border border-slate-700 shadow cursor-pointer text-center flex items-center justify-center gap-2" title="Import maps into library">
-                                            📂 <span class="hidden sm:inline">Import</span>
-                                            <input type="file" accept=".json" class="hidden" onchange="SC.actionUploadLibraryFile(event)">
-                                        </label>
+                                <!-- Top Section: Projects Panel -->
+                                <div class="flex flex-col gap-2 min-h-0 bg-slate-950/20 p-3 rounded-xl border border-slate-800/40 shrink-0">
+                                    <div class="flex justify-between items-center shrink-0">
+                                        <h3 class="text-purple-400 font-bold uppercase text-[10px] tracking-widest flex items-center gap-1">📁 Projects</h3>
+                                        <button onclick="SC.actionCreateProject()" class="text-[9px] bg-purple-600 hover:bg-purple-500 text-white px-2 py-0.5 rounded transition-all font-bold uppercase tracking-wider">+ New Project</button>
+                                    </div>
+                                    <div class="flex flex-col gap-1.5 overflow-y-auto max-h-[150px] custom-scrollbar pr-1" id="projects-list-container">
+                                        ${projects.map(proj => {
+                                            const isActive = proj.project_id === activeProjId;
+                                            const meta = proj.meta || {};
+                                            const title = meta.title || "Untitled Project";
+                                            const icon = meta.icon || "📁";
+                                            const color = meta.color || "#8b5cf6";
+                                            const pagesCount = proj.page_ids ? proj.page_ids.length : 0;
+                                            
+                                            return `
+                                            <div class="group flex flex-col gap-1 p-2 rounded-lg border transition-all cursor-pointer shrink-0 ${isActive ? 'bg-purple-950/30 border-purple-800/80 shadow-md ring-1 ring-purple-500/25' : 'bg-slate-950/50 border-slate-800/60 hover:border-slate-700/80'}" 
+                                                 onclick="SC.actionSetActiveProject('${proj.project_id}')"
+                                                 ondragover="event.preventDefault(); this.classList.add('bg-purple-900/40')"
+                                                 ondragleave="this.classList.remove('bg-purple-900/40')"
+                                                 ondrop="this.classList.remove('bg-purple-900/40'); SC.actionMovePageToProject(event, '${proj.project_id}')">
+                                                <div class="flex items-center justify-between gap-2">
+                                                    <span class="text-xs font-semibold truncate flex items-center gap-1.5 cursor-pointer">
+                                                        <span style="color: ${color}">${icon}</span>
+                                                        <span class="${isActive ? 'text-purple-300 font-bold' : 'text-slate-300 group-hover:text-slate-100'} truncate">${title}</span>
+                                                    </span>
+                                                    <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                                                        <button onclick="event.stopPropagation(); SC.actionPromptRenameProject('${proj.project_id}')" class="text-[9px] text-slate-400 hover:text-white" title="Rename Project">✏️</button>
+                                                        <button onclick="event.stopPropagation(); SC.actionDeleteProject('${proj.project_id}')" class="text-[9px] text-slate-400 hover:text-rose-400" title="Delete Project">🗑️</button>
+                                                    </div>
+                                                </div>
+                                                <div class="text-[9px] text-slate-500 pl-5">
+                                                    <span>${pagesCount} pages</span>
+                                                </div>
+                                            </div>
+                                            `;
+                                        }).join('')}
+                                    </div>
+                                </div>
+                                
+                                <!-- Bottom Section: Pages Panel -->
+                                <div class="flex flex-col gap-2 min-h-0 bg-slate-950/20 p-3 rounded-xl border border-slate-800/40 shrink-0">
+                                    <div class="flex justify-between items-center shrink-0 gap-2">
+                                        <div class="flex flex-col min-w-0">
+                                            <h3 class="text-sky-400 font-bold uppercase text-[10px] tracking-widest flex items-center gap-1">📄 Pages</h3>
+                                            <span class="text-[8px] text-slate-400 truncate font-semibold">Active Project: ${activeProjTitle}</span>
+                                        </div>
+                                        <button onclick="SC.actionCreatePage()" class="text-[9px] bg-sky-600 hover:bg-sky-500 text-white px-2 py-0.5 rounded transition-all font-bold uppercase tracking-wider shrink-0">+ New Page</button>
+                                    </div>
+                                    <div class="flex flex-col gap-2 overflow-y-auto max-h-[250px] custom-scrollbar pr-1" id="pages-list-container">
+                                        ${(!pages || pages.length === 0) ? '<div class="text-center text-slate-600 text-xs py-10 italic border border-dashed border-slate-800 rounded-lg">No pages found in this project.</div>' : ''}
+                                        ${pages.map(page => {
+                                            const isCurrentPage = page.map_id === state.map_id;
+                                            const meta = page.meta || {};
+                                            const title = meta.title || "Untitled Page";
+                                            const type = meta.type || "generic";
+                                            const nodeCount = page.nodes ? page.nodes.length : 0;
+                                            
+                                            return `
+                                            <div class="bg-slate-950/70 border rounded-xl overflow-hidden group relative hover:border-sky-500/40 transition-all shrink-0 ${isCurrentPage ? 'border-sky-500/70 shadow-lg shadow-sky-950/40 ring-1 ring-sky-500/10' : 'border-slate-800/80'}" 
+                                                 draggable="true" 
+                                                 ondragstart="event.dataTransfer.setData('text/plain', '${page.map_id}')">
+                                                <div class="absolute left-0 top-0 bottom-0 w-1 bg-sky-500 ${isCurrentPage ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} transition-opacity"></div>
+                                                
+                                                <div class="p-3 flex flex-col gap-2">
+                                                    <div class="flex justify-between items-start gap-4">
+                                                        <div class="font-bold text-xs text-slate-200 truncate flex-1 flex items-center gap-1.5 cursor-grab active:cursor-grabbing">
+                                                            📄 <span class="truncate">${title}</span>
+                                                            <span class="text-[8px] bg-slate-900 border border-slate-800 text-slate-400 px-1.5 py-0.5 rounded-full shrink-0 uppercase tracking-widest">${type}</span>
+                                                        </div>
+                                                        <span class="text-[9px] text-slate-500 bg-slate-900/60 px-1.5 py-0.5 rounded border border-slate-800/60 shrink-0">${nodeCount} nodes</span>
+                                                    </div>
+                                                    
+                                                    <div class="flex gap-1.5 opacity-60 group-hover:opacity-100 transition-opacity">
+                                                        <button onclick="SC.actionLoadFromLibrary('${page.map_id}')" class="flex-1 bg-slate-900 hover:bg-sky-600 text-white text-[9px] py-1 rounded font-bold transition-all border border-slate-800/80 shadow">Load</button>
+                                                        <button onclick="SC.actionDownloadSingleConstellation('${page.map_id}')" class="bg-slate-900 hover:bg-indigo-600 text-slate-300 hover:text-white text-[9px] py-1 px-2 rounded font-bold transition-all border border-slate-800/80 shadow" title="Download JSON">⬇️</button>
+                                                        <button onclick="SC.actionPromptRenamePage('${page.map_id}')" class="bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white text-[9px] py-1 px-2 rounded font-bold transition-all border border-slate-800/80 shadow" title="Rename Page">✏️</button>
+                                                        <button onclick="SC.actionDeleteFromLibrary('${page.map_id}')" class="bg-slate-900 hover:bg-rose-900/60 text-slate-400 hover:text-rose-200 text-[9px] py-1 px-2 rounded font-bold transition-all border border-slate-800/80 shadow" title="Delete Page">🗑️</button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            `;
+                                        }).join('')}
                                     </div>
                                 </div>
 
-                                <div class="flex-1 overflow-y-auto max-h-[500px] custom-scrollbar pr-2 space-y-3 mt-2" id="library-list">
-                                    ${(!lib || lib.length === 0) ? '<div class="text-center text-slate-600 text-xs py-6 italic border border-dashed border-slate-800 rounded-lg">No saved sessions found.</div>' : ''}
-                                    ${lib.map(item => `
-                                        <div class="bg-slate-950 border border-slate-800 rounded-xl overflow-hidden group relative">
-                                            <div class="absolute left-0 top-0 bottom-0 w-1 bg-purple-500 opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                                            
-                                            <div class="p-4 flex justify-between items-center cursor-pointer hover:bg-slate-900/50" onclick="SC.registry.get('data').toggleItem('${item.map_id}')">
-                                                <div class="font-bold text-sm text-slate-200 truncate pr-4 flex items-center gap-2">
-                                                    ${item.meta?.title || 'Untitled Map'}
-                                                    ${item.meta?.shared ? '<span class="text-[10px] bg-blue-900/50 text-blue-400 px-2 rounded-full border border-blue-800">Shared</span>' : '<span class="text-[10px] bg-slate-800 text-slate-400 px-2 rounded-full border border-slate-700">Local</span>'}
-                                                </div>
-                                                <div class="flex items-center gap-4">
-                                                    <div class="text-[10px] text-slate-500 bg-slate-900 px-2 py-0.5 rounded border border-slate-800 shrink-0">${item.nodes.length} nodes</div>
-                                                    <span class="text-slate-600 text-xs">${this.ui.openItems[item.map_id] ? '▼' : '▶'}</span>
-                                                </div>
-                                            </div>
-
-                                            ${this.ui.openItems[item.map_id] ? `
-                                            <div class="p-4 border-t border-slate-800 bg-slate-900/50 flex flex-col gap-3">
-                                                <div class="flex gap-4">
-                                                    <div class="flex-1 flex flex-col gap-1">
-                                                        <label class="text-[10px] font-bold text-slate-500 uppercase">Title</label>
-                                                        <input id="lib-title-${item.map_id}" value="${this.escapeHTML(item.meta?.title || 'Untitled Map')}" class="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1.5 text-xs text-slate-300 outline-none focus:border-purple-500">
-                                                    </div>
-                                                    <div class="flex-1 flex flex-col gap-1">
-                                                        <label class="text-[10px] font-bold text-slate-500 uppercase">Status</label>
-                                                        <label class="flex items-center gap-2 text-xs text-slate-300 mt-2 cursor-pointer">
-                                                            <input type="checkbox" id="lib-shared-${item.map_id}" ${item.meta?.shared ? 'checked' : ''} class="accent-purple-500">
-                                                            Shared
-                                                        </label>
-                                                    </div>
-                                                </div>
-                                                <div class="flex flex-col gap-1">
-                                                    <label class="text-[10px] font-bold text-slate-500 uppercase">Meta-Notes</label>
-                                                    <textarea id="lib-notes-${item.map_id}" class="w-full h-20 bg-slate-950 border border-slate-700 rounded p-2 text-xs text-slate-300 outline-none focus:border-purple-500 custom-scrollbar resize-none" placeholder="Add descriptions or tags...">${this.escapeHTML(item.meta?.notes || '')}</textarea>
-                                                </div>
-                                                <div class="flex gap-2 mt-2">
-                                                    <button onclick="SC.actionUpdateLibraryItem('${item.map_id}')" class="flex-1 bg-slate-800 hover:bg-emerald-600 text-white text-[10px] py-2 rounded font-bold transition-colors border border-slate-700">Save</button>
-                                                    <button onclick="SC.actionLoadFromLibrary('${item.map_id}')" class="flex-1 bg-slate-800 hover:bg-sky-600 text-white text-[10px] py-2 rounded font-bold transition-colors border border-slate-700">Load</button>
-                                                    <button onclick="SC.actionDownloadSingleConstellation('${item.map_id}')" class="flex-1 bg-slate-800 hover:bg-indigo-600 text-white text-[10px] py-2 rounded font-bold transition-colors border border-slate-700" title="Download this map">Download</button>
-                                                    <button onclick="SC.actionDeleteFromLibrary('${item.map_id}')" class="bg-slate-800 hover:bg-red-600 text-slate-400 hover:text-white text-[10px] py-2 px-3 rounded font-bold transition-colors border border-slate-700" title="Delete Map">🗑️</button>
-                                                </div>
-                                            </div>
-                                            ` : ''}
-                                        </div>
-                                    `).join('')}
+                                <!-- Project Export/Import Panel -->
+                                <div class="p-3 bg-slate-950/20 border border-slate-800/40 rounded-xl shadow-inner flex flex-col gap-2 shrink-0">
+                                    <h3 class="text-emerald-400 font-bold uppercase text-[9px] tracking-widest block mb-0.5">📦 Project Package Exchange</h3>
+                                    <div class="flex gap-2">
+                                        <button onclick="SC.actionDownloadProject()" class="flex-1 py-2 bg-slate-850 hover:bg-purple-600/30 text-purple-400 hover:text-purple-300 text-[10px] font-bold rounded-lg transition-all border border-slate-700/60">
+                                            💾 Export Project Package
+                                        </button>
+                                        <label class="flex-1 py-2 bg-slate-850 hover:bg-emerald-600/30 text-emerald-400 hover:text-emerald-300 text-[10px] font-bold rounded-lg transition-all border border-slate-700/60 cursor-pointer text-center flex items-center justify-center gap-1">
+                                            📂 Import Project/Page
+                                            <input type="file" accept=".json" class="hidden" onchange="SC.actionUploadProjectOrPageFile(event)">
+                                        </label>
+                                    </div>
                                 </div>
+                                
                             </div>
                             ` : ''}
                         </div>
                         
                         
                         <!-- 0. Cloud Templates Accordion -->
-                        <div class="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-hidden transition-all flex flex-col">
+                        <div class="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-hidden transition-all flex flex-col shrink-0">
                             <div class="p-4 bg-slate-800/50 hover:bg-slate-800 cursor-pointer flex justify-between items-center transition-colors select-none" onclick="SC.registry.get('data').toggle('templates')">
                                 <h2 class="text-blue-400 font-bold uppercase text-xs tracking-widest flex items-center gap-2">🌐 Assets</h2>
                                 <div class="flex items-center gap-3">
@@ -275,7 +347,7 @@ class DataPhaseEngine extends PhaseEngineBase {
                         </div>
 
                         <!-- 2. API Accordion -->
-                        <div class="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-hidden transition-all">
+                        <div class="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-hidden transition-all shrink-0">
                             <div class="p-4 bg-slate-800/50 hover:bg-slate-800 cursor-pointer flex justify-between items-center transition-colors select-none" onclick="SC.registry.get('data').toggle('api')">
                                 <h2 class="text-sky-400 font-bold uppercase text-xs tracking-widest flex items-center gap-2">📡 API Federation</h2>
                                 <span class="text-slate-500 text-xs">${this.ui.api ? '▼' : '▶'}</span>
@@ -303,7 +375,7 @@ class DataPhaseEngine extends PhaseEngineBase {
                         </div>
 
                         <!-- 3. JSON Accordion -->
-                        <div class="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-hidden transition-all flex flex-col">
+                        <div class="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-hidden transition-all flex flex-col shrink-0">
                             <div id="data-accordion-json" class="p-4 bg-slate-800/50 hover:bg-slate-800 cursor-pointer flex justify-between items-center transition-colors select-none" onclick="SC.registry.get('data').toggle('json')">
                                 <h2 class="text-emerald-400 font-bold uppercase text-xs tracking-widest flex items-center gap-2">🧬 Raw JSON Exchange</h2>
                                 <span class="text-slate-500 text-xs">${this.ui.json ? '▼' : '▶'}</span>
