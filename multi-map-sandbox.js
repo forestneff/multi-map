@@ -1032,6 +1032,22 @@ class SandboxController {
         }
     }
 
+    async actionPromptCopyPage(pageId) {
+        const lib = this.kernel.getLibrary();
+        const page = lib.find(p => p.map_id === pageId);
+        if (page) {
+            const pageTitle = page.meta?.title || "Page";
+            const defaultProjName = `${pageTitle} Project`;
+            const newProjName = prompt("Enter a title for the new project to copy this page into:", defaultProjName);
+            if (newProjName) {
+                await this.kernel.clonePage(pageId, 'new', null, newProjName);
+                this.render();
+                alert(`Page copied into new project "${newProjName}"!`);
+            }
+        }
+    }
+
+
     actionMovePageToProject(event, targetProjId) {
         event.preventDefault();
         const pageId = event.dataTransfer.getData("text/plain");

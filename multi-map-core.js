@@ -414,6 +414,113 @@ class MultiMapKernel {
         this.notify();
     }
 
+    async clonePage(pageId, targetProjectId, newTitle = null, newProjectTitle = null) {
+        let sourcePage = null;
+        if (window.FirebaseAuth && window.FirebaseAuth.currentUser && !window.FirebaseAuth.currentUser.isAnonymous) {
+            for (const projId in this.firestorePagesByProject) {
+                const found = this.firestorePagesByProject[projId].find(p => p.map_id === pageId);
+                if (found) {
+                    sourcePage = JSON.parse(JSON.stringify(found));
+                    break;
+                }
+            }
+        } else {
+            const lib = this.getLibrary();
+            const found = lib.find(p => p.map_id === pageId);
+            if (found) {
+                sourcePage = JSON.parse(JSON.stringify(found));
+            }
+        }
+        
+        if (!sourcePage) {
+            console.error("Source page not found for copying:", pageId);
+            return null;
+        }
+
+        let finalProjectId = targetProjectId;
+        
+        if (targetProjectId === 'new' || !targetProjectId) {
+            const projId = this.generateId();
+            const projTitle = newProjectTitle || `${sourcePage.meta.title} Project`;
+            const newProj = {
+                project_id: projId,
+                meta: {
+                    title: projTitle,
+                    description: `Created from copy of page "${sourcePage.meta.title}"`,
+                    icon: sourcePage.meta.icon || "📁",
+                    color: "#10b981"
+                },
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                page_ids: []
+            };
+            
+            if (window.FirebaseAuth && window.FirebaseAuth.currentUser && !window.FirebaseAuth.currentUser.isAnonymous) {
+                const uid = window.FirebaseAuth.currentUser.uid;
+                try {
+                    const projRef = window.Firestore.doc(window.FirebaseDb, "users", uid, "projects", projId);
+                    await window.Firestore.setDoc(projRef, newProj);
+                    this.firestoreProjects.push(newProj);
+                    this.firestorePagesByProject[projId] = [];
+                } catch (err) {
+                    console.error("Firestore create project for clone failed:", err);
+                }
+            } else {
+                this.projects.push(newProj);
+                localStorage.setItem("mm_projects", JSON.stringify(this.projects));
+            }
+            finalProjectId = projId;
+        }
+
+        const newPageId = this.generateId();
+        const clonedPage = {
+            ...sourcePage,
+            map_id: newPageId,
+            meta: {
+                ...sourcePage.meta,
+                title: newTitle || (targetProjectId === 'new' ? sourcePage.meta.title : `${sourcePage.meta.title} (Copy)`),
+                created: new Date().toISOString(),
+                project_id: finalProjectId
+            }
+        };
+
+        const projects = this.getProjects();
+        const targetProj = projects.find(p => p.project_id === finalProjectId);
+        if (targetProj) {
+            if (!targetProj.page_ids.includes(newPageId)) {
+                targetProj.page_ids.push(newPageId);
+            }
+            targetProj.updated_at = new Date().toISOString();
+
+            if (window.FirebaseAuth && window.FirebaseAuth.currentUser && !window.FirebaseAuth.currentUser.isAnonymous) {
+                const uid = window.FirebaseAuth.currentUser.uid;
+                try {
+                    const pageRef = window.Firestore.doc(window.FirebaseDb, "users", uid, "projects", finalProjectId, "pages", newPageId);
+                    await window.Firestore.setDoc(pageRef, clonedPage);
+                    
+                    const projRef = window.Firestore.doc(window.FirebaseDb, "users", uid, "projects", finalProjectId);
+                    await window.Firestore.setDoc(projRef, targetProj);
+                    
+                    if (!this.firestorePagesByProject[finalProjectId]) this.firestorePagesByProject[finalProjectId] = [];
+                    this.firestorePagesByProject[finalProjectId].push(clonedPage);
+                } catch (err) {
+                    console.error("Firestore clonePage failed:", err);
+                }
+            } else {
+                let lib = this.getLibrary();
+                lib.push(clonedPage);
+                this.saveLibrary(lib);
+                localStorage.setItem("mm_projects", JSON.stringify(this.projects));
+            }
+            
+            this.activeProjectId = finalProjectId;
+            this.loadMapState(clonedPage);
+            this.notify();
+        }
+        return newPageId;
+    }
+
+
     getBlueprint(type) { return typeof MultiMapSchema !== 'undefined' ? MultiMapSchema.getDefinition(type) : { label: type, icon: "⚪" }; }
     getSmartChildType(pid) { const p = this.state.nodes.find(x => x.id === pid); return p && typeof MultiMapSchema !== 'undefined' ? MultiMapSchema.getDefaultChild(p.type) : 'note'; }
 

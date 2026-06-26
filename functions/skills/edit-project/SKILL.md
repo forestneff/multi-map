@@ -47,6 +47,15 @@ You MUST respond with valid JSON matching this schema:
       "pageId": "page-xyz",
       "fromProjectId": "p1",
       "toProjectId": "p2"
+    },
+    {
+      "action": "page-copy",
+      "pageId": "page-xyz",
+      "toProjectId": "new",
+      "data": {
+        "title": "Optional Cloned Page Title",
+        "projectName": "New Project Title"
+      }
     }
   ]
 }
@@ -58,5 +67,6 @@ You MUST respond with valid JSON matching this schema:
 - `page-rename`: Renames an existing page. Provide `pageId` and `data` (title).
 - `page-delete`: Deletes a page from the project. Provide `pageId`.
 - `page-move`: Moves a page to another project. Provide `pageId`, `fromProjectId`, and `toProjectId`.
+- `page-copy`: Clones a page into a project. Provide `pageId`. Specify `toProjectId` (can be a project ID, or `"new"` to copy into a new project). Optionally provide `data` with `title` (the new title for the cloned page) and `projectName` (the name of the project to create if `toProjectId` is `"new"`).
 
 Ensure any page/project IDs match those in the provided project context.

@@ -253,6 +253,50 @@ async function runTests() {
     console.assert(updatedPages.some(p => p.meta.title === "History Page"), "Should contain the new History page");
 
     console.log("✓ Project-level AI edits successfully verified");
+
+    // ==========================================
+    // Test Case 4: Co-Pilot Page Cloning
+    // ==========================================
+    console.log("\n--- Test Case 4: Co-Pilot Page Cloning ---");
+    
+    // We will clone "ai-page-math" (which is now "Advanced Math" in the library) into a new project named "Math Special"
+    const aiClonePayload = {
+        message: "Cloned page to a new project.",
+        edits: [
+            {
+                action: "page-copy",
+                pageId: "ai-page-math",
+                toProjectId: "new",
+                data: {
+                    title: "Advanced Math Clone",
+                    projectName: "Math Special"
+                }
+            }
+        ]
+    };
+
+    aiEngine.geminiAPIGeneration = () => Promise.resolve({
+        text: JSON.stringify(aiClonePayload),
+        mode: 'edit'
+    });
+
+    const mockInput2 = document.getElementById('ai-input');
+    mockInput2.value = "Copy page Advanced Math to a new project named Math Special";
+
+    await aiEngine.handleSend();
+
+    // Verify a new project was created
+    const clonedProj = kernel.projects.find(p => p.meta.title === "Math Special");
+    console.assert(clonedProj, "New project 'Math Special' should be created");
+    
+    // Verify the page was copied with the new title
+    const clonedProjPages = kernel.getPages(clonedProj.project_id);
+    console.assert(clonedProjPages.length === 1, "New project should contain exactly 1 page");
+    console.assert(clonedProjPages[0].meta.title === "Advanced Math Clone", "Cloned page should be titled 'Advanced Math Clone'");
+    console.assert(clonedProjPages[0].map_id !== "ai-page-math", "Cloned page map_id should be different from source page map_id");
+    
+    console.log("✓ Co-Pilot Page cloning successfully verified");
+
     console.log("\nAll Project AI Integration Tests Passed Successfully! 🎉");
     process.exit(0);
 }

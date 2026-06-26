@@ -488,6 +488,8 @@ class MultiMapAI {
                                 await this.kernel.deleteFromLibrary(edit.pageId);
                             } else if (edit.action === 'page-move' && edit.pageId) {
                                 await this.kernel.movePage(edit.pageId, edit.fromProjectId, edit.toProjectId);
+                            } else if (edit.action === 'page-copy' && edit.pageId) {
+                                await this.kernel.clonePage(edit.pageId, edit.toProjectId || 'new', edit.data?.title, edit.data?.projectName);
                             }
                         } catch (err) {
                             console.error("Failed to apply edit:", edit, err);
