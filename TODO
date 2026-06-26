@@ -1,61 +1,16 @@
 # Meta-Mind — Feature TODO
 > A living document for proposed features, improvements, and design intentions.
 > Add items freely. Expand into detail before implementation.
+> Items are ordered by dependency and recommended execution sequence.
 
 ---
 
-## [ ] 1. Fully Set Up Login / Sign-Up
-
-**Intent:** Complete the Firebase Authentication integration so users can create accounts,
-sign in, and have their data securely scoped to their identity.
-
-**Details:**
-- Implement email/password sign-up and sign-in flows via Firebase Auth SDK.
-- Add Google OAuth as a one-click sign-in option.
-- On first login, provision a default personal library and initial map for the new user.
-- Replace the current local-storage-only persistence with Firestore, keyed to `uid`.
-- The Profile Drawer (`#profile-drawer`) should reflect real user data:
-  name, avatar, email, account tier, and sign-out button.
-- Session state (active map, portal history) should survive page refresh for
-  authenticated users (persisted to Firestore session doc).
-- Protect all Firestore read/write paths with Security Rules scoped to `request.auth.uid`.
-- Add an unauthenticated "guest" mode that works fully offline with local storage,
-  with a clear prompt to save/sign-up before data is lost.
-- Error states: show friendly inline messages for wrong password, unverified email,
-  account-already-exists, network offline, etc.
-- Forgot-password flow via Firebase `sendPasswordResetEmail`.
-
----
-
-## [ ] 2. Update Data-Manager System to Project + Pages Architecture
-
-**Intent:** Replace the flat library list in the Data Manager with a two-level hierarchy:
-Projects (containers) and Pages (individual maps/sessions within a project).
-
-**Details:**
-- Introduce a `Project` schema: `{ project_id, meta: { title, description, icon, color },
-  created_at, updated_at, page_ids[] }`.
-- Each saved map (`map_id`) becomes a "Page" belonging to one Project.
-- Data Manager UI redesign:
-  - Left column: scrollable project list with creation/rename/delete controls.
-  - Right column: pages within the selected project (card or list view, sortable).
-  - "New Project" and "New Page" buttons with inline name entry.
-- Portal destinations should be scoped/searched by project — allow cross-project linking
-  but surface same-project pages first in the portal payload selector.
-- Breadcrumb in the nav bar: `[Project Name] › [Page Name]` replacing the plain map title.
-- Drag-and-drop to move a page between projects.
-- Project-level export/import (zip of all page JSON files + project manifest).
-- Firestore structure (when auth is live): `users/{uid}/projects/{project_id}/pages/{map_id}`.
-- Migrate existing flat library entries to a default "My Project" project on first load
-  after this change ships.
-
----
-
-## [ ] 3. Refine Map UI — Auto-Collapse on Deep Downstream Nodes & During Highlighting
+## [ ] 1. Refine Map UI — Auto-Collapse on Deep Downstream Nodes & During Highlighting
 
 **Intent:** Reduce visual clutter in large maps by automatically collapsing nodes that
 are far from the current focal point, and aggressively collapsing non-relevant branches
-when a node is highlighted or selected.
+when a node is highlighted or selected. Pure frontend — no backend dependency, can start
+immediately.
 
 **Details:**
 
@@ -108,12 +63,286 @@ when a node is highlighted or selected.
 
 ---
 
-## [ ] 4. Refine / Update Tutorial System — Reflect New Features & Ensure Auto-Nav
+## [ ] 2. Fully Set Up Login / Sign-Up
+
+**Intent:** Complete the Firebase Authentication integration so users can create accounts,
+sign in, and have their data securely scoped to their identity. This is a hard prerequisite
+for Firestore persistence, rate-limiting, project/pages, and map sharing.
+
+**Details:**
+- Implement email/password sign-up and sign-in flows via Firebase Auth SDK.
+- Add Google OAuth as a one-click sign-in option.
+- On first login, provision a default personal library and initial map for the new user.
+- Replace the current local-storage-only persistence with Firestore, keyed to `uid`.
+- The Profile Drawer (`#profile-drawer`) should reflect real user data:
+  name, avatar, email, account tier, and sign-out button.
+- Session state (active map, portal history) should survive page refresh for
+  authenticated users (persisted to Firestore session doc).
+- Protect all Firestore read/write paths with Security Rules scoped to `request.auth.uid`.
+- Add an unauthenticated "guest" mode that works fully offline with local storage,
+  with a clear prompt to save/sign-up before data is lost.
+- Error states: show friendly inline messages for wrong password, unverified email,
+  account-already-exists, network offline, etc.
+- Forgot-password flow via Firebase `sendPasswordResetEmail`.
+
+---
+
+## [ ] 3. Firebase Functions Refactor (Express Architecture)
+
+**Intent:** Refactor `functions/index.js` from a single exported Cloud Function into a
+proper Express-based router structure before adding more endpoints. This creates a clean,
+maintainable foundation for logging, rate-limiting, AI proxying, and future admin APIs.
+
+**Details:**
+- Restructure `functions/` directory:
+  ```
+  functions/
+    index.js          ← Express app entry, mounts routers
+    routes/
+      ai.js           ← /api/ai/* (generate, complete, etc.)
+      admin.js        ← /api/admin/* (log browser, replay, etc.)
+    middleware/
+      auth.js         ← Firebase ID token verification middleware
+      rateLimit.js    ← Per-user quota check middleware
+    services/
+      gemini.js       ← Gemini API client (extracted from current index.js)
+      logger.js       ← Firestore log writer
+  ```
+- Port the existing `generateMapState` export to the new `routes/ai.js` router
+  without breaking the current client call.
+- Add token verification middleware that extracts `uid` from the Firebase ID token
+  on every authenticated request (anonymous requests use session fingerprint).
+- All new endpoints added after this point follow the Express router pattern.
+
+---
+
+## [ ] 4. AI Logging & Rate Limiting
+
+**Intent:** Add server-side infrastructure to log every AI prompt and response payload
+for data analysis and regression testing, and enforce per-user daily rate limits —
+with a small free quota for anonymous users that converts to a larger account-based
+quota on sign-up. Depends on #2 (auth) and #3 (functions refactor).
+
+**Details:**
+
+### Server-Side Logging
+- On every AI request, write a log document to Firestore:
+  ```
+  ai_logs/{log_id}
+    uid           : string | "anonymous"
+    session_id    : string
+    timestamp     : Timestamp
+    prompt        : string
+    response      : string
+    tokens_in     : number
+    tokens_out    : number
+    skill         : string   // "generate-mapstate" | "edit-mapstate" | etc.
+    map_id        : string
+    latency_ms    : number
+    error         : string | null
+  ```
+- Log documents are write-only from the Cloud Function; client has no read/write access.
+- Retention policy: keep logs for 90 days, then auto-delete via a scheduled function.
+
+### One-Shot Testing & Comparison
+- Build an internal admin page (`/admin/ai-logs`) to browse logs, filter by skill/uid/date,
+  and replay any historical prompt against the current model to compare outputs.
+- Diffing view: side-by-side comparison of original response vs. re-run response,
+  highlighting JSON structural changes.
+- Tag logs as "golden" to build a regression test suite; a scheduled function can
+  re-run all golden prompts nightly and alert on significant output drift.
+
+### Rate Limiting
+- **Anonymous users:** 5 AI requests per day, tracked via browser fingerprint /
+  session token stored in Firestore (`anon_quotas/{session_id}`).
+- **Authenticated users (free tier):** 25 AI requests per day, tracked in
+  `users/{uid}/quota` with a `daily_count` and `reset_at` (next midnight UTC).
+- **Authenticated users (pro tier):** configurable higher limit, managed via a
+  `users/{uid}/subscription` document.
+- Quota is checked and decremented server-side inside the Cloud Function — never trust
+  the client for quota enforcement.
+- When a user hits their anonymous limit, show a non-blocking prompt:
+  *"You've used your free AI credits for today. Create a free account to get 25/day."*
+  — with a sign-up CTA that pre-fills the auth modal.
+- When an authenticated user hits their limit, show remaining reset time and a link
+  to upgrade.
+- Quota resets are handled by a scheduled Cloud Function that runs at midnight UTC.
+
+---
+
+## [ ] 5. Update Data-Manager System to Project + Pages Architecture
+
+**Intent:** Replace the flat library list in the Data Manager with a two-level hierarchy:
+Projects (containers) and Pages (individual maps/sessions within a project).
+Depends on #2 (auth) for Firestore structure; can be built against localStorage first
+if needed.
+
+**Details:**
+- Introduce a `Project` schema: `{ project_id, meta: { title, description, icon, color },
+  created_at, updated_at, page_ids[] }`.
+- Each saved map (`map_id`) becomes a "Page" belonging to one Project.
+- Data Manager UI redesign:
+  - Left column: scrollable project list with creation/rename/delete controls.
+  - Right column: pages within the selected project (card or list view, sortable).
+  - "New Project" and "New Page" buttons with inline name entry.
+- Portal destinations should be scoped/searched by project — allow cross-project linking
+  but surface same-project pages first in the portal payload selector.
+- Breadcrumb in the nav bar: `[Project Name] › [Page Name]` replacing the plain map title.
+- Drag-and-drop to move a page between projects.
+- Project-level export/import (zip of all page JSON files + project manifest).
+- Firestore structure (when auth is live): `users/{uid}/projects/{project_id}/pages/{map_id}`.
+- Migrate existing flat library entries to a default "My Project" project on first load
+  after this change ships.
+
+---
+
+## [ ] 6. AI Functionality Enhancements
+
+**Intent:** Update the AI engine to be fully aware of and able to drive state/phase
+management and the new project + pages architecture, turning it into a true workspace
+co-pilot rather than a one-shot map generator. Depends on #5 for project context.
+
+**Details:**
+
+### State & Phase Awareness
+- Pass the full current workspace context to every AI prompt payload:
+  - Active project + page name and `map_id`.
+  - Current `viewMode` (map / web / person / prompt / agent / orbital).
+  - Active node selection (`selectedId`, type, title, content).
+  - Portal depth / `portalHistory` length so the AI knows if it's inside a submap.
+- AI should be able to emit structured **action commands** in its response payload
+  in addition to (or instead of) raw mapstate JSON. Example actions:
+  ```json
+  { "action": "SET_VIEW", "view": "web" }
+  { "action": "SELECT_NODE", "nodeId": "abc123" }
+  { "action": "ENTER_PORTAL", "nodeId": "abc123" }
+  { "action": "ADD_NODE", "node": { ... } }
+  { "action": "APPLY_TEMPLATE", "templateId": "tpl_web_landing" }
+  ```
+- The sandbox controller (`multi_map_ai_engine.js`) should parse these action commands
+  after receiving a response and dispatch them sequentially via `SC.*` / `Kernel.*` calls.
+- AI-generated maps should respect the active map's type constraints (ontology rules)
+  and only produce node types valid for the current map type.
+
+### Project + Pages Awareness (depends on #5)
+- AI should be able to create new pages within the active project, link them via portals,
+  and reference existing pages by name when building multi-map constellations.
+- Prompt skeleton should include a `project` context block listing existing page titles
+  and `map_id`s so the AI can wire up portal `content` fields correctly.
+- "Generate full project" mode: user describes a whole app/site/system in one prompt;
+  AI returns an array of page mapstates + a project manifest, which are bulk-imported
+  and auto-linked via portals.
+
+### Skill / Prompt System
+- **Intent parsing is preserved as the default path** — the AI reads the user's plain-
+  language message and infers the correct skill automatically. Savvy users should not
+  need to think about skills at all if they don't want to.
+- **Slash-command UI for direct skill invocation:** typing `/` in the AI chat input
+  opens an inline autocomplete popover listing all available skills:
+  - `/generate` — Generate a new map or submap from a description.
+  - `/edit` — Edit / extend the current map based on instructions.
+  - `/refine` — Modify only the currently selected node(s) / subgraph.
+  - `/explain` — Narrate what the current map represents in plain language.
+  - `/project` — Generate a full multi-page project constellation.
+  - Future skills are automatically surfaced here as they are registered.
+- The popover appears immediately on `/`, filters as the user continues typing
+  (e.g. `/gen` highlights `/generate`), and is confirmed with `Enter` or a click.
+  Pressing `Escape` dismisses it and returns to free-text input.
+- Selecting a skill from the popover **pre-pends a skill tag** to the message
+  (e.g. `[generate]`) that the AI engine strips before sending to the model, using
+  it to bypass intent parsing and route directly to the correct skill handler.
+- Intent parsing still runs as normal when no `/` tag is present, so the two paths
+  are fully compatible and non-breaking.
+
+---
+
+## [ ] 7. PWA / Offline Mode
+
+**Intent:** Package the app as a Progressive Web App so it can be installed on desktop
+and mobile and continue working offline or on flaky connections. Depends on #5 so the
+full data model is in place before designing the offline cache strategy.
+
+**Details:**
+- Add a Web App Manifest (`manifest.json`): app name, icons (192px, 512px), theme color,
+  `display: standalone`, start URL.
+- Implement a Service Worker with a cache-first strategy for all static assets
+  (HTML, JS, CSS, engine HTML files, tutorial JSON).
+- For authenticated users, cache the active project's pages in IndexedDB (via the
+  service worker) so maps are readable and editable offline.
+- Sync queue: changes made offline are written to a local queue and flushed to Firestore
+  when connectivity returns (using the Background Sync API where supported).
+- Offline indicator in the nav bar status area (already has `#host-status` dot).
+- Install prompt: after 3 sessions, show a subtle "Install Meta-Mind" banner.
+
+---
+
+## [ ] 8. Node Search / Global Jump
+
+**Intent:** Extend the existing nav search bar from single-map title search to cross-map
+semantic search across all pages in the active project. Depends on #6 (AI enhancements)
+so AI-driven node selection and search use the same underlying mechanism.
+
+**Details:**
+- Current search filters `state.nodes` by title substring — keep this as the instant
+  local result tier.
+- Add a second tier: cross-map search across all library pages (by title, content,
+  node type), surfacing results with `[Page Name] › Node Title` breadcrumbs.
+- Selecting a cross-map result: opens (or creates) a portal to that page and
+  `selectNode()` on the matched node.
+- Keyboard shortcut: `Cmd/Ctrl + K` opens the search bar with focus.
+- Semantic / fuzzy search: use a lightweight client-side fuzzy matcher (e.g. Fuse.js)
+  for typo tolerance; for AI-powered semantic search, pass the query to a
+  `/api/search` Cloud Function that embeds and vector-searches across log-stored maps.
+
+---
+
+## [ ] 9. Undo / Redo Polish
+
+**Intent:** The current undo system (`kernel.history`) clears on every portal
+`enter` / `exit` and does not support redo. Improve to multi-level undo that persists
+across portal navigation and adds a redo stack.
+
+**Details:**
+- Maintain separate undo/redo stacks per `map_id` (keyed in a `Map` object on the
+  kernel) so entering and exiting a portal does not destroy the parent map's history.
+- On `enterPortal`, push the current state onto the child map's history; the parent
+  map's history is frozen but preserved.
+- On `exitPortal`, restore the parent map's history stack.
+- Redo stack: when `saveHistory()` is called (i.e. a new action is taken), clear the
+  redo stack for that map — standard linear undo model.
+- Cap history depth at 50 entries per map to limit memory.
+- Keyboard: `Ctrl/Cmd+Z` = undo, `Ctrl/Cmd+Shift+Z` = redo.
+- Show current undo depth as a subtle counter on the undo button (`↩️ 3`).
+
+---
+
+## [ ] 10. Map Sharing / Public Links
+
+**Intent:** Allow users to share a read-only link to any map in their library.
+Depends on #2 (auth) and #5 (project/pages) for the Firestore path structure.
+
+**Details:**
+- Add a `shared: boolean` flag (already exists on map meta) and a `share_token: string`
+  field to the map schema.
+- "Share" action in the Data Manager generates a unique `share_token` (UUID), sets
+  `shared: true`, and writes the map to a public Firestore collection:
+  `shared_maps/{share_token}` — read-only, no auth required.
+- Public URL format: `https://meta-mind.app/view/{share_token}`.
+- A lightweight `view.html` page renders the shared map in read-only map mode
+  (no inspector, no AI, no editing controls).
+- Shared maps show a "Fork to my workspace" button for authenticated visitors.
+- Revoke sharing: sets `shared: false` and deletes the `shared_maps` document.
+- Expiry option: shared links can optionally expire after 7 / 30 / 90 days.
+
+---
+
+## [ ] 11. Refine / Update Tutorial System — Reflect New Features & Ensure Auto-Nav
 
 **Intent:** Bring the tutorial system up to date with all features added since initial
 build (Person maps, portal save-on-exit, smart action button, type selector grouping,
 phase engine visibility rules, etc.) and make tutorials drive the UI automatically
-rather than requiring the user to navigate manually between steps.
+rather than requiring the user to navigate manually between steps. Done last — tutorials
+should document the finished product, not a moving target.
 
 **Details:**
 
@@ -150,124 +379,4 @@ rather than requiring the user to navigate manually between steps.
 
 ---
 
----
-
-## [ ] 5. AI Functionality Enhancements
-
-**Intent:** Update the AI engine to be fully aware of and able to drive state/phase
-management and the new project + pages architecture, turning it into a true workspace
-co-pilot rather than a one-shot map generator.
-
-**Details:**
-
-### State & Phase Awareness
-- Pass the full current workspace context to every AI prompt payload:
-  - Active project + page name and `map_id`.
-  - Current `viewMode` (map / web / person / prompt / agent / orbital).
-  - Active node selection (`selectedId`, type, title, content).
-  - Portal depth / `portalHistory` length so the AI knows if it's inside a submap.
-- AI should be able to emit structured **action commands** in its response payload
-  in addition to (or instead of) raw mapstate JSON. Example actions:
-  ```json
-  { "action": "SET_VIEW", "view": "web" }
-  { "action": "SELECT_NODE", "nodeId": "abc123" }
-  { "action": "ENTER_PORTAL", "nodeId": "abc123" }
-  { "action": "ADD_NODE", "node": { ... } }
-  { "action": "APPLY_TEMPLATE", "templateId": "tpl_web_landing" }
-  ```
-- The sandbox controller (`multi_map_ai_engine.js`) should parse these action commands
-  after receiving a response and dispatch them sequentially via `SC.*` / `Kernel.*` calls.
-- AI-generated maps should respect the active map's type constraints (ontology rules)
-  and only produce node types valid for the current map type.
-
-### Project + Pages Awareness (depends on TODO #2)
-- AI should be able to create new pages within the active project, link them via portals,
-  and reference existing pages by name when building multi-map constellations.
-- Prompt skeleton should include a `project` context block listing existing page titles
-  and `map_id`s so the AI can wire up portal `content` fields correctly.
-- "Generate full project" mode: user describes a whole app/site/system in one prompt;
-  AI returns an array of page mapstates + a project manifest, which are bulk-imported
-  and auto-linked via portals.
-
-### Skill / Prompt System
-- **Intent parsing is preserved as the default path** — the AI reads the user's plain-
-  language message and infers the correct skill automatically. Savvy users should not
-  need to think about skills at all if they don't want to.
-- **Slash-command UI for direct skill invocation:** typing `/` in the AI chat input
-  opens an inline autocomplete popover listing all available skills:
-  - `/generate` — Generate a new map or submap from a description.
-  - `/edit` — Edit / extend the current map based on instructions.
-  - `/refine` — Modify only the currently selected node(s) / subgraph.
-  - `/explain` — Narrate what the current map represents in plain language.
-  - `/project` — Generate a full multi-page project constellation.
-  - Future skills are automatically surfaced here as they are registered.
-- The popover appears immediately on `/`, filters as the user continues typing
-  (e.g. `/gen` highlights `/generate`), and is confirmed with `Enter` or a click.
-  Pressing `Escape` dismisses it and returns to free-text input.
-- Selecting a skill from the popover **pre-pends a skill tag** to the message
-  (e.g. `[generate]`) that the AI engine strips before sending to the model, using
-  it to bypass intent parsing and route directly to the correct skill handler.
-- Intent parsing still runs as normal when no `/` tag is present, so the two paths
-  are fully compatible and non-breaking.
-
----
-
-## [ ] 6. AI Logging & Rate Limiting
-
-**Intent:** Add server-side infrastructure to log every AI prompt and response payload
-for data analysis and regression testing, and enforce per-user daily rate limits —
-with a small free quota for anonymous users that converts to a larger account-based
-quota on sign-up.
-
-**Details:**
-
-### Server-Side Logging (Firebase Functions)
-- All AI requests must be routed through a Firebase Cloud Function (`/api/ai/complete`)
-  rather than calling the Gemini API directly from the client. This gives the server
-  full control over auth, limits, and logging.
-- On every request, write a log document to Firestore:
-  ```
-  ai_logs/{log_id}
-    uid           : string | "anonymous"
-    session_id    : string   // browser session token
-    timestamp     : Timestamp
-    prompt        : string   // full prompt sent to model
-    response      : string   // raw model response
-    tokens_in     : number
-    tokens_out    : number
-    skill         : string   // "generate-mapstate" | "edit-mapstate" | etc.
-    map_id        : string
-    latency_ms    : number
-    error         : string | null
-  ```
-- Log documents are write-only from the Cloud Function; client has no read/write access.
-- Retention policy: keep logs for 90 days, then auto-delete via a scheduled function.
-
-### One-Shot Testing & Comparison
-- Build an internal admin page (`/admin/ai-logs`) to browse logs, filter by skill/uid/date,
-  and replay any historical prompt against the current model to compare outputs.
-- Diffing view: side-by-side comparison of original response vs. re-run response,
-  highlighting JSON structural changes.
-- Tag logs as "golden" to build a regression test suite; a scheduled function can
-  re-run all golden prompts nightly and alert on significant output drift.
-
-### Rate Limiting
-- **Anonymous users:** 5 AI requests per day, tracked via a browser fingerprint /
-  session token stored in Firestore (`anon_quotas/{session_id}`).
-- **Authenticated users (free tier):** 25 AI requests per day, tracked in
-  `users/{uid}/quota` with a `daily_count` and `reset_at` (next midnight UTC).
-- **Authenticated users (pro tier):** configurable higher limit, managed via a
-  `users/{uid}/subscription` document.
-- Quota is checked and decremented server-side inside the Cloud Function — never trust
-  the client for quota enforcement.
-- When a user hits their anonymous limit, show a non-blocking prompt:
-  *"You've used your free AI credits for today. Create a free account to get 25/day."*
-  — with a sign-up CTA that pre-fills the auth modal.
-- When an authenticated user hits their limit, show remaining reset time and a link
-  to upgrade.
-- Quota resets are handled by a scheduled Cloud Function that runs at midnight UTC,
-  resetting all `daily_count` fields to 0.
-
----
-
-*Last updated: 2026-06-25 — added items 5 (AI enhancements) and 6 (AI logging & rate limiting)*
+*Last updated: 2026-06-25 — reordered by dependency, added items 7 (PWA), 8 (Search), 9 (Undo/Redo), 10 (Map Sharing), new item 3 (Functions Refactor)*

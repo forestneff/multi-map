@@ -1097,12 +1097,15 @@ class SandboxController {
         });
 
         const structuralEdges = state.connections.filter(c => c.type === 'structural');
+        // True roots = nodes with no incoming structural edges (used for root highlight in selection mode)
+        const hasIncomingEdge = new Set(structuralEdges.map(e => e.to));
+        const trueRootIds = new Set(state.nodes.filter(n => !hasIncomingEdge.has(n.id)).map(n => n.id));
+
         let focalNodes = [];
         if (state.session.selectedId) {
             focalNodes = [state.session.selectedId];
         } else {
-            const hasIncoming = new Set(structuralEdges.map(e => e.to));
-            focalNodes = state.nodes.filter(n => !hasIncoming.has(n.id)).map(n => n.id);
+            focalNodes = state.nodes.filter(n => !hasIncomingEdge.has(n.id)).map(n => n.id);
             if (focalNodes.length === 0 && state.nodes.length > 0) {
                 focalNodes = [state.nodes[0].id];
             }
@@ -1135,8 +1138,9 @@ class SandboxController {
             structuredCoords = new Map();
             const vSpacing = 280;
             const hSpacing = 320;
-            const trueRoots = state.nodes.filter(n => !new Set(structuralEdges.map(e => e.to)).has(n.id)).map(n => n.id);
-            if (trueRoots.length === 0 && state.nodes.length > 0) trueRoots.push(state.nodes[0].id);
+            // Reuse trueRootIds computed above
+            const trueRootsArr = [...trueRootIds];
+            if (trueRootsArr.length === 0 && state.nodes.length > 0) trueRootsArr.push(state.nodes[0].id);
 
             let currentX = 0;
             const calculateSubtree = (nodeId, depth) => {
@@ -1154,7 +1158,7 @@ class SandboxController {
                 }
             };
             
-            trueRoots.forEach(root => { calculateSubtree(root, 0); currentX += hSpacing; });
+            trueRootsArr.forEach(root => { calculateSubtree(root, 0); currentX += hSpacing; });
             state.nodes.forEach(n => {
                 if (!structuredCoords.has(n.id)) {
                     structuredCoords.set(n.id, { x: currentX, y: 0 });
@@ -1184,7 +1188,7 @@ class SandboxController {
                     const distS = distances.has(s.id) ? distances.get(s.id) : -1;
                     const distT = distances.has(t.id) ? distances.get(t.id) : -1;
                     if (!isLinking && (distS === -1 || distT === -1)) {
-                        l.style.strokeOpacity = "0.2";
+                        l.style.strokeOpacity = "0.48";
                     }
                     this.dom.edgeSvg.appendChild(l);
                 }
@@ -1218,10 +1222,20 @@ class SandboxController {
                 el.style.opacity = '1';
                 el.style.backgroundColor = `rgba(30, 41, 59, 0.95)`;
             } else if (dist === -1) {
-                scale = 0.4;
-                color = '#334155';
-                el.style.opacity = '0.3';
-                el.style.backgroundColor = `rgba(30, 41, 59, 0.2)`;
+                // Background (upstream / unrelated) nodes
+                const isRoot = trueRootIds.has(node.id) && state.session.selectedId;
+                if (isRoot) {
+                    // Root node gets a slightly bigger, brighter treatment so it stays findable
+                    scale = 0.85;
+                    color = '#e2e8f0';
+                    el.style.opacity = '0.85';
+                    el.style.backgroundColor = `rgba(30, 41, 59, 0.75)`;
+                } else {
+                    scale = 0.5;
+                    color = '#475569';
+                    el.style.opacity = '0.6';
+                    el.style.backgroundColor = `rgba(30, 41, 59, 0.45)`;
+                }
             } else {
                 scale = Math.max(0.3, 1.4 * Math.pow(0.7, dist));
                 const layerColors = ['#ffffff', '#a855f7', '#3b82f6', '#22c55e', '#eab308', '#f97316', '#ef4444'];
@@ -1245,7 +1259,12 @@ class SandboxController {
             if (dist !== -1) {
                 el.style.boxShadow = `0 0 10px ${color}40`;
             } else {
-                el.style.boxShadow = 'none';
+                const isRoot = trueRootIds.has(node.id) && state.session.selectedId;
+                if (isRoot) {
+                    el.style.boxShadow = `0 0 12px ${color}60`;
+                } else {
+                    el.style.boxShadow = 'none';
+                }
             }
             
             if (node.data.isCore && dist !== -1) el.style.borderColor = '#ea580c';
@@ -1255,6 +1274,16 @@ class SandboxController {
                     el.style.boxShadow = "0 0 25px rgba(129,140,248, 0.8)";
                     el.classList.add('animate-pulse');
                 }
+            }
+
+            // Smart-action halo: breathing glow for nodes with button actions
+            const halo = this.getSmartActionHalo(node.type);
+            if (halo && dist !== -1 && !this.aiImportMode) {
+                el.classList.add('smart-action-halo');
+                el.style.setProperty('--halo-color', halo);
+            } else {
+                el.classList.remove('smart-action-halo');
+                el.style.removeProperty('--halo-color');
             }
             if (node.data.collapsed) el.classList.add('collapsed');
             
@@ -1361,6 +1390,17 @@ class SandboxController {
         this.updateTransform();
     }
 
+    // Returns the halo colour (rgba string) for node types that spawn a smart button action,
+    // or null for types that don't.
+    getSmartActionHalo(type) {
+        if (type === 'portal' || type === 'smart-portal') return 'rgba(16,185,129,0.5)';  // emerald
+        if (type === 'person-root')                       return 'rgba(99,102,241,0.5)';  // indigo
+        if (type === 'web-root' || type.startsWith('web-')) return 'rgba(14,165,233,0.5)'; // sky
+        if (type === 'prompt-root')                       return 'rgba(217,119,6,0.5)';   // amber
+        if (type === 'agent-root')                        return 'rgba(225,29,72,0.5)';   // rose
+        return null;
+    }
+
     updatePhaseButtons() {
         if (!this.kernel || !this.kernel.state) return;
         const currentMapType = (this.kernel.state.meta && this.kernel.state.meta.type) ? this.kernel.state.meta.type : 'generic';
@@ -1389,9 +1429,26 @@ class SandboxController {
         });
     }
 
+    hasSmartAction() {
+        const selectedId = this.kernel.state.session.selectedId;
+        const selectedNode = this.kernel.state.nodes.find(n => n.id === selectedId);
+        const canExit = this.kernel.portalHistory && this.kernel.portalHistory.length > 0;
+        if (selectedNode && this.viewMode === 'map') {
+            const type = selectedNode.type;
+            if (['portal', 'smart-portal', 'person-root', 'web-root', 'prompt-root', 'agent-root'].includes(type) || type.startsWith('web-')) {
+                return true;
+            }
+        }
+        return !!canExit;
+    }
+
     updateSmartActionButton() {
         const btn = document.getElementById('btn-smart-action');
-        if (!btn) return;
+        const tooltipBar = document.getElementById('ai-tooltip-bar');
+        const tooltipContent = document.getElementById('ai-tooltip-content');
+        const tooltipActions = document.getElementById('ai-tooltip-actions');
+        
+        if (!btn || !tooltipBar) return;
 
         const selectedId = this.kernel.state.session.selectedId;
         const selectedNode = this.kernel.state.nodes.find(n => n.id === selectedId);
@@ -1434,16 +1491,35 @@ class SandboxController {
             themeClasses = 'bg-purple-600 hover:bg-purple-500 border-purple-400 text-purple-100 hover:text-white shadow-[0_0_15px_rgba(168,85,247,0.4)]';
         }
 
-        if (action) {
-            btn.className = `absolute bottom-8 left-1/2 -translate-x-1/2 z-[100] text-xs font-bold uppercase tracking-widest px-6 py-3 rounded-full border shadow-lg transition-all flex items-center gap-2 ${themeClasses}`;
+        const tutorialActive = window.Tutorials && window.Tutorials.isActive;
+
+        if (action && !tutorialActive) {
+            btn.className = `text-xs font-bold uppercase tracking-widest px-6 py-3 rounded-full border shadow-lg transition-all flex items-center gap-2 ${themeClasses}`;
             btn.innerHTML = text;
             btn.onclick = (e) => {
                 e.stopPropagation();
                 action();
             };
             btn.classList.remove('hidden');
+
+            if (tooltipContent) tooltipContent.classList.add('hidden');
+            if (tooltipActions) tooltipActions.classList.add('hidden');
+
+            tooltipBar.className = tooltipBar.className.replace(/mb-\d+|bottom-\d+/g, '').trim() + ' bottom-6';
+            tooltipBar.classList.remove('hidden', 'translate-x-4', 'opacity-0');
         } else {
             btn.classList.add('hidden');
+            if (!tutorialActive) {
+                // If the tooltip was only showing the smart button, hide it
+                if (tooltipContent && tooltipContent.classList.contains('hidden')) {
+                    tooltipBar.classList.add('translate-x-4', 'opacity-0');
+                    setTimeout(() => {
+                        if (btn.classList.contains('hidden') && tooltipContent.classList.contains('hidden')) {
+                            tooltipBar.classList.add('hidden');
+                        }
+                    }, 300);
+                }
+            }
         }
     }
 }

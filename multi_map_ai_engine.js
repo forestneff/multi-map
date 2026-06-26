@@ -81,6 +81,7 @@ class MultiMapAI {
             <div id="ai-tooltip-bar" class="absolute bottom-6 right-24 mr-2 bg-slate-900/95 backdrop-blur-xl border border-indigo-500/50 rounded-2xl shadow-[0_0_20px_rgba(79,70,229,0.3)] hidden flex flex-col sm:flex-row sm:items-center px-4 py-3 z-[110] transform transition-all translate-x-4 opacity-0 pointer-events-auto max-w-[calc(100vw-6rem)] gap-3">
                 <div id="ai-tooltip-content" class="text-sm text-slate-200 flex-1 whitespace-normal break-words w-full"></div>
                 <div id="ai-tooltip-actions" class="flex items-center shrink-0 self-end sm:self-auto"></div>
+                <button id="btn-smart-action" class="hidden text-xs font-bold uppercase tracking-widest px-6 py-3 rounded-full border shadow-lg transition-all flex items-center gap-2"></button>
             </div>
         `;
 
@@ -249,10 +250,21 @@ class MultiMapAI {
         const bar = document.getElementById('ai-tooltip-bar');
         const content = document.getElementById('ai-tooltip-content');
         const actions = document.getElementById('ai-tooltip-actions');
+        const btn = document.getElementById('btn-smart-action');
 
         if (this.tooltipHideTimeout) {
             clearTimeout(this.tooltipHideTimeout);
             this.tooltipHideTimeout = null;
+        }
+
+        if (btn) btn.classList.add('hidden');
+        if (content) {
+            content.innerHTML = text;
+            content.classList.remove('hidden');
+        }
+        if (actions) {
+            actions.innerHTML = actionsHtml;
+            actions.classList.remove('hidden');
         }
 
         // Apply any custom offset classes (clean up old ones first)
@@ -262,9 +274,6 @@ class MultiMapAI {
             bar.classList.add(...customClass.split(' '));
         }
 
-        content.innerHTML = text;
-        actions.innerHTML = actionsHtml;
-
         bar.classList.remove('hidden');
         setTimeout(() => {
             bar.classList.remove('translate-x-4', 'opacity-0');
@@ -273,6 +282,17 @@ class MultiMapAI {
 
     hideTooltip() {
         const bar = document.getElementById('ai-tooltip-bar');
+        if (!bar) return;
+
+        // If no tutorial is active, and a smart action is active, transition back to it
+        const tutorialActive = window.Tutorials && window.Tutorials.isActive;
+        if (!tutorialActive && this.sandbox && typeof this.sandbox.updateSmartActionButton === 'function') {
+            if (typeof this.sandbox.hasSmartAction === 'function' && this.sandbox.hasSmartAction()) {
+                this.sandbox.updateSmartActionButton();
+                return;
+            }
+        }
+
         bar.classList.add('translate-x-4', 'opacity-0');
         if (this.tooltipHideTimeout) clearTimeout(this.tooltipHideTimeout);
         this.tooltipHideTimeout = setTimeout(() => bar.classList.add('hidden'), 300);
