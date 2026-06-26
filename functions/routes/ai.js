@@ -132,7 +132,7 @@ router.post('/', authMiddleware, rateLimitMiddleware, async (req, res) => {
         // --- STEP 2: LOAD SPECIFIC SKILL ---
         let systemPrompt = '';
         try {
-            const validIntents = ['generate-mapstate', 'generate-web-mapstate', 'edit-mapstate', 'analyze-mapstate'];
+            const validIntents = ['generate-mapstate', 'generate-web-mapstate', 'edit-mapstate', 'analyze-mapstate', 'generate-project', 'edit-project', 'analyze-project'];
             if (!validIntents.includes(intent)) {
                 intent = 'generate-mapstate';
             }
@@ -168,8 +168,8 @@ router.post('/', authMiddleware, rateLimitMiddleware, async (req, res) => {
             totalTokensOut += generationResult.tokens_out;
             
             let mode = 'generate';
-            if (intent === 'edit-mapstate') mode = 'edit';
-            else if (intent === 'analyze-mapstate') mode = 'analyze';
+            if (intent === 'edit-mapstate' || intent === 'edit-project') mode = 'edit';
+            else if (intent === 'analyze-mapstate' || intent === 'analyze-project') mode = 'analyze';
 
             await loggerService.logRequest({
                 uid: req.user.uid,

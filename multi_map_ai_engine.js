@@ -11,6 +11,7 @@ class MultiMapAI {
         this.selectedModel = 'gemini-2.5-flash';
         this.chatHistory = [];
         this.pendingMapData = null; // Holds the generated JSON until assigned
+        this.pendingProjectData = null; // Holds the generated project JSON
         this.env = {};
         this.envLoaded = false;
 
@@ -411,7 +412,24 @@ class MultiMapAI {
                 throw new Error("Invalid JSON structure returned by AI.");
             }
 
-            if (aiData.map_id && aiData.nodes) {
+            if (aiData.type === "multimap_project" || (aiData.project && aiData.pages)) {
+                // Project Generation Mode
+                aiData.type = "multimap_project";
+                this.pendingProjectData = aiData;
+
+                const actionHtml = `
+                    <div class="mt-3 flex flex-col gap-2 border-t border-indigo-500/30 pt-3">
+                        <button onclick="window.AI.importPendingProject()" class="w-full py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded font-bold shadow transition-colors flex justify-center items-center gap-2">
+                            🚀 Import as New Project
+                        </button>
+                    </div>
+                `;
+
+                if (document.getElementById('ai-loading')) {
+                    document.getElementById('ai-loading').remove();
+                }
+                this.addMessage('system', `Project generated: **${aiData.project.meta?.title || 'Project'}** with ${aiData.pages.length} pages. How would you like to deploy it?`, actionHtml);
+            } else if (aiData.map_id && aiData.nodes) {
                 // Legacy Map Generation Mode
                 aiData.map_id = "ai_" + this.kernel.generateId();
                 this.pendingMapData = aiData;
@@ -460,6 +478,16 @@ class MultiMapAI {
                                 this.kernel.addConnection(edit.parentId, newNode.id);
                             } else if (edit.action === 'delete' && edit.nodeId) {
                                 this.kernel.deleteNode(edit.nodeId);
+                            } else if (edit.action === 'project-update' && edit.projectId) {
+                                await this.kernel.renameProject(edit.projectId, edit.data.title, edit.data.description, edit.data.icon, edit.data.color);
+                            } else if (edit.action === 'page-add' && edit.projectId) {
+                                await this.kernel.createPage(edit.projectId, edit.data.title, edit.data.type || 'generic');
+                            } else if (edit.action === 'page-rename' && edit.pageId) {
+                                await this.kernel.updateLibraryItem(edit.pageId, { title: edit.data.title });
+                            } else if (edit.action === 'page-delete' && edit.pageId) {
+                                await this.kernel.deleteFromLibrary(edit.pageId);
+                            } else if (edit.action === 'page-move' && edit.pageId) {
+                                await this.kernel.movePage(edit.pageId, edit.fromProjectId, edit.toProjectId);
                             }
                         } catch (err) {
                             console.error("Failed to apply edit:", edit, err);
@@ -624,18 +652,42 @@ class MultiMapAI {
         this.pendingMapData = null;
     }
 
+    async importPendingProject() {
+        if (!this.pendingProjectData) return;
+        await this.sandbox.processProjectImport(this.pendingProjectData);
+        this.pendingProjectData = null;
+        this.toggleChat();
+    }
+
     // --- Context Building ---
 
     buildContextString() {
+        const activeProjId = this.kernel.activeProjectId;
+        const projects = this.kernel.getProjects ? this.kernel.getProjects() : [];
+        const activeProj = projects.find(p => p.project_id === activeProjId) || { meta: { title: "Untitled Project", description: "" } };
+        const activeProjPages = this.kernel.getPages ? this.kernel.getPages(activeProjId) : [];
+
+        let ctx = "--- PROJECT CONTEXT ---\n" +
+            `Active Project ID: ${activeProjId || 'default_project'}\n` +
+            `Active Project Title: ${activeProj.meta?.title || "Untitled"}\n` +
+            `Active Project Description: ${activeProj.meta?.description || "None"}\n` +
+            `Pages in Active Project:\n` +
+            activeProjPages.map(p => `  - [Page ID: ${p.map_id}] "${p.meta?.title || "Untitled"}" (${p.meta?.type || "generic"} type, ${(p.nodes || []).length} nodes)`).join("\n") +
+            "\n" +
+            `All Workspace Projects:\n` +
+            projects.map(p => `  - [Project ID: ${p.project_id}] "${p.meta?.title || "Untitled"}" (${(p.page_ids || []).length} pages)`).join("\n") +
+            "\n---------------------------\n";
+
         const selectedId = this.kernel.state.session.selectedId;
         if (!selectedId) {
-            return "--- FULL MAP OVERVIEW ---\n" +
+            ctx += "--- FULL MAP OVERVIEW ---\n" +
                 JSON.stringify(this.kernel.state.nodes.map(n => ({ id: n.id, title: n.title, type: n.type }))) +
                 "\n---------------------------\n";
+            return ctx;
         }
 
         const state = this.kernel.state;
-        let ctx = "--- CURRENT MAP CONTEXT ---\n";
+        ctx += "--- CURRENT MAP CONTEXT ---\n";
 
         // Helper to get connected nodes recursively
         const getConnected = (nodeId, direction, maxDepth, currentDepth = 0, visited = new Set()) => {
