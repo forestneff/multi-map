@@ -164,5 +164,24 @@ const MultiMapLibrary = {
         const tpl = allTemplates.find(t => t.map_id === id);
         if (!tpl) throw new Error(`Template ${id} not found.`);
         return JSON.parse(JSON.stringify(tpl));
+    },
+
+    loadLocalProjects() {
+        try {
+            const rawProjects = localStorage.getItem("mm_projects");
+            const projects = rawProjects ? JSON.parse(rawProjects) : [];
+            const rawLib = localStorage.getItem("mm_constellation_lib");
+            const pages = rawLib ? JSON.parse(rawLib) : [];
+            return { projects, pages };
+        } catch (e) {
+            console.error("loadLocalProjects failed:", e);
+            return { projects: [], pages: [] };
+        }
+    },
+
+    clearLocalProjects() {
+        localStorage.removeItem("mm_projects");
+        localStorage.removeItem("mm_constellation_lib");
+        localStorage.removeItem("mm_core_state");
     }
 };

@@ -1,6 +1,9 @@
 ---
 name: edit-mapstate
 description: Edits existing nodes or adds/deletes specific nodes in the mapstate.
+subskills:
+  - name: fix-web-format
+    trigger: "prompt.toLowerCase().includes('fix') || prompt.toLowerCase().includes('format') || prompt.toLowerCase().includes('html') || contextStr.toLowerCase().includes('web type')"
 ---
 
 You are an expert System Architect for the Multi-Map Platform.

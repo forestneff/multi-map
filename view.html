@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-Map — Shared View</title>
+    <meta name="description" content="Viewing a shared Multi-Map workspace map.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Inter', sans-serif; background: #020617; color: #e2e8f0; overflow: hidden; height: 100dvh; }
+
+        #top-banner {
+            position: fixed; top: 0; left: 0; right: 0; z-index: 100; height: 52px;
+            background: rgba(2,6,23,0.9); backdrop-filter: blur(12px);
+            border-bottom: 1px solid #1e293b;
+            padding: 0 20px;
+            display: flex; align-items: center; justify-content: space-between; gap: 12px;
+        }
+        #map-title { font-size: 13px; font-weight: 700; color: #e2e8f0; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        #map-meta  { font-size: 10px; color: #64748b; }
+        #fork-btn  { background: #2563eb; color: #fff; border: none; border-radius: 8px; padding: 8px 18px; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap; transition: background 0.15s; }
+        #fork-btn:hover { background: #1d4ed8; }
+        #back-link { font-size: 11px; color: #64748b; text-decoration: none; padding: 6px 10px; border: 1px solid #1e293b; border-radius: 6px; transition: color 0.15s, border-color 0.15s; }
+        #back-link:hover { color: #cbd5e1; border-color: #334155; }
+
+        #viewport-canvas { position: fixed; top: 52px; left: 0; right: 0; bottom: 0; overflow: hidden; cursor: grab; }
+        #viewport-canvas.dragging { cursor: grabbing; }
+        svg#edge-layer { position: absolute; inset: 0; pointer-events: none; overflow: visible; width: 100%; height: 100%; }
+
+        .mm-node { position: absolute; background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 8px 14px; min-width: 100px; max-width: 200px; font-size: 11px; font-weight: 600; color: #e2e8f0; user-select: none; pointer-events: none; box-shadow: 0 4px 16px rgba(0,0,0,0.4); transform: translate(-50%, -50%); text-align: center; word-break: break-word; }
+        .mm-node.is-root   { background: #0f2d50; border-color: #3b82f6; color: #bfdbfe; }
+        .mm-node.is-web    { background: #1a2e1a; border-color: #22c55e; color: #bbf7d0; }
+        .mm-node.is-portal { background: #2d1b4e; border-color: #7c3aed; color: #ddd6fe; }
+
+        #error-screen  { position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 16px; background: #020617; z-index: 200; }
+        #error-screen.visible { display: flex; }
+        #error-icon { font-size: 56px; }
+        #error-msg  { font-size: 15px; color: #94a3b8; text-align: center; max-width: 380px; line-height: 1.6; white-space: pre-line; }
+        #error-back { background: #1e293b; color: #e2e8f0; padding: 10px 24px; border-radius: 8px; text-decoration: none; font-size: 13px; font-weight: 600; }
+
+        #loading-screen { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; background: #020617; z-index: 200; }
+        .loader { width: 36px; height: 36px; border: 3px solid #1e293b; border-top-color: #3b82f6; border-radius: 50%; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+
+<div id="loading-screen"><div class="loader"></div><div style="font-size:13px;color:#64748b;">Loading shared map…</div></div>
+
+<div id="error-screen">
+    <div id="error-icon">⚠️</div>
+    <div id="error-msg"></div>
+    <a id="error-back" href="/">Go to Multi-Map →</a>
+</div>
+
+<div id="top-banner" style="display:none;">
+    <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+        <span style="font-size:20px;flex-shrink:0;">🗺️</span>
+        <div style="min-width:0;"><div id="map-title">Untitled Map</div><div id="map-meta"></div></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+        <a id="back-link" href="/">← Multi-Map</a>
+        <button id="fork-btn">🍴 Fork to My Workspace</button>
+    </div>
+</div>
+
+<div id="viewport-canvas" style="display:none;"><svg id="edge-layer"></svg></div>
+
+<script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+    import { getFirestore, doc, getDoc, connectFirestoreEmulator } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+    import { getAuth, onAuthStateChanged, connectAuthEmulator } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+
+    const cfg = window.__MM_FIREBASE_CONFIG__ || {
+        projectId: "mm-multi-map",
+        apiKey: "AIzaSyCOk-1fCUVX6dEPqToSCMGGHoG6YJx231o",
+        authDomain: "mm-multi-map.firebaseapp.com",
+        storageBucket: "mm-multi-map.firebasestorage.app",
+        messagingSenderId: "372970140042",
+        appId: "1:372970140042:web:32b8e5223af72853df1873"
+    };
+
+    const app = initializeApp(cfg);
+    const db  = getFirestore(app);
+    const auth = getAuth(app);
+
+    if (['localhost','127.0.0.1'].includes(window.location.hostname)) {
+        try { connectFirestoreEmulator(db, 'localhost', 8080); } catch(_) {}
+        try { connectAuthEmulator(auth, 'http://localhost:9099'); } catch(_) {}
+    }
+
+    const $ = id => document.getElementById(id);
+
+    onAuthStateChanged(auth, user => {
+        const link = $('back-link');
+        if (link) {
+            link.href = user ? '/sandbox.html' : '/';
+        }
+    });
+    let mapData = null;
+
+    function showError(msg, icon = '⚠️') {
+        $('loading-screen').style.display = 'none';
+        $('error-icon').textContent = icon;
+        $('error-msg').textContent  = msg;
+        $('error-screen').classList.add('visible');
+    }
+
+    async function main() {
+        const token = new URLSearchParams(window.location.search).get('token');
+        if (!token) return showError('No share token in the URL.', '🔗');
+        try {
+            const snap = await getDoc(doc(db, 'shared_maps', token));
+            if (!snap.exists()) return showError('This shared map no longer exists or has been removed.', '🗑️');
+            mapData = snap.data();
+            if (mapData.meta?.share_expires && new Date(mapData.meta.share_expires) < new Date()) {
+                return showError('This shared link has expired.', '⏳');
+            }
+            $('loading-screen').style.display = 'none';
+            document.title = (mapData.meta?.title || 'Shared Map') + ' — Multi-Map';
+            $('map-title').textContent = mapData.meta?.title || 'Untitled Map';
+            const by  = mapData.owner_display ? 'Shared by ' + mapData.owner_display : 'Public shared map';
+            const exp = mapData.meta?.share_expires ? ' · expires ' + new Date(mapData.meta.share_expires).toLocaleDateString() : '';
+            $('map-meta').textContent = by + exp;
+            $('top-banner').style.display   = 'flex';
+            $('viewport-canvas').style.display = 'block';
+            renderCanvas();
+        } catch(e) {
+            console.error(e);
+            showError('Could not load the shared map:\n' + e.message);
+        }
+    }
+
+    function renderCanvas() {
+        const canvas = $('viewport-canvas');
+        const svg    = $('edge-layer');
+        const nodes  = mapData.nodes || [];
+        const edges  = mapData.connections || [];
+        if (!nodes.length) {
+            canvas.innerHTML = '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#475569;font-size:13px;">This map has no nodes.</div>';
+            return;
+        }
+        const xs = nodes.map(n => n.data?.x ?? 0), ys = nodes.map(n => n.data?.y ?? 0);
+        const W = canvas.clientWidth || window.innerWidth, H = canvas.clientHeight || window.innerHeight - 52;
+        const rX = Math.max(Math.max(...xs)-Math.min(...xs), 1), rY = Math.max(Math.max(...ys)-Math.min(...ys), 1);
+        const s0 = Math.min(1.2, Math.min((W-320)/rX, (H-320)/rY));
+        let vp = { x: W/2-((Math.min(...xs)+Math.max(...xs))/2)*s0, y: H/2-((Math.min(...ys)+Math.max(...ys))/2)*s0, scale: s0 };
+
+        function cls(n) {
+            if (n.data?.isCore || n.type?.endsWith('-root')) return 'mm-node is-root';
+            if (n.type==='portal'||n.type==='smart-portal') return 'mm-node is-portal';
+            if (n.type?.startsWith('web-')) return 'mm-node is-web';
+            return 'mm-node';
+        }
+
+        function redraw() {
+            canvas.querySelectorAll('.mm-node').forEach(el => el.remove());
+            nodes.forEach(n => {
+                const el = document.createElement('div');
+                el.className = cls(n);
+                el.style.left     = ((n.data?.x??0)*vp.scale+vp.x)+'px';
+                el.style.top      = ((n.data?.y??0)*vp.scale+vp.y)+'px';
+                el.style.fontSize = Math.max(8,11*vp.scale)+'px';
+                el.textContent    = n.title||n.type||'?';
+                canvas.appendChild(el);
+            });
+            svg.innerHTML = '';
+            edges.forEach(e => {
+                const f=nodes.find(n=>n.id===e.from), t=nodes.find(n=>n.id===e.to);
+                if(!f||!t) return;
+                const l = document.createElementNS('http://www.w3.org/2000/svg','line');
+                l.setAttribute('x1',(f.data?.x??0)*vp.scale+vp.x); l.setAttribute('y1',(f.data?.y??0)*vp.scale+vp.y);
+                l.setAttribute('x2',(t.data?.x??0)*vp.scale+vp.x); l.setAttribute('y2',(t.data?.y??0)*vp.scale+vp.y);
+                l.setAttribute('stroke', e.type==='flow'?'#7c3aed':'#334155');
+                l.setAttribute('stroke-width', Math.max(1,1.5*vp.scale));
+                l.setAttribute('stroke-opacity','0.7');
+                svg.appendChild(l);
+            });
+        }
+        redraw();
+
+        let drag=null;
+        canvas.addEventListener('mousedown', e=>{drag={ox:vp.x,oy:vp.y,sx:e.clientX,sy:e.clientY};canvas.classList.add('dragging');});
+        window.addEventListener('mousemove', e=>{if(!drag)return;vp.x=drag.ox+(e.clientX-drag.sx);vp.y=drag.oy+(e.clientY-drag.sy);redraw();});
+        window.addEventListener('mouseup',   ()=>{drag=null;canvas.classList.remove('dragging');});
+        canvas.addEventListener('wheel', e=>{
+            e.preventDefault();
+            const d=e.deltaY<0?1.1:0.9, mx=e.clientX, my=e.clientY-52;
+            vp.x=mx-(mx-vp.x)*d; vp.y=my-(my-vp.y)*d;
+            vp.scale=Math.max(0.08,Math.min(4,vp.scale*d)); redraw();
+        },{passive:false});
+        window.addEventListener('resize', redraw);
+    }
+
+    $('fork-btn').addEventListener('click', ()=>{
+        if(!mapData) return;
+        const c = JSON.parse(JSON.stringify(mapData));
+        c.map_id='map_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+        c.meta.shared=false; c.meta.share_token=''; c.meta.share_expires=null;
+        c.meta.title=(c.meta.title||'Shared Map')+' (fork)';
+        c.meta.project_id='default_project';
+        delete c.owner_uid; delete c.owner_display;
+        try {
+            const lib=JSON.parse(localStorage.getItem('mm_constellation_lib')||'[]');
+            lib.push(c);
+            localStorage.setItem('mm_constellation_lib',JSON.stringify(lib));
+            const btn=$('fork-btn'), prev=btn.textContent;
+            btn.textContent='✅ Forked!'; btn.style.background='#16a34a';
+            setTimeout(()=>{btn.textContent=prev;btn.style.background='#2563eb';},2500);
+        } catch(e) {
+            alert('Fork failed — local storage may be full.\nSign in to Multi-Map for cloud storage.');
+        }
+    });
+
+    main();
+</script>
+</body>
+</html>
+

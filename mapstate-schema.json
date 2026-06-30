@@ -14,7 +14,12 @@
             "all",
             ""
         ],
-        "settings": {}
+        "settings": {},
+        "storage_target": "firebase",
+        "external_id": "",
+        "shared": false,
+        "share_token": "",
+        "share_expires": null
     },
     "source": {
         "server": "",

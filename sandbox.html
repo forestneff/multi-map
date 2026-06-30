@@ -335,6 +335,30 @@
             } catch (e) {
                 console.error("Initialization Failed:", e);
             }
+
+            // ── Close right-side drawers on viewport canvas click ──────────
+            // Clicking the map canvas (but not the inspector) dismisses the
+            // profile drawer and data manager drawer.
+            const viewport = document.getElementById('viewport');
+            if (viewport) {
+                viewport.addEventListener('pointerdown', (e) => {
+                    // Let clicks on node elements, radial buttons, overlays, etc. propagate normally
+                    if (e.target.closest('#sidebar') ||
+                        e.target.closest('.radial-btn') ||
+                        e.target.closest('.moon-btn') ||
+                        e.target.closest('#linking-overlay') ||
+                        e.target.closest('#ai-overlay')) return;
+
+                    const profileDrawer = document.getElementById('profile-drawer');
+                    const dataDrawer    = document.getElementById('data-manager-drawer');
+                    if (profileDrawer && !profileDrawer.classList.contains('translate-x-full')) {
+                        profileDrawer.classList.add('translate-x-full');
+                    }
+                    if (dataDrawer && !dataDrawer.classList.contains('translate-x-full')) {
+                        dataDrawer.classList.add('translate-x-full');
+                    }
+                }, { capture: true });
+            }
         });
     </script>
 </body>

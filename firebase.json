@@ -3,6 +3,13 @@
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
   },
+  "hosting": {
+    "public": ".",
+    "ignore": ["firebase.json", "**/node_modules/**", ".git/**", "functions/**", "scratch/**"],
+    "rewrites": [
+      { "source": "/view/**", "destination": "/view.html" }
+    ]
+  },
   "functions": [
     {
       "source": "functions",
@@ -24,6 +31,9 @@
     },
     "functions": {
       "port": 5001
+    },
+    "hosting": {
+      "port": 5002
     },
     "ui": {
       "enabled": true

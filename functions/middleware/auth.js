@@ -3,7 +3,12 @@ const logger = require('firebase-functions/logger');
 
 module.exports = async (req, res, next) => {
     try {
-        const authHeader = req.headers.authorization;
+        let authHeader = req.headers.authorization || req.headers['x-authorization'];
+        const xAnonSession = req.headers['x-anonymous-session'];
+        if (!authHeader && xAnonSession) {
+            authHeader = `Anonymous ${xAnonSession}`;
+        }
+
         if (!authHeader) {
             logger.warn("Missing Authorization Header");
             return res.status(401).json({ error: 'Unauthorized: Missing Authorization header.' });

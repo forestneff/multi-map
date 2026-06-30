@@ -1,393 +1,237 @@
-# Multi Map — Feature TODO
-> A living document for proposed features, improvements, and design intentions.
-> Add items freely. Expand into detail before implementation.
-> Items are ordered by dependency and recommended execution sequence.
+### Multi Map — Feature TODO
+
+- A living document for proposed features, improvements, and design intentions.
+- Add items freely. Expand into detail before implementation.
+- Items are ordered by dependency and recommended execution sequence.
 
 ---
 
-## [x] 1. Refine Map UI — Auto-Collapse on Deep Downstream Nodes & During Highlighting
+### [ ] Phase 1: The Data & Identity Layer
+- Agent Context: firestore.rules, multi-map-core.js (data manager), multi-map-library.js, auth.js, Firebase Admin functions.
 
-**Intent:** Reduce visual clutter in large maps by automatically collapsing nodes that
-are far from the current focal point, and aggressively collapsing non-relevant branches
-when a node is highlighted or selected. Pure frontend — no backend dependency, can start
-immediately.
-
-**Details:**
-
-### Auto-Collapse on Depth
-- Define a configurable `autoCollapseDepth` (default: 3) in map settings.
-- After any layout render, nodes beyond `autoCollapseDepth` hops from the focal/root
-  node are rendered collapsed (their subtrees hidden) unless the user has explicitly
-  expanded them.
-- Expanding a deep node pushes its descendants' collapse threshold outward dynamically
-  (lazy expansion pattern).
-
-### Collapse During Highlighting / Selection
-- When a node is selected or a search highlight is active, collapse all branches that
-  do not lie on the path between the root and the selected/highlighted node(s).
-- "Sibling" branches fade to 20% opacity rather than fully hiding, so the user retains
-  spatial memory of the graph shape.
-- Smooth CSS transition for collapse/expand so the map doesn't jump.
-- An "Expand All" quick-action button (inspector or radial menu) to restore full view.
-- Collapse state for selection-driven hiding is **ephemeral / view-only** — it is NOT
-  written to `node.data.collapsed`. It is computed fresh on every render pass based on
-  the current `selectedId`, so it never corrupts the stored map state.
-- Permanent manual collapse (user explicitly collapses a node via the radial menu)
-  continues to write to `node.data.collapsed` as before.
-
-### Dynamic Auto-Re-Expansion on Selection Change
-- When the user selects a **different** node, the map instantly re-evaluates which
-  branches are relevant to the new focal point and re-expands them — no manual
-  "Expand All" needed.
-  - Re-expansion is driven by the same path-tracing logic used for collapse: compute
-    the ancestor chain from root → new selection, plus the new node's immediate
-    children (one level of look-ahead), and surface those branches.
-  - Previously expanded siblings from the old selection are collapsed back automatically.
-- When the user **deselects** a node (clicks empty canvas or presses `Escape`):
-  - The map reverts to the **depth-based auto-collapse** view (`autoCollapseDepth`)
-    rather than leaving whatever branches the last selection had opened.
-  - This ensures the map always returns to a clean, low-clutter state when nothing
-    is in focus.
-- Selection changes and deselection both trigger a synchronous re-render (already
-  done via `kernel.subscribe` → `render()`), so no extra event plumbing is needed —
-  the collapse computation just needs to live inside `renderMap()` and key off
-  `state.session.selectedId`.
-
-### Polish
-- Pinch-to-zoom and scroll-to-fit should account for the visible (non-collapsed) bounding
-  box only.
-- Keyboard shortcut: `C` to collapse selected node's subtree; `E` to expand.
-- Transition timing: collapse/expand animations should complete in ≤ 150 ms so the
-  map feels instant rather than sluggish on large graphs.
+### [x] 1. Guest-to-Auth Data Migration
+- Intent: Ensure a seamless transition when a user "graduates" from guest mode to an authenticated account without losing work.
+- Details:
+  - When a user signs in (handled in auth.js via onAuthStateChanged), scan local storage/IndexedDB for existing guest projects.
+  - Merge these w/ user’s local projects using the logic inside multi-map-library.js (e.g., expanding loadLocalProjects()).
+  - Dynamically update the Data Manager UI to merge and display these newly migrated projects alongside any existing local ones, without requiring a hard refresh.
+  - Clear the local guest cache once migration is confirmed successful to prevent duplication.
 
 ---
 
-## [x] 2. Fully Set Up Login / Sign-Up
-
-**Intent:** Complete the Firebase Authentication integration so users can create accounts,
-sign in, and have their data securely scoped to their identity. This is a hard prerequisite
-for Firestore persistence, rate-limiting, project/pages, and map sharing.
-
-**Details:**
-- Implement email/password sign-up and sign-in flows via Firebase Auth SDK.
-- Add Google OAuth as a one-click sign-in option.
-- On first login, provision a default personal library and initial map for the new user.
-- Replace the current local-storage-only persistence with Firestore, keyed to `uid`.
-- The Profile Drawer (`#profile-drawer`) should reflect real user data:
-  name, avatar, email, account tier, and sign-out button.
-- Session state (active map, portal history) should survive page refresh for
-  authenticated users (persisted to Firestore session doc).
-- Protect all Firestore read/write paths with Security Rules scoped to `request.auth.uid`.
-- Add an unauthenticated "guest" mode that works fully offline with local storage,
-  with a clear prompt to save/sign-up before data is lost.
-- Error states: show friendly inline messages for wrong password, unverified email,
-  account-already-exists, network offline, etc.
-- Forgot-password flow via Firebase `sendPasswordResetEmail`.
+### [x] 2. Federated Storage & Quota Management UI
+- Intent: Implement the first stage of the federated architecture. Firebase acts as the central directory and offers limited default storage, while the UI prompts users to "Bring Your Own Storage" (Local OS or Google Drive) to bypass quotas and own their data.
+- Specification: feature-specs/prep-federated-spec.md
+- Details:
+  - Update map schema to include a storage_target property (firebase, google_drive, local_os).
+  - Implement a soft and hard storage cap on Firebase-hosted maps (e.g., limit on total map count or node count for free users).
+  - Add a capacity warning UI: When a user hits 80% capacity, prompt them with: "Your cloud workspace is almost full. Connect Google Drive or a Local Directory for unlimited free storage."
+  - Update the Data Manager UI (multi-map-core.js, multi-map-ui.css) to allow users to select their primary "Vault" (storage location) and visually distinguish the storage target of each project with distinct icons.
+  - Ensure Firebase correctly stores lightweight "pointers" (external IDs or local IndexedDB references) rather than full payloads for maps hosted on external targets.
 
 ---
 
-## [ ] 3. Firebase Functions Refactor (Express Architecture)
-
-**Intent:** Refactor `functions/index.js` from a single exported Cloud Function into a
-proper Express-based router structure before adding more endpoints. This creates a clean,
-maintainable foundation for logging, rate-limiting, AI proxying, and future admin APIs.
-
-**Details:**
-- Restructure `functions/` directory:
-  ```
-  functions/
-    index.js          ← Express app entry, mounts routers
-    routes/
-      ai.js           ← /api/ai/* (generate, complete, etc.)
-      admin.js        ← /api/admin/* (log browser, replay, etc.)
-    middleware/
-      auth.js         ← Firebase ID token verification middleware
-      rateLimit.js    ← Per-user quota check middleware
-    services/
-      gemini.js       ← Gemini API client (extracted from current index.js)
-      logger.js       ← Firestore log writer
-  ```
-- Port the existing `generateMapState` export to the new `routes/ai.js` router
-  without breaking the current client call.
-- Add token verification middleware that extracts `uid` from the Firebase ID token
-  on every authenticated request (anonymous requests use session fingerprint).
-- All new endpoints added after this point follow the Express router pattern.
+### [ ] 3. Map Sharing / Public Links
+- Intent: Allow users to share a read-only link to any map in their library.
+- Details:
+  - Add a shared: boolean flag and a share_token: string field to mapstate-schema.json.
+  - "Share" action in the Data Manager generates a unique share_token (UUID), sets shared: true, and writes the map to a public Firestore collection: shared_maps/{share_token}.
+  - Update firestore.rules to allow public read access to the shared_maps collection.
+  - Public URL format: https://mm.forestneff.com/view/{share_token}.
+  - Create a lightweight view.html page that renders the shared map in read-only map mode (stripping out inspector panels and editing event listeners from multi-map-core.js).
+  - Shared maps show a "Fork to my workspace" button for authenticated visitors.
+  - Revoke sharing: sets shared: false and deletes the shared_maps document.
+  - Expiry option: shared links can optionally expire after 7 / 30 / 90 days.
 
 ---
 
-## [x] 4. AI Logging & Rate Limiting
-
-**Intent:** Add server-side infrastructure to log every AI prompt and response payload
-for data analysis and regression testing, and enforce per-user daily rate limits —
-with a small free quota for anonymous users that converts to a larger account-based
-quota on sign-up. Depends on #2 (auth) and #3 (functions refactor).
-
-**Details:**
-
-### Server-Side Logging
-- On every AI request, write a log document to Firestore:
-  ```
-  ai_logs/{log_id}
-    uid           : string | "anonymous"
-    session_id    : string
-    timestamp     : Timestamp
-    prompt        : string
-    response      : string
-    tokens_in     : number
-    tokens_out    : number
-    skill         : string   // "generate-mapstate" | "edit-mapstate" | etc.
-    map_id        : string
-    latency_ms    : number
-    error         : string | null
-  ```
-- Log documents are write-only from the Cloud Function; client has no read/write access.
-- Retention policy: keep logs for 90 days, then auto-delete via a scheduled function.
-
-### One-Shot Testing & Comparison
-- Build an internal admin page (`/admin/ai-logs`) to browse logs, filter by skill/uid/date,
-  and replay any historical prompt against the current model to compare outputs.
-- Diffing view: side-by-side comparison of original response vs. re-run response,
-  highlighting JSON structural changes.
-- Tag logs as "golden" to build a regression test suite; a scheduled function can
-  re-run all golden prompts nightly and alert on significant output drift.
-
-### Rate Limiting
-- **Anonymous users:** 5 AI requests per day, tracked via browser fingerprint /
-  session token stored in Firestore (`anon_quotas/{session_id}`).
-- **Authenticated users (free tier):** 25 AI requests per day, tracked in
-  `users/{uid}/quota` with a `daily_count` and `reset_at` (next midnight UTC).
-- **Authenticated users (pro tier):** configurable higher limit, managed via a
-  `users/{uid}/subscription` document.
-- Quota is checked and decremented server-side inside the Cloud Function — never trust
-  the client for quota enforcement.
-- When a user hits their anonymous limit, show a non-blocking prompt:
-  *"You've used your free AI credits for today. Create a free account to get 25/day."*
-  — with a sign-up CTA that pre-fills the auth modal.
-- When an authenticated user hits their limit, show remaining reset time and a link
-  to upgrade.
-- Quota resets are handled by a scheduled Cloud Function that runs at midnight UTC.
+### [ ] 4. AI Telemetry & Automated Feedback
+- Intent: Capture user friction and bug reports directly via the AI widget to improve agentic workflows and pinpoint engine errors.
+- Details:
+  - Create a structured feedback and error schema in Firestore. Ensure firestore.rules permits users to write to this log collection.
+  - Automate log capture when possible (e.g., "User attempted [Action], got [Error Type], navigated away after [X] seconds"). Tie into the logger.js service.
+  - Add a user-facing feature suggestion/bug report form launched directly from the AI widget (multi_map_ai_engine.js). Call automatically if user intent is parsed as "suggestion."
+  - Route all captured telemetry and feedback to the admin.html dashboard (populated via functions/routes/admin.js) for developer review.
 
 ---
 
-## [ ] 5. Update Data-Manager System to Project + Pages Architecture
-
-**Intent:** Replace the flat library list in the Data Manager with a two-level hierarchy:
-Projects (containers) and Pages (individual maps/sessions within a project).
-Depends on #2 (auth) for Firestore structure; can be built against localStorage first
-if needed.
-
-**Details:**
-- Introduce a `Project` schema: `{ project_id, meta: { title, description, icon, color },
-  created_at, updated_at, page_ids[] }`.
-- Each saved map (`map_id`) becomes a "Page" belonging to one Project.
-- Data Manager UI redesign:
-  - Left column: scrollable project list with creation/rename/delete controls.
-  - Right column: pages within the selected project (card or list view, sortable).
-  - "New Project" and "New Page" buttons with inline name entry.
-- Portal destinations should be scoped/searched by project — allow cross-project linking
-  but surface same-project pages first in the portal payload selector.
-- Breadcrumb in the nav bar: `[Project Name] › [Page Name]` replacing the plain map title.
-- Drag-and-drop to move a page between projects.
-- Project-level export/import (zip of all page JSON files + project manifest).
-- Firestore structure (when auth is live): `users/{uid}/projects/{project_id}/pages/{map_id}`.
-- Migrate existing flat library entries to a default "My Project" project on first load
-  after this change ships.
+### [ ] Phase 2: The Portal & Agent Paradigm Shift
+- Agent Context: phase-engines.js, engines/*, mapstate-schema.json, Portal logic (multi-map-core.js), AI Agent prompt definitions.
 
 ---
 
-## [ ] 6. AI Functionality Enhancements
-
-**Intent:** Update the AI engine to be fully aware of and able to drive state/phase
-management and the new project + pages architecture, turning it into a true workspace
-co-pilot rather than a one-shot map generator. Depends on #5 for project context.
-
-**Details:**
-
-### State & Phase Awareness
-- Pass the full current workspace context to every AI prompt payload:
-  - Active project + page name and `map_id`.
-  - Current `viewMode` (map / web / person / prompt / agent / orbital).
-  - Active node selection (`selectedId`, type, title, content).
-  - Portal depth / `portalHistory` length so the AI knows if it's inside a submap.
-- AI should be able to emit structured **action commands** in its response payload
-  in addition to (or instead of) raw mapstate JSON. Example actions:
-  ```json
-  { "action": "SET_VIEW", "view": "web" }
-  { "action": "SELECT_NODE", "nodeId": "abc123" }
-  { "action": "ENTER_PORTAL", "nodeId": "abc123" }
-  { "action": "ADD_NODE", "node": { ... } }
-  { "action": "APPLY_TEMPLATE", "templateId": "tpl_web_landing" }
-  ```
-- The sandbox controller (`multi_map_ai_engine.js`) should parse these action commands
-  after receiving a response and dispatch them sequentially via `SC.*` / `Kernel.*` calls.
-- AI-generated maps should respect the active map's type constraints (ontology rules)
-  and only produce node types valid for the current map type.
-
-### Project + Pages Awareness (depends on #5)
-- AI should be able to create new pages within the active project, link them via portals,
-  and reference existing pages by name when building multi-map constellations.
-- Prompt skeleton should include a `project` context block listing existing page titles
-  and `map_id`s so the AI can wire up portal `content` fields correctly.
-- "Generate full project" mode: user describes a whole app/site/system in one prompt;
-  AI returns an array of page mapstates + a project manifest, which are bulk-imported
-  and auto-linked via portals.
-
-### Skill / Prompt System
-- **Intent parsing is preserved as the default path** — the AI reads the user's plain-
-  language message and infers the correct skill automatically. Savvy users should not
-  need to think about skills at all if they don't want to.
-- **Slash-command UI for direct skill invocation:** typing `/` in the AI chat input
-  opens an inline autocomplete popover listing all available skills:
-  - `/generate` — Generate a new map or submap from a description.
-  - `/edit` — Edit / extend the current map based on instructions.
-  - `/refine` — Modify only the currently selected node(s) / subgraph.
-  - `/explain` — Narrate what the current map represents in plain language.
-  - `/project` — Generate a full multi-page project constellation.
-  - Future skills are automatically surfaced here as they are registered.
-- The popover appears immediately on `/`, filters as the user continues typing
-  (e.g. `/gen` highlights `/generate`), and is confirmed with `Enter` or a click.
-  Pressing `Escape` dismisses it and returns to free-text input.
-- Selecting a skill from the popover **pre-pends a skill tag** to the message
-  (e.g. `[generate]`) that the AI engine strips before sending to the model, using
-  it to bypass intent parsing and route directly to the correct skill handler.
-- Intent parsing still runs as normal when no `/` tag is present, so the two paths
-  are fully compatible and non-breaking.
+### [ ] 5. Smart Roots
+- Intent: Upgrade root nodes so they contain structured metadata for their maps that they can easily pass to portals that call them or that exist within them.
+- Specification: feature-specs/smart-roots-spec.md
+- Details:
+  - Define a standardized root_metadata object schema specifically for root nodes in mapstate-schema.json.
+  - Implement UI in the inspector/properties panel (multi-map-core.js or multi-map-ui.css layouts) for defining and editing this root node metadata.
+  - Ensure this metadata payload is bundled and readily accessible when generating or evaluating a portal link.
 
 ---
 
-## [ ] 7. PWA / Offline Mode
-
-**Intent:** Package the app as a Progressive Web App so it can be installed on desktop
-and mobile and continue working offline or on flaky connections. Depends on #5 so the
-full data model is in place before designing the offline cache strategy.
-
-**Details:**
-- Add a Web App Manifest (`manifest.json`): app name, icons (192px, 512px), theme color,
-  `display: standalone`, start URL.
-- Implement a Service Worker with a cache-first strategy for all static assets
-  (HTML, JS, CSS, engine HTML files, tutorial JSON).
-- For authenticated users, cache the active project's pages in IndexedDB (via the
-  service worker) so maps are readable and editable offline.
-- Sync queue: changes made offline are written to a local queue and flushed to Firestore
-  when connectivity returns (using the Background Sync API where supported).
-- Offline indicator in the nav bar status area (already has `#host-status` dot).
-- Install prompt: after 3 sessions, show a subtle "Install Multi Map" banner.
+### [ ] 6. Dynamic Portals
+- Intent: Deprecate the bespoke "smart portal" and make all portals dynamic, data-driven endpoints that utilize the new Smart Root metadata natively within the host map.
+- Specification: feature-specs/dynamic-portals-spec.md
+- Details:
+  - Portals serve as map endpoints — no generic user map editing past a portal.
+  - Implement an openPortal() method to dynamically auto-spawn children and behavior locally in the current host map based on the root node type and explicitly passed metadata payloads from the Smart Root.
+  - Preserve the existing enterPortal() method strictly for standard submap page traversal.
+  - Remove the manual "add node" button from the portal radial menu (tutorials/radial_menu.json / multi-map-rules.js logic) for these dynamic nodes.
+  - Standardize the metadata passing/pulling architecture across the portal boundary, implementing explicit local handoffs of the Smart Root data.
 
 ---
 
-## [ ] 8. Node Search / Global Jump
-
-**Intent:** Extend the existing nav search bar from single-map title search to cross-map
-semantic search across all pages in the active project. Depends on #6 (AI enhancements)
-so AI-driven node selection and search use the same underlying mechanism.
-
-**Details:**
-- Current search filters `state.nodes` by title substring — keep this as the instant
-  local result tier.
-- Add a second tier: cross-map search across all library pages (by title, content,
-  node type), surfacing results with `[Page Name] › Node Title` breadcrumbs.
-- Selecting a cross-map result: opens (or creates) a portal to that page and
-  `selectNode()` on the matched node.
-- Keyboard shortcut: `Cmd/Ctrl + K` opens the search bar with focus.
-- Semantic / fuzzy search: use a lightweight client-side fuzzy matcher (e.g. Fuse.js)
-  for typo tolerance; for AI-powered semantic search, pass the query to a
-  `/api/search` Cloud Function that embeds and vector-searches across log-stored maps.
+### [ ] 7. Flowchart Maptype
+- Intent: Introduce a dedicated maptype designed specifically for plotting logic flows, workflow automation, and state machines (useful for the agent-root sub-components, timelines, and project design).
+- Specification: feature-specs/flowchart-spec.md
+- Details:  
+  - Define schema rules for directional relationships (beyond standard parent/child trees) in mapstate-schema.json.
+  - Implement custom radial menu and rendering rules for flowchart nodes (e.g., decision diamonds, conditional branches/logic gates) in multi-map-rules.js and the canvas rendering loop.
 
 ---
 
-## [ ] 9. Undo / Redo Polish
-
-**Intent:** The current undo system (`kernel.history`) clears on every portal
-`enter` / `exit` and does not support redo. Improve to multi-level undo that persists
-across portal navigation and adds a redo stack.
-
-**Details:**
-- Maintain separate undo/redo stacks per `map_id` (keyed in a `Map` object on the
-  kernel) so entering and exiting a portal does not destroy the parent map's history.
-- On `enterPortal`, push the current state onto the child map's history; the parent
-  map's history is frozen but preserved.
-- On `exitPortal`, restore the parent map's history stack.
-- Redo stack: when `saveHistory()` is called (i.e. a new action is taken), clear the
-  redo stack for that map — standard linear undo model.
-- Cap history depth at 50 entries per map to limit memory.
-- Keyboard: `Ctrl/Cmd+Z` = undo, `Ctrl/Cmd+Shift+Z` = redo.
-- Show current undo depth as a subtle counter on the undo button (`↩️ 3`).
+### [ ] 8. Expand Prompt-Root and Agent-Root Ecosystems
+- Intent: Utilize the map-native interface to design and build structured, complex, high-quality prompts and agent architectures that can then be exported for use with external LLMs/Agentic Systems (like Antigravity).
+- Specification: feature-specs/prompt-root-spec.md & feature-specs/agent-root-spec.md
+- Details:
+  - Prompt Ecosystem
+    - Expand the prompt-root maptype to build/handle structured prompts, complex prompt chaining, variable injection, and prompt-library management. Expand sub-type hierarchy in mapstate-schema.json.
+    - Flesh out engines/prompt-engine.html as a dedicated sandbox viewport w/ the ability to export the structured prompt as a .md or raw text (via string builder logic).
+  - Agent Ecosystem
+    - Expand the agent-root maptype to configure system instructions, tool access, and agentic workflows. Ensure compatibility with templates found in .agents/skills/.
+    - Flesh out engines/agent-config.html as a dedicated sandbox viewport that provides a dynamic overview of the agent architecture, including an option to export as a .zip file structure.
+    - Allow multi_map_ai_engine.js logic to dictate the dynamic layout of portals linking to these specific roots.
 
 ---
 
-## [ ] 10. Map Sharing / Public Links
-
-**Intent:** Allow users to share a read-only link to any map in their library.
-Depends on #2 (auth) and #5 (project/pages) for the Firestore path structure.
-
-**Details:**
-- Add a `shared: boolean` flag (already exists on map meta) and a `share_token: string`
-  field to the map schema.
-- "Share" action in the Data Manager generates a unique `share_token` (UUID), sets
-  `shared: true`, and writes the map to a public Firestore collection:
-  `shared_maps/{share_token}` — read-only, no auth required.
-- Public URL format: `https://mm.forestneff.com/view/{share_token}`.
-- A lightweight `view.html` page renders the shared map in read-only map mode
-  (no inspector, no AI, no editing controls).
-- Shared maps show a "Fork to my workspace" button for authenticated visitors.
-- Revoke sharing: sets `shared: false` and deletes the `shared_maps` document.
-- Expiry option: shared links can optionally expire after 7 / 30 / 90 days.
+### [ ] 9. File-Root Maptype & Local File System Explorer
+- Intent: Create a map-native local file-system explorer for seamless local file management within Multi-Map.
+- Specification: feature-specs/file-root-spec.md
+- Details:
+  - Integrate file-root maptypes into mapstate-schema.json.
+  - Utilize the browser's HTML5 File System Access API (where supported) to read local directory structures and represent them as dynamic child nodes.
+  - Build a corresponding phase engine (engines/file-explorer.html) and register it in phase-engines.js. It should provide a specialized viewport for viewing, organizing, and executing basic file operations.
 
 ---
 
-## [ ] 11. Refine / Update Tutorial System — Reflect New Features & Ensure Auto-Nav
-
-**Intent:** Bring the tutorial system up to date with all features added since initial
-build (Person maps, portal save-on-exit, smart action button, type selector grouping,
-phase engine visibility rules, etc.) and make tutorials drive the UI automatically
-rather than requiring the user to navigate manually between steps. Done last — tutorials
-should document the finished product, not a moving target.
-
-**Details:**
-
-### Content Updates
-- **New tutorials needed:**
-  - "Creating a Person Map" — person-root node, profile fields, child note auto-sync,
-    Person phase engine view.
-  - "Working with Portals" — creating a portal, linking to a library map, entering,
-    editing the submap, exiting (with auto-save), the smart action button.
-  - "Using the Smart Action Button" — context-sensitive actions per node type.
-  - "Web Architect" — web-root map, node types (hero, section, card, footer),
-    template application, Visual Editor phase view.
-- **Update existing tutorials** to reflect renamed types (`person-root` vs old
-  `user-profile`), new inspector type-selector grouping, and phase engine button
-  visibility rules.
-
-### Auto-Navigation
-- Each tutorial step should be able to specify an `autoNav` field:
-  ```json
-  { "autoNav": { "view": "map" | "web" | "person" | "prompt" | "agent" } }
-  ```
-  When the tutorial advances to that step, `SC.setView(step.autoNav.view)` is called
-  automatically.
-- Steps can also specify `autoSelect: "<nodeId or nodeType>"` to auto-focus a node
-  in the map.
-- Steps should be able to highlight a specific DOM element with a pulsing ring overlay
-  (tutorial spotlight) by specifying `spotlight: "<css-selector>"`.
-- "Next" button in the tutorial panel should only activate once the user has completed
-  the step's required action (e.g. added a node, changed a type), validated via a
-  `validate` callback registered per step — or fall back to manual advance if no
-  validator is defined.
-- Tutorial progress persisted to localStorage so a refresh doesn't restart from step 1.
-- "Restart Tutorial" button in the tutorial selection modal.
+### [ ] 10. Third-Party Cloud Storage Integrations
+- Intent: Extend the file system mapping capabilities to interact with external cloud drives.
+- Specification: feature-specs/third-party-cloud-spec.md
+- Details:
+  - Implement authentication and API bridging for services like Google Drive and Google Docs. Expand Firebase Auth providers in auth.js to request Drive OAuth scopes.
+  - Enable syncing, fetching, and map-native representation of external cloud files. Ensure OAuth tokens and API limits are handled safely (utilizing functions/middleware/rateLimit.js).
 
 ---
 
-*Last updated: 2026-06-25 — reordered by dependency, added items 7 (PWA), 8 (Search), 9 (Undo/Redo), 10 (Map Sharing), new item 3 (Functions Refactor)*
-
+### [ ] 11. Launch True Federation (WebRTC + CRDTs)
+- Intent: Transition Multi-Map from a centralized Firebase payload host to a true peer-to-peer (P2P) federated network, relegating Firebase strictly to an identity and WebRTC signaling switchboard.
+- Specification: feature-specs/launch-federation-spec.md
+- Details:
+  - Transition the local memory map states (state.nodes) to a CRDT framework (like Yjs or Automerge).
+  - Implement WebRTC signaling using Firebase Firestore to exchange connection offers and ICE candidates between peers.
+  - NOTE (from TODO #3): The shared_maps Firestore collection currently stores full map payloads per share token.
+    When federation ships, replace this with a lightweight pointer (owner_uid + map_id) and serve
+    shared maps directly from the peer network. This eliminates duplication and aligns with the CRDT model.
+  - Shift the primary network transport for live collaborative map edits from Firestore onSnapshot to direct P2P WebRTC data channels.
+  - Ensure data persistence fallbacks utilize the user's primary "Vault" (Drive/Local OS) as defined in previous steps. 
 
 ---
 
-### Ideas:
+### [ ] Phase 3: Core Mechanics & Interaction Stability
+- Agent Context: multi-map-core.js, multi-map-rules.js, Keyboard event listeners, functions/index.js.
 
-- Dynamic portals and smart roots. Metadata on root w/ smart summary option, passable by portals. Portals as map endpoints - no user map editing past a portal (remove add button from portal radial), all dynamic subcontent (auto spawn children, dynaamic behavior from payload, pass/pull metadata etc. - based on payload root node type & metadata, etc.).
+---
 
-- Extract smart portal behavior into dynamic agent and prompt type systems and sub-node-types. Depreciate smart portal, all portals "smart", see above (dynamic portals).
+### [ ] 12. Standard Keyboard Editing
+- Intent: Implement standard mind-map keyboard shortcuts for rapid, mouse-free node creation and navigation.
+- Details:
+  - Bind these to the main global keydown event listener in multi-map-core.js.
+  - Tab: Trigger existing addChildNode() logic attached to the currently selected node and automatically focus it for text entry.
+  - Enter: Trigger existing addSiblingNode() logic at the same hierarchical level as the currently selected node and automatically focus it for text entry.
+  - Arrow Keys (Up/Down/Left/Right): Navigate node selection along branches based on spatial and hierarchical relationships.
 
-- Link user profiles to Person system and refine that system into map-native Contacts & Communities system(social network, file sharing, and collaboration). Expand Person system into map-native Contacts system with Person, Groups/Community/Organization pages, etc., their relationships, resources (maps, assets, etc.), and connections (including map-native multi-user map editing and shared project spaces). Should be able to build and launch a community as a mapstate that links users together and has its own specialized phase engine. The simplest version of this would be a single user w/ many contacts (perhaps categorized?), viewable as a map.
+---
 
+### [ ] 13. Multi-Level Undo / Redo Polish
+- Intent: Implement a multi-level undo/redo system that persists across the new dynamic portal navigations.
+- Details:
+  - Isolate undo/redo state arrays inside the kernel map object (e.g., window.kernel.maps[map_id].history) instead of a global array.
+  - On enterPortal, push the current state onto the child map's history; the parent map's history is frozen but preserved. On exitPortal, restore the parent map's history stack.
+  - Redo stack: clear the redo stack for a specific map when a new action is taken (e.g., inside saveHistory()).
+  - Cap history depth at 50 entries per map to limit memory.
+  - Keyboard: Bind Ctrl/Cmd+Z = undo, Ctrl/Cmd+Shift+Z = redo to the global key listener.
+  - Show current undo depth as a subtle counter on the undo button (↩️ 3).
+
+---
+
+### [ ] 14. Node Search / Global Jump
+- Intent: Extend the existing nav search bar to support cross-map semantic search, natively understanding the new dynamic portal endpoints.
+- Details:
+  - Tier 1: Initialize Fuse.js in multi-map-library.js for local fuzzy search that filters state.nodes by title/content for instant DOM results.
+  - Tier 2: Cross-map search across all library pages, surfacing results with [Page Name] › Node Title breadcrumbs.
+  - Selecting a cross-map result opens/creates a portal to that page and fires selectNode() on the matched node.
+  - Keyboard shortcut: Cmd/Ctrl + K opens the search bar with focus.
+  - AI Semantic Search: Create a new /api/search endpoint in functions/index.js that embeds and vector-searches across log-stored maps.
+
+---
+
+### [ ] Phase 4: Social & Collaborative Expansion
+- Agent Context: engines/colab-engine.html, engines/person.html, multi-map-library.js, Realtime Database/Firestore Listeners, firestore.rules.
+
+---
+
+### [ ] 15. Colab-Root, Communities, & Shared Spaces
+- Intent: Introduce an entirely new colab-root system that acts as a dedicated container for social networks, communities, and collaborative spaces.
+- Specification: feature-specs/contacts-communities-spec.md
+- Details:
+  - Introduce a new colab-root maptype and a dedicated phase engine (engines/colab-engine.html) to manage organizational structures, shared maps, and user roles.
+  - Introduce organizational sub-types: colab-organization, colab-community, and colab-group. Update mapstate-schema.json.
+  - Incorporate existing person objects (contacts, user profiles) as sub-types or dynamically reference them via portals inside the colab-root.
+  - Connect multiplayer instances securely utilizing the new WebRTC P2P mesh established in Item #11.
+  - Update firestore.rules heavily to enforce Role-Based Access Control (RBAC) based on the acl metadata for colab-root nodes to ensure only authorized users can initiate P2P handshakes.
+
+---
+
+### [ ] Phase 5: Platform Delivery & Documentation
+- Agent Context: service-worker.js, manifest.json, multi-map-tutorials.js, wiki.html.
+
+---
+
+### [ ] 16. Robust Wiki & Auto-Driven Tutorial System
+- Intent: Build a robust, map-native Wiki alongside an automated tutorial system to document the finished architecture.
+- Details:
+  - Substantially expand wiki.html to act as the central documentation hub, linking directly to map states and tutorials in tutorials/*.json.
+  - Refine multi-map-tutorials.js to parse new autoNav and autoSelect fields.
+  - Connect autoNav to PhaseEngine.switchView() (from phase-engines.js) and autoSelect to the node selection logic in multi-map-core.js.
+  - Implement CSS spotlight overlays (in multi-map-ui.css) to highlight specific DOM elements during tutorial steps.
+  - Add step validators in multi-map-tutorials.js: the "Next" button only activates once the user successfully completes the requested UI interaction.
+  - Persist tutorial progress to localStorage to survive page refreshes.
+
+---
+
+### [ ] 17. PWA / Offline Mode
+- Intent: Package the app as a Progressive Web App so it can be installed natively and continue working on flaky connections.
+- Details:
+  - Add a Web App Manifest (manifest.json): app name, icons, theme color, display: standalone.
+  - Implement a service-worker.js with a cache-first strategy for all static assets (HTML, JS, CSS, phase engines, tutorial/wiki JSON).
+  - Tie IndexedDB caching into multi-map-library.js fetch routines so active project maps are readable/editable offline.
+  - Sync queue: changes made offline are written to a local queue and flushed to Firestore when connectivity returns (using the Background Sync API).
+  - Add an offline indicator in the nav bar and an "Install Multi-Map" prompt after 3 sessions.
+
+
+### Notes:
+
+1. Allow guest users to share their maps, simply publish them to firestore as anon links. 
+
+2. Change "Save Submap" radial menu button to "Clip". Remains more or less as is but clips the branch from the parent map to a new page and replaces the selected node w/ a portal that points to that page where the cliped branch is preserved, using the original node as the root. *Remove "Clip" button from root and portal radials, do not allow clipping of root, do not allow clipping of nodes that are themselves portals.
+
+3. When a right drawer is open, clicking in viewport (ouside of drawer) should close profile or data drawer (not inspector).
+
+4. Add "Cloud Sync" button to projects and pages (projects that are synced auto-sync all project pages) for projects/pages from non-cloud vaults. When a project or page is marked for cloud sync, add it to the cloud sync vault. Respect user quota. Add an "All Vaults" option to Data Vault dropdown that shows all available projects sorted by category (local, cloud sync, cloud only) - local projects and cloud synced projects shown in local vaults, cloud only projects shown in cloud vaults, same project won't show up in both. Cloud vault should show both local cloud synced and cloud only projects.
+
+5. While we're in the auth stuff, let's address the special case for the production site where I am signed in. Let's add an admin user tier with no quotas/restrictions and special access. To start out with, I need access to the admin.html, so the interface should update to give me a button in my profile drawer that links there. Only admin accounts get this button. How can we set up my Google acount to be an admin account?
+
+6. Extract the rename tool button from the page actions toolbar and place it directly next to the title of the page. Extract download, copy, and share, and delete buttons from that same toolbar into a dropdown w/ a tools icon button to open it. Keep the "load" tool at the top level leftmost as is, place the "tools" button to the right of it. Consider parent card overflow rules so that the dropdown renders correctly (on top as we did w/ the asset import project selection dropdown).
+
+7. Data manager workspace library visible but not populating (empty, doesn't show projects/pages but does allow them to be created) when vault set to cloud. 

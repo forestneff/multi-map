@@ -13,6 +13,8 @@ service cloud.firestore {
     //     - type: string (required)
     //     - created: string (required)
     //     - shared: boolean (optional)
+    //     - share_token: string (optional) - UUID, matches the shared_maps doc ID
+    //     - share_expires: timestamp|null (optional)
     //   - nodes: list (required) - list of nodes
     //   - connections: list (required) - list of connections/edges
     //   - session: map (optional) - current viewport/layout state
@@ -21,6 +23,14 @@ service cloud.firestore {
     // Fields:
     //   - activeMapId: string (required) - ID of the active map
     //   - portalHistory: list (required) - stack of parent map states
+    //
+    // Collection: shared_maps/{share_token}
+    // Fields:
+    //   - owner_uid: string (required) - UID of the sharing user
+    //   - share_expires: timestamp|null
+    //   - + full map payload (nodes, connections, meta, etc.)
+    //   NOTE: Full-payload approach; revisit in TODO #11 (True Federation)
+    //   when maps are stored as CRDT peer objects instead.
     //
     // ===============================================================
 
@@ -53,12 +63,28 @@ service cloud.firestore {
       }
     }
 
+    // Public share links — anyone can read, only the owner can write/delete
+    match /shared_maps/{token} {
+      allow read: if true;
+      allow create: if isAuthenticated();
+      allow update, delete: if isAuthenticated()
+        && request.auth.uid == resource.data.owner_uid;
+    }
+
     match /ai_logs/{logId} {
       allow read, write: if false;
     }
 
     match /anon_quotas/{sessionId} {
       allow read, write: if false;
+    }
+
+    // Admin config — authenticated users can read to check admin status.
+    // All writes are server-side only (no client mutations).
+    // Collection: _admins/config  →  { admin_emails: ["forestneff@gmail.com"] }
+    match /_admins/{document} {
+      allow read: if isAuthenticated();
+      allow write: if false;
     }
   }
 }

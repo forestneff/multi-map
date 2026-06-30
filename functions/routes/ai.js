@@ -8,6 +8,106 @@ const rateLimitMiddleware = require('../middleware/rateLimit');
 const { extractSkillInstructions, callGemini } = require('../services/gemini');
 const loggerService = require('../services/logger');
 
+function parseFrontmatter(content) {
+    const match = content.match(/^---\n([\s\S]*?)\n---\n/);
+    if (!match) return {};
+    const yaml = match[1];
+    const metadata = {};
+    const lines = yaml.split('\n');
+    let currentKey = null;
+    let currentList = null;
+    let currentObject = null;
+    
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        
+        if (trimmed.startsWith('-')) {
+            const inner = trimmed.slice(1).trim();
+            const colonIdx = inner.indexOf(':');
+            if (colonIdx !== -1) {
+                const subKey = inner.slice(0, colonIdx).trim();
+                const subVal = inner.slice(colonIdx + 1).trim().replace(/^['"]|['"]$/g, '');
+                
+                currentObject = { [subKey]: subVal };
+                if (currentList) {
+                    currentList.push(currentObject);
+                }
+            } else {
+                const val = inner.replace(/^['"]|['"]$/g, '');
+                if (currentList) {
+                    currentList.push(val);
+                }
+            }
+            continue;
+        }
+        
+        const colonIdx = trimmed.indexOf(':');
+        if (colonIdx !== -1) {
+            const key = trimmed.slice(0, colonIdx).trim();
+            const val = trimmed.slice(colonIdx + 1).trim();
+            
+            if (val === '') {
+                currentKey = key;
+                currentList = [];
+                metadata[key] = currentList;
+            } else {
+                currentKey = key;
+                currentList = null;
+                if (val.startsWith('[') && val.endsWith(']')) {
+                    metadata[key] = val.slice(1, -1).split(',').map(s => s.trim().replace(/^['"]|['"]$/g, ''));
+                } else {
+                    metadata[key] = val.replace(/^['"]|['"]$/g, '');
+                }
+            }
+        } else if (currentObject && trimmed.includes(':')) {
+            const parts = trimmed.split(':');
+            const subKey = parts[0].trim();
+            const subVal = parts.slice(1).join(':').trim().replace(/^['"]|['"]$/g, '');
+            currentObject[subKey] = subVal;
+        }
+    }
+    return metadata;
+}
+
+function shouldTriggerSubskill(triggerStr, prompt, contextStr) {
+    if (!triggerStr) return true;
+    
+    const promptLower = (prompt || '').toLowerCase();
+    const contextLower = (contextStr || '').toLowerCase();
+    
+    const parts = triggerStr.split('||');
+    for (const part of parts) {
+        const subParts = part.split('&&');
+        let subMatch = true;
+        for (const subPart of subParts) {
+            const trimmed = subPart.trim();
+            const promptMatch = trimmed.match(/prompt\.toLowerCase\(\)\.includes\('([^']+)'\)/);
+            if (promptMatch) {
+                if (!promptLower.includes(promptMatch[1])) {
+                    subMatch = false;
+                    break;
+                }
+                continue;
+            }
+            
+            const contextMatch = trimmed.match(/contextStr\.toLowerCase\(\)\.includes\('([^']+)'\)/);
+            if (contextMatch) {
+                if (!contextLower.includes(contextMatch[1])) {
+                    subMatch = false;
+                    break;
+                }
+                continue;
+            }
+        }
+        if (subMatch && subParts.length > 0) {
+            return true;
+        }
+    }
+    
+    return false;
+}
+
 router.post('/', authMiddleware, rateLimitMiddleware, async (req, res) => {
     const startTime = Date.now();
     let totalTokensIn = 0;
@@ -23,6 +123,7 @@ router.post('/', authMiddleware, rateLimitMiddleware, async (req, res) => {
             return res.status(400).json({ error: 'Bad Request: Missing prompt.' });
         }
 
+        let promptText = prompt;
         const apiKey = process.env.GEMINI_API_KEY;
         if (!apiKey) {
             logger.error("GEMINI_API_KEY environment variable is not set.");
@@ -30,7 +131,7 @@ router.post('/', authMiddleware, rateLimitMiddleware, async (req, res) => {
             await loggerService.logRequest({
                 uid: req.user.uid,
                 sessionId: req.user.sessionId || req.user.uid,
-                prompt: prompt,
+                prompt: promptText,
                 response: '',
                 tokensIn: 0,
                 tokensOut: 0,
@@ -42,34 +143,55 @@ router.post('/', authMiddleware, rateLimitMiddleware, async (req, res) => {
             return res.status(500).json({ error: 'Internal Server Error: API Key not configured.' });
         }
 
+        // --- STEP 0: CHECK FOR PREFIX TAGS ---
+        let bypassIntentParsing = false;
+        const tagMatch = promptText.match(/^\[(generate|edit|refine|explain|project)\]\s*([\s\S]*)$/i) ||
+                         promptText.match(/^\/(generate|edit|refine|explain|project)\s*([\s\S]*)$/i);
+        if (tagMatch) {
+            const tag = tagMatch[1].toLowerCase();
+            promptText = tagMatch[2].trim();
+            promptTextLogged = promptText;
+            
+            if (tag === 'generate') intent = 'generate-mapstate';
+            else if (tag === 'edit') intent = 'edit-mapstate';
+            else if (tag === 'refine') intent = 'edit-mapstate';
+            else if (tag === 'explain') intent = 'analyze-mapstate';
+            else if (tag === 'project') intent = 'generate-project';
+            
+            bypassIntentParsing = true;
+            logger.info(`Bypassed intent parsing via tag [${tag}] -> intent: ${intent}`);
+        }
+
         // --- STEP 1: PARSE INTENT ---
         let faqId = null;
-        try {
-            const intentSkillPath = path.join(__dirname, '..', 'skills', 'parse-intent', 'SKILL.md');
-            const intentSkillContent = fs.readFileSync(intentSkillPath, 'utf8');
-            const intentSystemPrompt = extractSkillInstructions(intentSkillContent);
-            
-            const intentPrompt = `User Prompt: ${prompt}\n\nCurrent Map Context (if any):\n${contextStr || 'None'}`;
-            
-            const intentResult = await callGemini(intentSystemPrompt, intentPrompt, apiKey, 'gemini-2.5-flash');
-            totalTokensIn += intentResult.tokens_in;
-            totalTokensOut += intentResult.tokens_out;
-            
-            let cleanJson = intentResult.text.trim();
-            if (cleanJson.startsWith('```')) {
-                cleanJson = cleanJson.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
-            }
-            const intentData = JSON.parse(cleanJson);
-            
-            if (intentData.intent) {
-                intent = intentData.intent;
-                if (intent === 'faq') {
-                    faqId = intentData.faq_id || 'default_faq';
+        if (!bypassIntentParsing) {
+            try {
+                const intentSkillPath = path.join(__dirname, '..', 'skills', 'parse-intent', 'SKILL.md');
+                const intentSkillContent = fs.readFileSync(intentSkillPath, 'utf8');
+                const intentSystemPrompt = extractSkillInstructions(intentSkillContent);
+                
+                const intentPrompt = `User Prompt: ${promptText}\n\nCurrent Map Context (if any):\n${contextStr || 'None'}`;
+                
+                const intentResult = await callGemini(intentSystemPrompt, intentPrompt, apiKey, 'gemini-2.5-flash');
+                totalTokensIn += intentResult.tokens_in;
+                totalTokensOut += intentResult.tokens_out;
+                
+                let cleanJson = intentResult.text.trim();
+                if (cleanJson.startsWith('```')) {
+                    cleanJson = cleanJson.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
                 }
-                logger.info(`Parsed Intent: ${intent}`);
+                const intentData = JSON.parse(cleanJson);
+                
+                if (intentData.intent) {
+                    intent = intentData.intent;
+                    if (intent === 'faq') {
+                        faqId = intentData.faq_id || 'default_faq';
+                    }
+                    logger.info(`Parsed Intent: ${intent}`);
+                }
+            } catch (err) {
+                logger.error("Error during intent parsing, falling back to generate-mapstate:", err);
             }
-        } catch (err) {
-            logger.error("Error during intent parsing, falling back to generate-mapstate:", err);
         }
 
         // --- FAST-PATH: FAQ INTENT ---
@@ -85,7 +207,7 @@ router.post('/', authMiddleware, rateLimitMiddleware, async (req, res) => {
                 await loggerService.logRequest({
                     uid: req.user.uid,
                     sessionId: req.user.sessionId || req.user.uid,
-                    prompt: prompt,
+                    prompt: promptText,
                     response: outputText,
                     tokensIn: totalTokensIn,
                     tokensOut: totalTokensOut,
@@ -113,7 +235,7 @@ router.post('/', authMiddleware, rateLimitMiddleware, async (req, res) => {
             await loggerService.logRequest({
                 uid: req.user.uid,
                 sessionId: req.user.sessionId || req.user.uid,
-                prompt: prompt,
+                prompt: promptText,
                 response: outputText,
                 tokensIn: totalTokensIn,
                 tokensOut: totalTokensOut,
@@ -139,14 +261,47 @@ router.post('/', authMiddleware, rateLimitMiddleware, async (req, res) => {
 
             const skillPath = path.join(__dirname, '..', 'skills', intent, 'SKILL.md');
             const skillContent = fs.readFileSync(skillPath, 'utf8');
-            systemPrompt = extractSkillInstructions(skillContent);
+            
+            let instructions = extractSkillInstructions(skillContent);
+            
+            // Parse metadata and load sub-skills dynamically
+            const metadata = parseFrontmatter(skillContent);
+            if (metadata.subskills && Array.isArray(metadata.subskills)) {
+                for (const sub of metadata.subskills) {
+                    let subName = '';
+                    let subTrigger = '';
+                    if (typeof sub === 'string') {
+                        subName = sub;
+                    } else if (sub && typeof sub === 'object') {
+                        subName = sub.name;
+                        subTrigger = sub.trigger;
+                    }
+                    
+                    if (subName) {
+                        if (shouldTriggerSubskill(subTrigger, promptText, contextStr)) {
+                            try {
+                                const subPath = path.join(__dirname, '..', 'skills', subName, 'SKILL.md');
+                                if (fs.existsSync(subPath)) {
+                                    const subContent = fs.readFileSync(subPath, 'utf8');
+                                    const subInstructions = extractSkillInstructions(subContent);
+                                    instructions += "\n\n=== SUB-SKILL: " + subName.toUpperCase() + " ===\n" + subInstructions;
+                                    logger.info(`Loaded sub-skill dynamically: ${subName}`);
+                                }
+                            } catch (subErr) {
+                                logger.error(`Failed to load sub-skill ${subName}:`, subErr);
+                            }
+                        }
+                    }
+                }
+            }
+            systemPrompt = instructions;
         } catch (err) {
             logger.error(`Failed to load skill for intent ${intent}:`, err);
             
             await loggerService.logRequest({
                 uid: req.user.uid,
                 sessionId: req.user.sessionId || req.user.uid,
-                prompt: prompt,
+                prompt: promptText,
                 response: '',
                 tokensIn: totalTokensIn,
                 tokensOut: totalTokensOut,
@@ -160,7 +315,7 @@ router.post('/', authMiddleware, rateLimitMiddleware, async (req, res) => {
         }
 
         // --- STEP 3: GENERATE FINAL OUTPUT ---
-        const contextualPrompt = prompt + (contextStr ? "\n\n" + contextStr : "");
+        const contextualPrompt = promptText + (contextStr ? "\n\n" + contextStr : "");
         const generationModel = model || 'gemini-2.5-flash';
         try {
             const generationResult = await callGemini(systemPrompt, contextualPrompt, apiKey, generationModel);
@@ -174,7 +329,7 @@ router.post('/', authMiddleware, rateLimitMiddleware, async (req, res) => {
             await loggerService.logRequest({
                 uid: req.user.uid,
                 sessionId: req.user.sessionId || req.user.uid,
-                prompt: prompt,
+                prompt: promptText,
                 response: generationResult.text,
                 tokensIn: totalTokensIn,
                 tokensOut: totalTokensOut,
@@ -194,7 +349,7 @@ router.post('/', authMiddleware, rateLimitMiddleware, async (req, res) => {
             await loggerService.logRequest({
                 uid: req.user.uid,
                 sessionId: req.user.sessionId || req.user.uid,
-                prompt: prompt,
+                prompt: promptText,
                 response: '',
                 tokensIn: totalTokensIn,
                 tokensOut: totalTokensOut,

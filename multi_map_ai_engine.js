@@ -22,6 +22,7 @@ class MultiMapAI {
         this.basePrompt = "You are an expert System Architect for the Multi-Map Platform. Output valid MapState JSON.";
 
         this.initDOM();
+        this.initAutocomplete();
     }
 
     initDOM() {
@@ -68,7 +69,10 @@ class MultiMapAI {
                 </div>
 
                 <!-- Input Area -->
-                <div class="p-3 border-t border-slate-800 bg-slate-950/50 shrink-0">
+                <div class="p-3 border-t border-slate-800 bg-slate-950/50 shrink-0 relative">
+                    <!-- Autocomplete Popover -->
+                    <div id="ai-autocomplete-popover" class="absolute bottom-full mb-2 left-3 right-3 bg-slate-900 border border-indigo-500/40 rounded-xl shadow-2xl z-[120] hidden flex flex-col overflow-hidden max-h-48 custom-scrollbar">
+                    </div>
                     <div class="relative flex items-end gap-2">
                         <textarea id="ai-input" rows="1" placeholder="Generate a map for..." class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200 outline-none focus:border-indigo-500 resize-none custom-scrollbar max-h-32" oninput="this.style.height = ''; this.style.height = this.scrollHeight + 'px'"></textarea>
                         <button id="ai-send-btn" class="shrink-0 w-9 h-9 bg-indigo-600 hover:bg-indigo-500 text-white rounded-full flex items-center justify-center transition-colors shadow">
@@ -97,6 +101,12 @@ class MultiMapAI {
 
         const input = document.getElementById('ai-input');
         input.addEventListener('keydown', (e) => {
+            if (this.autocompleteActive) {
+                if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter' || e.key === 'Escape') {
+                    this.handleAutocompleteKeydown(e);
+                    return;
+                }
+            }
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 this.handleSend();
@@ -120,10 +130,10 @@ class MultiMapAI {
             }
 
             // Persist the state so it doesn't reappear on refresh
-            let progress = JSON.parse(localStorage.getItem('mm_tutorial_progress') || '{}');
+            let progress = JSON.parse(localStorage.getItem('MultiMapTutorialProgress') || '{}');
             if (!progress['seen_onboarding']) {
                 progress['seen_onboarding'] = true;
-                localStorage.setItem('mm_tutorial_progress', JSON.stringify(progress));
+                localStorage.setItem('MultiMapTutorialProgress', JSON.stringify(progress));
             }
 
             if (window.Tutorials) {
@@ -142,6 +152,124 @@ class MultiMapAI {
             window.visualViewport.addEventListener('resize', () => this.handleResize());
             window.visualViewport.addEventListener('scroll', () => this.handleResize());
         }
+    }
+
+    initAutocomplete() {
+        this.autocompleteActive = false;
+        this.filteredCommands = [];
+        this.activeCommandIdx = 0;
+        this.allCommands = [
+            { key: '/generate', label: 'Generate Map', desc: 'Generate a new map or submap' },
+            { key: '/edit', label: 'Edit Map', desc: 'Modify or extend the current map' },
+            { key: '/refine', label: 'Refine Selected', desc: 'Modify selected node(s)/subgraph' },
+            { key: '/explain', label: 'Explain Map', desc: 'Narrate what this map represents' },
+            { key: '/project', label: 'Generate Project', desc: 'Generate a multi-page project' }
+        ];
+
+        const input = document.getElementById('ai-input');
+        if (!input) return;
+
+        input.addEventListener('input', () => this.handleAutocompleteInput());
+    }
+
+    handleAutocompleteInput() {
+        const input = document.getElementById('ai-input');
+        const val = input.value;
+
+        if (val.startsWith('/') && !val.includes(' ')) {
+            const filterText = val.toLowerCase();
+            this.filteredCommands = this.allCommands.filter(c => c.key.startsWith(filterText));
+
+            if (this.filteredCommands.length > 0) {
+                this.showAutocompletePopover();
+            } else {
+                this.hideAutocompletePopover();
+            }
+        } else {
+            this.hideAutocompletePopover();
+        }
+    }
+
+    handleAutocompleteKeydown(e) {
+        if (!this.autocompleteActive) return;
+
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            this.activeCommandIdx = (this.activeCommandIdx + 1) % this.filteredCommands.length;
+            this.renderAutocompletePopover();
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            this.activeCommandIdx = (this.activeCommandIdx - 1 + this.filteredCommands.length) % this.filteredCommands.length;
+            this.renderAutocompletePopover();
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            this.selectActiveCommand();
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            this.hideAutocompletePopover();
+        }
+    }
+
+    showAutocompletePopover() {
+        this.autocompleteActive = true;
+        const popover = document.getElementById('ai-autocomplete-popover');
+        if (popover) {
+            popover.classList.remove('hidden');
+        }
+        this.activeCommandIdx = 0;
+        this.renderAutocompletePopover();
+    }
+
+    hideAutocompletePopover() {
+        this.autocompleteActive = false;
+        const popover = document.getElementById('ai-autocomplete-popover');
+        if (popover) {
+            popover.classList.add('hidden');
+        }
+    }
+
+    renderAutocompletePopover() {
+        const popover = document.getElementById('ai-autocomplete-popover');
+        if (!popover) return;
+
+        popover.innerHTML = '';
+        this.filteredCommands.forEach((cmd, idx) => {
+            const isSelected = idx === this.activeCommandIdx;
+            const item = document.createElement('div');
+            item.className = `p-2 px-3 text-xs flex justify-between items-center cursor-pointer transition-colors border-b border-slate-800 last:border-0 ${
+                isSelected ? 'bg-indigo-600 text-white' : 'hover:bg-slate-800/80 text-slate-300'
+            }`;
+            item.innerHTML = `
+                <div class="flex flex-col">
+                    <span class="font-bold">${cmd.key}</span>
+                    <span class="text-[10px] ${isSelected ? 'text-slate-200' : 'text-slate-400'}">${cmd.desc}</span>
+                </div>
+                <span class="text-[10px] opacity-65 uppercase font-black tracking-wider">${cmd.label}</span>
+            `;
+            item.onclick = (e) => {
+                e.stopPropagation();
+                this.activeCommandIdx = idx;
+                this.selectActiveCommand();
+            };
+            popover.appendChild(item);
+        });
+    }
+
+    selectActiveCommand() {
+        const cmd = this.filteredCommands[this.activeCommandIdx];
+        if (!cmd) return;
+
+        const input = document.getElementById('ai-input');
+        if (!input) return;
+
+        const tag = `[${cmd.key.substring(1)}] `;
+        input.value = tag;
+        
+        this.hideAutocompletePopover();
+        input.focus();
+        
+        input.style.height = '';
+        input.style.height = input.scrollHeight + 'px';
     }
 
     handleResize() {
@@ -196,7 +324,7 @@ class MultiMapAI {
     }
 
     checkOnboardingState() {
-        const progress = JSON.parse(localStorage.getItem('mm_tutorial_progress') || '{}');
+        const progress = JSON.parse(localStorage.getItem('MultiMapTutorialProgress') || '{}');
         // Check if basic_intro is completed or if they've already seen the onboarding
         if (!progress['basic_intro'] && !progress['seen_onboarding']) {
             // Pulse the AI toggle widget so they click it
@@ -358,6 +486,199 @@ class MultiMapAI {
         }
     }
 
+    tryExecuteLocalCommand(text) {
+        if (!this.kernel) return false;
+
+        // 1. View switching
+        const viewMatch = text.match(/^\s*(?:show|view|switch\s+to|go\s+to)\s+(map|web|orbital|prompt|agent|person)\s*$/i);
+        if (viewMatch) {
+            const phase = viewMatch[1].toLowerCase();
+            window.SC.setView(phase);
+            this.addMessage('system', `Switched view to <strong>${phase}</strong>.`);
+            return true;
+        }
+
+        // 2. Exit Portal
+        const exitMatch = text.match(/^\s*(?:exit|leave|go\s+back|exit\s+portal)\s*$/i);
+        if (exitMatch) {
+            if (this.kernel.portalHistory.length > 0) {
+                window.SC.actionExitPortal();
+                this.addMessage('system', `Exited portal and returned to parent map.`);
+            } else {
+                this.addMessage('system', `You are not currently inside a portal/submap.`);
+            }
+            return true;
+        }
+
+        // 3. Portal Enter
+        const enterMatch = text.match(/^\s*(?:enter|go\s+into|open)\s+(?:portal\s+)?(.+)\s*$/i);
+        if (enterMatch) {
+            const term = enterMatch[1].trim().toLowerCase();
+            const node = this.kernel.state.nodes.find(n => 
+                (n.type === 'portal' || n.type === 'smart-portal') && 
+                (n.id === term || n.title.toLowerCase().includes(term))
+            );
+            if (node) {
+                const lib = this.kernel.getLibrary();
+                const map = lib.find(m => m.map_id === node.content);
+                if (map) {
+                    window.SC.actionEnterPortal(node.id);
+                    this.addMessage('system', `Entered portal <strong>${node.title}</strong>.`);
+                } else {
+                    this.addMessage('system', `Target map for portal <strong>${node.title}</strong> not found in library.`);
+                }
+            } else {
+                this.addMessage('system', `Could not find a portal node matching <strong>${enterMatch[1]}</strong>.`);
+            }
+            return true;
+        }
+
+        // 4. Node selection
+        const selectMatch = text.match(/^\s*select\s+(?:node\s+)?(.+)\s*$/i);
+        if (selectMatch) {
+            const term = selectMatch[1].trim().toLowerCase();
+            const node = this.kernel.state.nodes.find(n => 
+                n.id === term || n.title.toLowerCase().includes(term)
+            );
+            if (node) {
+                this.kernel.selectNode(node.id);
+                window.SC.render();
+                this.addMessage('system', `Selected node <strong>${node.title}</strong>.`);
+            } else {
+                this.addMessage('system', `Could not find a node matching <strong>${selectMatch[1]}</strong>.`);
+            }
+            return true;
+        }
+
+        // 5. Node renaming
+        const renameMatch = text.match(/^\s*rename\s+(?:node\s+)?(.+?)\s+to\s+(.+)\s*$/i);
+        if (renameMatch) {
+            const term = renameMatch[1].trim().toLowerCase();
+            const newTitle = renameMatch[2].trim();
+            const node = this.kernel.state.nodes.find(n => 
+                n.id === term || n.title.toLowerCase().includes(term)
+            );
+            if (node) {
+                const oldTitle = node.title;
+                this.kernel.updateNode(node.id, { title: newTitle });
+                window.SC.render();
+                this.addMessage('system', `Renamed node <strong>${oldTitle}</strong> to <strong>${newTitle}</strong>.`);
+            } else {
+                this.addMessage('system', `Could not find a node matching <strong>${renameMatch[1]}</strong>.`);
+            }
+            return true;
+        }
+
+        // 6. Node deletion
+        const deleteMatch = text.match(/^\s*(?:delete|remove)\s+(?:node\s+)?(.+)\s*$/i);
+        if (deleteMatch) {
+            const term = deleteMatch[1].trim().toLowerCase();
+            const node = this.kernel.state.nodes.find(n => 
+                n.id === term || n.title.toLowerCase().includes(term)
+            );
+            if (node) {
+                const title = node.title;
+                this.kernel.deleteNode(node.id);
+                window.SC.render();
+                this.addMessage('system', `Deleted node <strong>${title}</strong>.`);
+            } else {
+                this.addMessage('system', `Could not find a node matching <strong>${deleteMatch[1]}</strong>.`);
+            }
+            return true;
+        }
+
+        // 7. Node linking
+        const linkMatch = text.match(/^\s*link\s+(.+?)\s+to\s+(.+)\s*$/i);
+        if (linkMatch) {
+            const term1 = linkMatch[1].trim().toLowerCase();
+            const term2 = linkMatch[2].trim().toLowerCase();
+            const node1 = this.kernel.state.nodes.find(n => n.id === term1 || n.title.toLowerCase().includes(term1));
+            const node2 = this.kernel.state.nodes.find(n => n.id === term2 || n.title.toLowerCase().includes(term2));
+            
+            if (node1 && node2) {
+                const exists = this.kernel.state.connections.some(c => 
+                    (c.from === node1.id && c.to === node2.id) || 
+                    (c.from === node2.id && c.to === node1.id)
+                );
+                if (exists) {
+                    this.addMessage('system', `Node <strong>${node1.title}</strong> and <strong>${node2.title}</strong> are already linked.`);
+                } else {
+                    const res = this.kernel.addConnection(node1.id, node2.id);
+                    if (res && res.success === false) {
+                        this.addMessage('system', `Cannot link <strong>${node1.title}</strong> to <strong>${node2.title}</strong> due to schema/connection rules.`);
+                    } else {
+                        window.SC.render();
+                        this.addMessage('system', `Linked <strong>${node1.title}</strong> to <strong>${node2.title}</strong>.`);
+                    }
+                }
+            } else {
+                if (!node1) {
+                    this.addMessage('system', `Could not find a node matching <strong>${linkMatch[1]}</strong>.`);
+                } else {
+                    this.addMessage('system', `Could not find a node matching <strong>${linkMatch[2]}</strong>.`);
+                }
+            }
+            return true;
+        }
+
+        // 8. Node adding/creation
+        const addMatch = text.match(/^\s*(?:add|create)\s+(?:node\s+)?(?:([a-zA-Z0-9_-]+)\s+)?(.+)\s*$/i);
+        if (addMatch) {
+            let type = addMatch[1];
+            let title = addMatch[2].trim();
+            const knownTypes = ['root', 'hub', 'note', 'portal', 'smart-portal', 'logic-gate',
+                                'web-root', 'web-nav', 'web-hero', 'web-section', 'web-card',
+                                'web-link', 'web-button', 'web-text', 'web-image', 'web-video',
+                                'web-form', 'web-input', 'web-grid', 'web-list', 'web-modal',
+                                'web-carousel', 'person-root', 'person-profile', 'person-credentials',
+                                'person-notes'];
+            if (!type || !knownTypes.includes(type.toLowerCase())) {
+                title = (type ? type + ' ' : '') + title;
+                type = null;
+            } else {
+                type = type.toLowerCase();
+            }
+
+            const pid = this.kernel.state.session.selectedId;
+            const parentNode = pid ? this.kernel.state.nodes.find(n => n.id === pid) : null;
+
+            if (!type) {
+                type = pid ? this.kernel.getSmartChildType(pid) : 'note';
+            }
+
+            if (parentNode && typeof MultiMapSchema !== 'undefined') {
+                const mapType = this.kernel.state.meta && this.kernel.state.meta.type ? this.kernel.state.meta.type : 'generic';
+                const allowedInMap = (MultiMapSchema.mapTypes && MultiMapSchema.mapTypes[mapType]) ? MultiMapSchema.mapTypes[mapType].allowedNodes || [] : [];
+                
+                if (allowedInMap.length > 0 && !allowedInMap.includes(type)) {
+                    this.addMessage('system', `Schema constraint: Type <strong>${type}</strong> is not allowed in a <strong>${mapType}</strong> map.`);
+                    return true;
+                }
+                if (!MultiMapSchema.canConnect(parentNode.type, type)) {
+                    this.addMessage('system', `Schema constraint: Cannot add a [${type}] child to a [${parentNode.type}] node in this map.`);
+                    return true;
+                }
+            }
+
+            const child = this.kernel.addNode({ title: title, type: type }, pid);
+            if (pid) {
+                this.kernel.addConnection(pid, child.id);
+            }
+            window.SC.render();
+            
+            let msg = `Created node <strong>${title}</strong> of type <strong>${type}</strong>`;
+            if (parentNode) {
+                msg += ` linked under <strong>${parentNode.title}</strong>.`;
+            } else {
+                msg += `.`;
+            }
+            this.addMessage('system', msg);
+            return true;
+        }
+
+        return false;
+    }
+
     async handleSend() {
         const input = document.getElementById('ai-input');
         const text = input.value.trim();
@@ -366,6 +687,10 @@ class MultiMapAI {
         input.value = '';
         input.style.height = 'auto';
         this.addMessage('user', text);
+
+        if (this.tryExecuteLocalCommand(text)) {
+            return;
+        }
 
         // Loading state
         const msgs = document.getElementById('ai-messages');
@@ -543,7 +868,7 @@ class MultiMapAI {
         this.toggleChat(); // Hide chat to focus on selection
     }
 
-    injectIntoNewSmartPortal() {
+    async injectIntoNewSmartPortal() {
         if (!this.pendingMapData) return;
 
         let parentId = this.kernel.state.session.selectedId;
@@ -559,7 +884,12 @@ class MultiMapAI {
         const child = this.kernel.addNode({ title: this.pendingMapData.meta.title || "AI Portal", type: "smart-portal" }, parentId);
         this.kernel.addConnection(parentId, child.id);
 
-        this.kernel.saveConstellationToLibrary(this.pendingMapData);
+        const saved = await this.kernel.saveConstellationToLibrary(this.pendingMapData);
+        if (saved === false) {
+            alert("Guest map limit (25) exceeded.");
+            return;
+        }
+        
         this.kernel.updateNode(child.id, { content: this.pendingMapData.map_id });
         this.kernel.importSubmap(child.id, this.pendingMapData);
 
@@ -571,7 +901,7 @@ class MultiMapAI {
         this.toggleChat();
     }
 
-    actionExpandSelected() {
+    async actionExpandSelected() {
         if (!this.pendingMapData) return;
         const parentId = this.kernel.state.session.selectedId;
         if (!parentId) {
@@ -579,7 +909,12 @@ class MultiMapAI {
             return;
         }
 
-        this.kernel.saveConstellationToLibrary(this.pendingMapData);
+        const saved = await this.kernel.saveConstellationToLibrary(this.pendingMapData);
+        if (saved === false) {
+            alert("Guest map limit (25) exceeded.");
+            return;
+        }
+
         // importSubmap links the imported roots to the parentId
         this.kernel.importSubmap(parentId, this.pendingMapData);
 
@@ -839,7 +1174,9 @@ class MultiMapAI {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': authHeaderValue
+                'Authorization': authHeaderValue,
+                'X-Authorization': authHeaderValue,
+                'X-Anonymous-Session': auth.scheme === 'Anonymous' ? auth.value : ''
             },
             body: JSON.stringify({
                 prompt: prompt,

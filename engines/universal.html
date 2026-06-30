@@ -127,6 +127,11 @@
                         if (sel.value !== currentVal) {
                             sel.value = currentVal;
                         }
+                        // Sync Enter/Set-Target button label
+                        const enterBtn = container.querySelector('#portal-btn-enter');
+                        if (enterBtn) {
+                            enterBtn.textContent = currentVal ? 'Enter Portal \uD83C\uDF00' : 'Set Target \uD83C\uDFAF';
+                        }
                     }
                     
                     if (node.type === 'smart-portal') {
@@ -309,7 +314,7 @@
                             ` : ''}
                         </select>
                     </div>
-                    <button onclick="notifyAction('ENTER_PORTAL', '${node.id}')" class="mt-3 w-full py-2 bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold rounded shadow transition-colors">Enter Portal 🌀</button>
+                    <button id="portal-btn-enter" onclick="notifyAction('ENTER_PORTAL', '${node.id}')" class="mt-3 w-full py-2 bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold rounded shadow transition-colors">${node.content ? 'Enter Portal 🌀' : 'Set Target 🎯'}</button>
                     <div class="mt-4 pt-4 border-t border-slate-800">
                         <label class="text-[10px] font-bold text-slate-500 uppercase block mb-2">Create New Submap</label>
                         <div class="flex gap-2">

@@ -54,7 +54,12 @@ window.loginAnonymous = async () => {
     }
 };
 
+const ADMIN_EMAILS = ['forestneff@gmail.com'];
+
 onAuthStateChanged(auth, user => {
+    // Resolve admin status
+    window.Auth.isAdmin = !!(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email));
+
     if (user && !user.isAnonymous) {
         console.log("User logged in:", user.uid);
         if (window.Kernel) {
@@ -72,13 +77,20 @@ onAuthStateChanged(auth, user => {
     }
     
     // Auto-update UI on auth state changes
-    const container = document.getElementById('profile-content');
-    if (container && window.Auth) {
-        window.Auth.renderProfile(container);
+    const profileContainer = document.getElementById('profile-content');
+    if (profileContainer && window.Auth) {
+        window.Auth.renderProfile(profileContainer);
+    }
+    // Refresh data manager if its drawer is already open
+    const dmDrawer = document.getElementById('data-manager-drawer');
+    const dmContainer = document.getElementById('data-manager-content');
+    if (dmDrawer && dmContainer && !dmDrawer.classList.contains('translate-x-full') && window.Auth) {
+        window.Auth.renderDataManager(dmContainer);
     }
 });
 
 window.Auth = {
+    isAdmin: false,
     currentView: 'login',
     
     setView: function(view) {
@@ -92,6 +104,7 @@ window.Auth = {
         let html = '';
         
         if (user && !user.isAnonymous) {
+            const isAdmin = window.Auth.isAdmin;
             html += `
             <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow flex flex-col gap-3">
                 <div class="flex items-center gap-3">
@@ -99,11 +112,18 @@ window.Auth = {
                         ${user.photoURL ? `<img src="${user.photoURL}" class="w-full h-full object-cover">` : (user.displayName || user.email ? (user.displayName || user.email)[0].toUpperCase() : 'U')}
                     </div>
                     <div class="flex-1 min-w-0">
-                        <div class="text-sm font-bold text-white truncate">${user.displayName || 'No Name Set'}</div>
+                        <div class="text-sm font-bold text-white truncate">
+                            ${user.displayName || 'No Name Set'}
+                            ${isAdmin ? '<span class="ml-1.5 text-[8px] bg-amber-500/20 border border-amber-500/50 text-amber-400 px-1.5 py-0.5 rounded-full uppercase tracking-widest font-bold">Admin</span>' : ''}
+                        </div>
                         <div class="text-xs text-slate-400 truncate">${user.email || 'No Email'}</div>
                         <div class="text-[10px] text-emerald-400 mt-0.5">Authenticated via ${user.providerData.length > 0 ? user.providerData[0].providerId : 'email'}</div>
                     </div>
                 </div>
+                ${isAdmin ? `
+                <a href="admin.html" class="w-full py-2 bg-amber-900/40 hover:bg-amber-800/60 text-amber-300 text-xs font-bold rounded transition-colors border border-amber-700/60 text-center flex items-center justify-center gap-2">
+                    <span>⚙️</span> Admin Console
+                </a>` : ''}
                 <button onclick="window.Auth.logout()" class="w-full py-2 bg-slate-800 hover:bg-red-600 text-white text-xs font-bold rounded transition-colors border border-slate-700 mt-2">Logout</button>
             </div>
             `;

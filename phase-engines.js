@@ -73,20 +73,24 @@ class IframePhaseEngine extends PhaseEngineBase {
         this.iframe = null;
     }
     render(container, state) {
-        // Inject schema data into state for the inspector iframe
+        let stateClone = state;
+        // Inject schema data into state for the inspector iframe without mutating global state
         if (state && state.session) {
+            const sessionClone = Object.assign({}, state.session);
             if (typeof MultiMapSchema !== 'undefined') {
-                state.session.schemaData = {
+                sessionClone.schemaData = {
                     definitions: MultiMapSchema.definitions,
                     rules: MultiMapSchema.rules,
                     mapTypes: MultiMapSchema.mapTypes
                 };
             }
-            state.session.library = this.kernel.getLibrary();
-            state.session.linkingMode = this.kernel.linkingMode;
-            state.session.linkingSourceId = this.kernel.linkingSourceId;
-            state.session.activeProjectId = this.kernel.activeProjectId;
-            state.session.projects = this.kernel.getProjects();
+            sessionClone.library = this.kernel.getLibrary();
+            sessionClone.linkingMode = this.kernel.linkingMode;
+            sessionClone.linkingSourceId = this.kernel.linkingSourceId;
+            sessionClone.activeProjectId = this.kernel.activeProjectId;
+            sessionClone.projects = this.kernel.getProjects();
+            
+            stateClone = Object.assign({}, state, { session: sessionClone });
         }
 
         if (!this.iframe) {
@@ -99,7 +103,7 @@ class IframePhaseEngine extends PhaseEngineBase {
         this.iframe.onload = () => {
             const highlight = window.SC && window.SC.activeSearchHighlight ? window.SC.activeSearchHighlight : null;
             if (this.iframe && this.iframe.contentWindow) {
-                this.iframe.contentWindow.postMessage({ type: 'STATE_UPDATE', state: state, highlight: highlight }, '*');
+                this.iframe.contentWindow.postMessage({ type: 'STATE_UPDATE', state: stateClone, highlight: highlight }, '*');
             }
         };
         
@@ -110,7 +114,7 @@ class IframePhaseEngine extends PhaseEngineBase {
         
         if (this.iframe.contentWindow) {
             const highlight = window.SC && window.SC.activeSearchHighlight ? window.SC.activeSearchHighlight : null;
-            this.iframe.contentWindow.postMessage({ type: 'STATE_UPDATE', state: state, highlight: highlight }, '*');
+            this.iframe.contentWindow.postMessage({ type: 'STATE_UPDATE', state: stateClone, highlight: highlight }, '*');
         }
     }
 }
@@ -162,24 +166,80 @@ class DataPhaseEngine extends PhaseEngineBase {
     }
     
     render(container, state) {
-        const activeProjId = this.kernel.activeProjectId;
-        const projects = this.kernel.getProjects();
-        const pages = this.kernel.getPages(activeProjId);
-        
-        const activeProj = projects.find(p => p.project_id === activeProjId) || projects[0] || { meta: { title: "My Project" } };
-        const activeProjTitle = activeProj.meta?.title || "My Project";
+        try {
+            const activeProjId = this.kernel.activeProjectId;
+            const projects = this.kernel.getProjects();
+            const pages = this.kernel.getPages(activeProjId);
+            
+            const activeProj = projects.find(p => p.project_id === activeProjId) || projects[0] || { meta: { title: "My Project" } };
+            const activeProjTitle = activeProj.meta?.title || "My Project";
         
         container.innerHTML = `
             <div class="w-full flex flex-col gap-4 pb-10">
                 <p class="text-slate-400 text-xs px-1">Manage workspace projects, organize nested pages, and package system configurations.</p>
                 <div class="flex flex-col gap-4">
+                
+                        <!-- Quota Meter & Vault -->
+                        ${(() => {
+                            const tier = this.kernel.getCurrentTier();
+                            const usage = this.kernel.getStorageUsage();
+                            const limit = this.kernel.getStorageLimit(tier);
+                            const percent = Math.min(100, (usage / limit) * 100);
+                            const mbUsage = (usage / 1024 / 1024).toFixed(2);
+                            const mbLimit = (limit / 1024 / 1024).toFixed(1);
+                            const isWarning = percent >= 80;
+                            const activeVault = this.kernel.isUsingCloudVault() ? 'firebase' : 'local';
+                            
+                            return `
+                            <div class="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-hidden p-4 flex flex-col gap-3 shrink-0">
+                                <div class="flex justify-between items-end">
+                                    <div class="flex flex-col">
+                                        <h2 class="text-sky-400 font-bold uppercase text-[10px] tracking-widest flex items-center gap-1.5">☁️ Data Vault</h2>
+                                        <div class="relative mt-1">
+                                            <button 
+                                                id="vault-selector-btn"
+                                                onclick="SC.showVaultSelectorDropdown(event)"
+                                                class="bg-slate-950 hover:bg-slate-800 text-[10px] text-slate-300 px-3 py-1.5 rounded-lg border border-slate-700 font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+                                            >
+                                                <span>Target: ${activeVault === 'firebase' ? 'Firebase (Cloud) ☁️' : 'Local Browser (Legacy) 📁'}</span>
+                                                <span class="text-[8px] opacity-60">▼</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <span class="text-[9px] font-mono ${isWarning ? 'text-rose-400 font-bold' : 'text-slate-400'}">${mbUsage} MB / ${mbLimit} MB</span>
+                                </div>
+                                
+                                <div class="w-full bg-slate-800 rounded-full h-1.5 mt-0.5 overflow-hidden">
+                                    <div class="h-1.5 rounded-full ${isWarning ? 'bg-rose-500' : 'bg-sky-500'}" style="width: ${percent}%"></div>
+                                </div>
+                                
+                                ${isWarning ? `
+                                <div class="mt-1 p-2 bg-rose-950/40 border border-rose-900/50 rounded-lg text-rose-300 text-[9px] flex flex-col gap-1.5">
+                                    <p><strong>Warning:</strong> ${tier === 'guest' ? 'Local guest storage' : 'Cloud workspace'} is almost full.</p>
+                                    <div class="flex gap-1.5 mt-0.5">
+                                        ${tier === 'guest' ? `<button onclick="alert('Sign up coming soon!')" class="flex-1 bg-sky-600 hover:bg-sky-500 py-1 rounded transition-colors text-white font-bold">Free Account</button>` : ''}
+                                        <button onclick="alert('Bring Your Own Storage coming in Phase 2!')" class="flex-1 bg-rose-900/60 hover:bg-rose-800 py-1 rounded transition-colors text-white">BYOS Options</button>
+                                    </div>
+                                </div>
+                                ` : `
+                                <div class="text-[9px] text-slate-500 flex justify-between px-1">
+                                    <span>Sync Status:</span>
+                                    <span class="font-bold flex items-center gap-1" id="save-status">
+                                        ${this.kernel.isUsingCloudVault() ? '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Cloud' : '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Local'}
+                                    </span>
+                                </div>
+                                `}
+                            </div>
+                            `;
+                        })()}
                         
-                        <!-- 1. Workspace Library Collapsible Accordion -->
+                        
+                        <!-- 1. Workspace Library Accordion -->
                         <div class="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-hidden transition-all flex flex-col shrink-0">
                             <div class="p-4 bg-slate-800/50 hover:bg-slate-800 cursor-pointer flex justify-between items-center transition-colors select-none" onclick="SC.registry.get('data').toggle('library')">
-                                <h2 class="text-purple-400 font-bold uppercase text-xs tracking-widest flex items-center gap-2">📁 Workspace Library</h2>
+                                <h2 class="text-purple-400 font-bold uppercase text-xs tracking-widest flex items-center gap-2 font-black">📚 Workspace Library</h2>
                                 <div class="flex items-center gap-3">
-                                    <span class="bg-slate-800 text-slate-400 px-2 py-0.5 rounded text-[10px] border border-slate-700">${projects.length} Projects</span>
+                                    <span class="bg-slate-800 text-slate-400 px-2 py-0.5 rounded text-[10px] border border-slate-700">${projects.length} Projects / ${pages.length} Pages</span>
                                     <span class="text-slate-500 text-xs">${this.ui.library ? '▼' : '▶'}</span>
                                 </div>
                             </div>
@@ -216,9 +276,8 @@ class DataPhaseEngine extends PhaseEngineBase {
                                                         <span style="color: ${color}">${icon}</span>
                                                         <span class="${isActive ? 'text-purple-300 font-bold' : 'text-slate-300 group-hover:text-slate-100'} truncate">${title}</span>
                                                     </span>
-                                                    <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                                                        <button onclick="event.stopPropagation(); SC.actionPromptRenameProject('${proj.project_id}')" class="text-[9px] text-slate-400 hover:text-white" title="Rename Project">✏️</button>
-                                                        <button onclick="event.stopPropagation(); SC.actionDeleteProject('${proj.project_id}')" class="text-[9px] text-slate-400 hover:text-rose-400" title="Delete Project">🗑️</button>
+                                                    <div class="flex gap-1 opacity-60 group-hover:opacity-100 transition-opacity shrink-0">
+                                                        <button onclick="event.stopPropagation(); SC.actionOpenProjectSettings('${proj.project_id}')" class="bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white text-[9px] py-0.5 px-2 rounded border border-slate-800/80 shadow transition-all font-bold uppercase tracking-wider flex items-center gap-1" title="Project Settings">⚙️ settings</button>
                                                     </div>
                                                 </div>
                                                 <div class="text-[9px] text-slate-500 pl-5">
@@ -252,27 +311,39 @@ class DataPhaseEngine extends PhaseEngineBase {
                                             const type = meta.type || "generic";
                                             const nodeCount = page.nodes ? page.nodes.length : 0;
                                             
+                                            // Determine storage target icon
+                                            let storageIcon = '☁️'; // Default firebase
+                                            if (meta.storage_target === 'google_drive') storageIcon = '🔺';
+                                            else if (meta.storage_target === 'local_os') storageIcon = '📁';
+
+                                            const activeBadge = isCurrentPage ? '<span class="text-[8px] bg-sky-950/60 border border-sky-600 text-sky-400 px-1.5 py-0.5 rounded-full shrink-0 uppercase tracking-widest font-extrabold">● Active</span>' : '';
+                                            const loadBtn = isCurrentPage 
+                                                ? `<button onclick="SC.actionCloseDataManager()" class="flex-1 bg-sky-950/40 hover:bg-sky-900/40 text-sky-450 hover:text-sky-350 text-[9px] py-1 rounded font-bold border border-sky-900/50 cursor-pointer transition-all shadow" title="Close Data Manager">Active Space</button>`
+                                                : `<button onclick="SC.actionLoadFromLibrary('${page.map_id}')" class="flex-1 bg-slate-900 hover:bg-sky-600 text-white text-[9px] py-1 rounded font-bold transition-all border border-slate-800/80 shadow">Load</button>`;
+
                                             return `
-                                            <div class="bg-slate-950/70 border rounded-xl overflow-hidden group relative hover:border-sky-500/40 transition-all shrink-0 ${isCurrentPage ? 'border-sky-500/70 shadow-lg shadow-sky-950/40 ring-1 ring-sky-500/10' : 'border-slate-800/80'}" 
+                                            <div class="bg-slate-950/70 border rounded-xl overflow-hidden group relative hover:border-sky-500/40 transition-all shrink-0 ${isCurrentPage ? 'bg-slate-900/50 border-sky-500 shadow-[0_0_15px_rgba(14,165,233,0.15)] ring-1 ring-sky-500/10' : 'border-slate-800/80'}" 
                                                  draggable="true" 
                                                  ondragstart="event.dataTransfer.setData('text/plain', '${page.map_id}')">
-                                                <div class="absolute left-0 top-0 bottom-0 w-1 bg-sky-500 ${isCurrentPage ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} transition-opacity"></div>
+                                                <div class="absolute left-0 top-0 bottom-0 w-1 bg-sky-500 rounded-l-xl ${isCurrentPage ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} transition-opacity"></div>
                                                 
                                                 <div class="p-3 flex flex-col gap-2">
-                                                    <div class="flex justify-between items-start gap-4">
-                                                        <div class="font-bold text-xs text-slate-200 truncate flex-1 flex items-center gap-1.5 cursor-grab active:cursor-grabbing">
-                                                            📄 <span class="truncate">${title}</span>
+                                                    <!-- Title row -->
+                                                    <div class="flex justify-between items-start gap-2">
+                                                        <div class="font-bold text-xs text-slate-200 truncate flex-1 flex items-center gap-1.5 min-w-0 cursor-grab active:cursor-grabbing">
+                                                            <span title="Storage Target" class="shrink-0">${storageIcon}</span>
+                                                            <span class="truncate">${title}</span>
+                                                            ${activeBadge}
                                                             <span class="text-[8px] bg-slate-900 border border-slate-800 text-slate-400 px-1.5 py-0.5 rounded-full shrink-0 uppercase tracking-widest">${type}</span>
+                                                            ${meta.shared ? '<span class="text-[8px] bg-teal-900/50 border border-teal-700/50 text-teal-400 px-1.5 py-0.5 rounded-full shrink-0 uppercase tracking-widest">🔗 shared</span>' : ''}
                                                         </div>
                                                         <span class="text-[9px] text-slate-500 bg-slate-900/60 px-1.5 py-0.5 rounded border border-slate-800/60 shrink-0">${nodeCount} nodes</span>
                                                     </div>
                                                     
-                                                    <div class="flex gap-1.5 opacity-60 group-hover:opacity-100 transition-opacity">
-                                                        <button onclick="SC.actionLoadFromLibrary('${page.map_id}')" class="flex-1 bg-slate-900 hover:bg-sky-600 text-white text-[9px] py-1 rounded font-bold transition-all border border-slate-800/80 shadow">Load</button>
-                                                        <button onclick="SC.actionDownloadSingleConstellation('${page.map_id}')" class="bg-slate-900 hover:bg-indigo-600 text-slate-300 hover:text-white text-[9px] py-1 px-2 rounded font-bold transition-all border border-slate-800/80 shadow" title="Download JSON">⬇️</button>
-                                                        <button onclick="SC.actionPromptRenamePage('${page.map_id}')" class="bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white text-[9px] py-1 px-2 rounded font-bold transition-all border border-slate-800/80 shadow" title="Rename Page">✏️</button>
-                                                        <button onclick="SC.actionPromptCopyPage('${page.map_id}')" class="bg-slate-900 hover:bg-purple-900/60 text-slate-400 hover:text-purple-200 text-[9px] py-1 px-2 rounded font-bold transition-all border border-slate-800/80 shadow" title="Copy Page to New Project">📋</button>
-                                                        <button onclick="SC.actionDeleteFromLibrary('${page.map_id}')" class="bg-slate-900 hover:bg-rose-900/60 text-slate-400 hover:text-rose-200 text-[9px] py-1 px-2 rounded font-bold transition-all border border-slate-800/80 shadow" title="Delete Page">🗑️</button>
+                                                    <!-- Action row: Load + Settings modal trigger -->
+                                                    <div class="flex gap-1.5 ${isCurrentPage ? 'opacity-100' : 'opacity-60 group-hover:opacity-100'} transition-opacity">
+                                                        ${loadBtn}
+                                                        <button onclick="SC.actionOpenPageSettings('${page.map_id}')" class="bg-slate-900 hover:bg-slate-700 text-slate-300 hover:text-white text-[9px] py-1 px-2.5 rounded font-bold transition-all border border-slate-800/80 shadow" title="Settings & Sharing">⚙️ Settings</button>
                                                     </div>
                                                 </div>
                                             </div>
@@ -327,10 +398,11 @@ class DataPhaseEngine extends PhaseEngineBase {
 
                                 <div class="flex-1 overflow-y-auto max-h-[350px] custom-scrollbar pr-2 space-y-3 mt-2">
                                     ${(!state.session.remoteTemplates || state.session.remoteTemplates.length === 0) ? '<div class="text-center text-slate-600 text-xs py-6 italic border border-dashed border-slate-800 rounded-lg">No assets loaded. Click refresh.</div>' : ''}
-                                    ${(state.session.remoteTemplates || []).map(tpl => `
+                                    ${(state.session.remoteTemplates || []).map(tpl => {
+                                        return `
                                         <div class="bg-slate-950 border border-slate-800 p-4 rounded-xl hover:border-blue-500 transition-colors group relative overflow-hidden flex flex-col gap-3">
                                             <div class="absolute left-0 top-0 bottom-0 w-1 ${tpl.isCustom ? 'bg-emerald-500' : 'bg-blue-500'} opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                                            
+
                                             <div class="flex justify-between items-start">
                                                 <div class="flex flex-col gap-1 pr-4">
                                                     <div class="font-bold text-sm text-slate-200 flex items-center gap-2">
@@ -342,14 +414,22 @@ class DataPhaseEngine extends PhaseEngineBase {
                                             </div>
 
                                             <div class="flex gap-2 opacity-50 group-hover:opacity-100 transition-opacity">
-                                                <button onclick="SC.actionSpawnTemplate('${tpl.id}')" class="flex-1 bg-slate-800 hover:bg-blue-600 text-slate-300 hover:text-white text-[10px] py-1.5 rounded font-bold transition-colors border border-slate-700 shadow flex items-center justify-center gap-1" title="Import to Map">
-                                                    🌀 <span class="hidden sm:inline">Import to Map</span>
+                                                <button onclick="SC.actionSpawnAssetAsPortal('${tpl.id}')"
+                                                    class="flex-1 bg-slate-800 hover:bg-violet-600 text-slate-300 hover:text-white text-[10px] py-1.5 rounded font-bold transition-colors border border-slate-700 shadow flex items-center justify-center gap-1"
+                                                    title="Spawn as portal in current map">
+                                                    🌀 <span class="hidden sm:inline">Spawn Portal</span>
+                                                </button>
+                                                <button onclick="SC.showAssetProjectDropdown(event, '${tpl.id}')"
+                                                    class="flex-1 bg-slate-800 hover:bg-blue-600 text-slate-300 hover:text-white text-[10px] py-1.5 rounded font-bold transition-colors border border-slate-700 shadow flex items-center justify-center gap-1"
+                                                    title="Import as dedicated page — choose project">
+                                                    📄 <span class="hidden sm:inline">New Page</span> <span class="text-[8px] opacity-70">▾</span>
                                                 </button>
                                                 <button onclick="SC.actionDownloadTemplate('${tpl.id}')" class="bg-slate-800 hover:bg-sky-600 text-slate-300 hover:text-white text-[10px] py-1.5 px-3 rounded font-bold transition-colors border border-slate-700 shadow" title="Download JSON">⬇️</button>
-                                                ${tpl.isCustom ? `<button onclick="SC.actionDeleteRemoteTemplate('${tpl.id}')" class="bg-slate-800 hover:bg-red-600 text-slate-300 hover:text-white text-[10px] py-1.5 px-3 rounded font-bold transition-colors border border-slate-700 shadow" title="Delete Custom Template">🗑️</button>` : ''}
+                                                ${tpl.isCustom ? `<button onclick="SC.actionDeleteRemoteTemplate('${tpl.id}')" class="bg-slate-800 hover:bg-red-600 text-slate-300 hover:text-white text-[10px] py-1.5 px-3 rounded font-bold transition-colors border border-slate-700 shadow" title="Delete">🗑️</button>` : ''}
                                             </div>
                                         </div>
-                                    `).join('')}
+                                        `;
+                                    }).join('')}
                                 </div>
                             </div>
                             ` : ''}
@@ -414,8 +494,16 @@ class DataPhaseEngine extends PhaseEngineBase {
                             </div>
                             ` : ''}
                         </div>
-
                     </div>
-        `;
+                </div>
+            `;
+        } catch (err) {
+            console.error("DataPhaseEngine render failed:", err);
+            container.innerHTML = `<div class="p-4 bg-rose-950/50 border border-rose-900 rounded-lg flex flex-col gap-2">
+                <strong>Engine Load Failed</strong>
+                <textarea class="w-full h-32 bg-rose-950/80 border border-rose-900 text-rose-300 text-[10px] p-2 rounded outline-none resize-none font-mono" readonly>${err.message}\n\n${err.stack}</textarea>
+                <button onclick="window.SC.registry.get('data').render(document.getElementById('data-manager-content'), window.SC.kernel.state)" class="bg-rose-900 hover:bg-rose-800 px-3 py-1 rounded text-white mt-2 self-start">Retry</button>
+            </div>`;
+        }
     }
 }

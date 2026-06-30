@@ -88,6 +88,8 @@ class SandboxController {
         window.addEventListener('pointercancel', (e) => this.handlePointerUp(e));
         vp.addEventListener('wheel', (e) => this.handleWheel(e), { passive: false });
         window.addEventListener('resize', () => this.render());
+        window.addEventListener('beforeunload', () => this.kernel.saveCurrentMapToLibrary());
+        window.addEventListener('pagehide', () => this.kernel.saveCurrentMapToLibrary());
 
         // --- GLOBAL ESCAPE HANDLER (CASCADING CLOSE) ---
         window.addEventListener('keydown', (e) => {
@@ -508,7 +510,8 @@ class SandboxController {
         menu.style.display = 'block';
 
         const isLinking = this.kernel.linkingMode;
-        const stateHash = `${node.id}-${node.type}-${isLinking}-${this.kernel.linkingSourceId === node.id}-${this.aiImportMode}-${this.parentSelectMode}`;
+        const isPortal = node.type === 'portal' || node.type === 'smart-portal';
+        const stateHash = `${node.id}-${node.type}-${isLinking}-${this.kernel.linkingSourceId === node.id}-${this.aiImportMode}-${this.parentSelectMode}${isPortal ? '-' + (node.content || '') : ''}`;
 
         if (menu.dataset.activeNode === stateHash && menu.innerHTML !== '') {
             menu.classList.add('active'); 
@@ -569,9 +572,26 @@ class SandboxController {
             if (isOrphan) {
                 actions.push({ icon: '👆', action: 'SelectParent', title: 'Select Parent' });
             }
-            if (node.type === 'portal') actions.push({ icon: '🌀', action: 'EnterPortal', title: 'Enter' });
-            else if (node.type === 'smart-portal') actions.push({ icon: '✨', action: 'TriggerAI', title: 'Trigger AI' });
-            else actions.push({ icon: '🌌', action: 'SaveConstellation', title: 'Save Submap' });
+            if (node.type === 'portal') {
+                actions.push({ 
+                    icon: node.content ? '🌀' : '🎯', 
+                    action: 'EnterPortal', 
+                    title: node.content ? 'Enter' : 'Set Target' 
+                });
+            } else if (node.type === 'smart-portal') {
+                actions.push({ 
+                    icon: node.content ? '✨' : '🎯', 
+                    action: 'TriggerAI', 
+                    title: node.content ? 'Trigger AI' : 'Set Target' 
+                });
+            }
+            else {
+                // Clip is only available for non-root, non-portal, non-web nodes
+                const canClip = !isNodeRoot && !node.type.startsWith('web-');
+                if (canClip) {
+                    actions.push({ icon: '✂️', action: 'ClipBranch', title: 'Clip' });
+                }
+            }
         }
 
         let html = '';
@@ -640,11 +660,14 @@ class SandboxController {
         this.render(); // Remove halos
     }
 
-    actionResolveAiImport(nodeId) {
+    async actionResolveAiImport(nodeId) {
         if (!this.aiPendingData) return;
         
         // Save the map to the library natively so the portal can reference it!
-        this.kernel.saveConstellationToLibrary(this.aiPendingData);
+        const saved = await this.kernel.saveConstellationToLibrary(this.aiPendingData);
+        if (saved === false) {
+            throw new Error("Guest map limit (25) exceeded.");
+        }
         
         // Update the smart portal's payload to link to this new map
         this.kernel.updateNode(nodeId, { content: this.aiPendingData.map_id });
@@ -757,7 +780,18 @@ class SandboxController {
         this.render();
     }
 
-    actionDelete(id) { const tgt = id || this.kernel.state.session.selectedId; if (confirm("Delete this node and cascade to all children?")) this.kernel.deleteNode(tgt); }
+    async actionDelete(id) {
+        const tgt = id || this.kernel.state.session.selectedId;
+        const ok = await this.actionConfirm({
+            title: "Delete Node",
+            message: "Are you sure you want to delete this node and cascade to all children? This action cannot be undone.",
+            confirmText: "Delete",
+            isDestructive: true
+        });
+        if (ok) {
+            this.kernel.deleteNode(tgt);
+        }
+    }
     actionToggleCollapse(id) { const tgt = id || this.kernel.state.session.selectedId; this.kernel.toggleCollapse(tgt); }
     
     actionAddChild(id) {
@@ -787,33 +821,351 @@ class SandboxController {
         }
     }
 
-    actionEnterPortal(id) {
+    async actionEnterPortal(id) {
         const tgt = id || this.kernel.state.session.selectedId;
         const node = this.kernel.state.nodes.find(n => n.id === tgt);
         if (node && (node.type === 'portal' || node.type === 'smart-portal')) {
             const lib = this.kernel.getLibrary();
-            const map = lib.find(m => m.map_id === node.content);
-            if (map) {
-                this.kernel.enterPortal(map);
+            const existingMap = lib.find(m => m.map_id === node.content);
+            if (existingMap) {
+                // Navigate directly to existing page
+                this.kernel.enterPortal(existingMap);
                 const mapType = this.kernel.state.meta && this.kernel.state.meta.type ? this.kernel.state.meta.type : 'generic';
                 if (mapType === 'web') this.setView('web');
                 else this.setView('map');
+                this.actionCloseDataManager();
+                this.render();
             } else {
-                alert("Target map not found in library.");
+                // Open selection modal to choose existing or create new
+                this.actionSetPortalTarget(tgt);
             }
         }
+    }
+
+    async actionSetPortalTarget(nodeId) {
+        const node = this.kernel.state.nodes.find(n => n.id === nodeId);
+        if (!node) return;
+
+        const lib = this.kernel.getLibrary() || [];
+        const projects = this.kernel.state.session.projects || [];
+        const activeProjId = this.kernel.activeProjectId;
+        const activeProj = projects.find(p => p.project_id === activeProjId) || { meta: { title: "Active Project" } };
+        const activeProjTitle = activeProj.meta?.title || "Active Project";
+
+        // Filter same project and other project pages
+        const sameProjectPages = lib.filter(p => p.meta?.project_id === activeProjId || (!p.meta?.project_id && activeProjId === 'default_project'));
+        const otherProjectPages = lib.filter(p => p.meta?.project_id && p.meta?.project_id !== activeProjId);
+
+        let activeTab = 'existing'; // 'existing' or 'new'
+        let selectedPageId = null;
+        let selectedPageTitle = '-- Choose Target Page --';
+
+        const contentHtml = `
+            <div class="flex flex-col gap-4 font-sans text-slate-300">
+                <!-- Tabs Header -->
+                <div class="flex border-b border-slate-800/80">
+                    <button id="tab-existing" class="flex-1 py-2 text-center text-xs font-bold border-b-2 border-indigo-500 text-indigo-400 focus:outline-none transition-all cursor-pointer bg-transparent">Link Existing Page</button>
+                    <button id="tab-new" class="flex-1 py-2 text-center text-xs font-bold border-b-2 border-transparent text-slate-400 hover:text-slate-200 focus:outline-none transition-all cursor-pointer bg-transparent">Create New Page</button>
+                </div>
+
+                <!-- Existing Page Section -->
+                <div id="section-existing" class="flex flex-col gap-2">
+                    <label class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Select Existing Page</label>
+                    <div class="relative w-full">
+                        <button id="page-selector-btn" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-left text-slate-400 hover:border-slate-700 transition-colors flex justify-between items-center cursor-pointer">
+                            <span id="page-selector-label" class="truncate">${selectedPageTitle}</span>
+                            <span class="text-slate-500 text-[10px]">▼</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Create New Section -->
+                <div id="section-new" class="flex flex-col gap-3 hidden">
+                    <div class="flex flex-col gap-1.5">
+                        <label class="text-slate-400 font-bold uppercase text-[9px] tracking-wider">Page Name</label>
+                        <input type="text" id="new-page-title" value="${node.title || 'Sub Map'}" class="bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 outline-none focus:border-indigo-500 transition-colors w-full">
+                    </div>
+                    <div class="flex flex-col gap-1.5">
+                        <label class="text-slate-400 font-bold uppercase text-[9px] tracking-wider">Page Type</label>
+                        <select id="new-page-type" class="bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 outline-none focus:border-indigo-500 transition-colors w-full">
+                            <option value="generic" selected>Generic Map</option>
+                            <option value="web">Web Architect</option>
+                            <option value="person">Person Profile</option>
+                            <option value="prompt">Prompt Engine</option>
+                            <option value="agent">Agent Config</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        const actionsHtml = `
+            <div class="flex w-full justify-end items-center gap-2">
+                <button id="portal-btn-cancel" class="border border-slate-700 hover:bg-slate-850 text-slate-300 text-[10px] font-bold py-2 px-4 rounded-lg transition-colors uppercase tracking-wide">Cancel</button>
+                <button id="portal-btn-submit" class="bg-indigo-650 hover:bg-indigo-500 text-white text-[10px] font-bold py-2 px-4 rounded-lg transition-colors shadow-lg shadow-indigo-950/20 uppercase tracking-wide">Link Page</button>
+            </div>
+        `;
+
+        this.showDialogModal({
+            title: "Set Portal Target",
+            contentHtml,
+            actionsHtml,
+            onRender: (backdrop, close) => {
+                const tabExisting = backdrop.querySelector('#tab-existing');
+                const tabNew = backdrop.querySelector('#tab-new');
+                const sectionExisting = backdrop.querySelector('#section-existing');
+                const sectionNew = backdrop.querySelector('#section-new');
+                const btnSelector = backdrop.querySelector('#page-selector-btn');
+                const labelSelector = backdrop.querySelector('#page-selector-label');
+                const btnSubmit = backdrop.querySelector('#portal-btn-submit');
+                const inputTitle = backdrop.querySelector('#new-page-title');
+                const selectType = backdrop.querySelector('#new-page-type');
+
+                const updateSubmitState = () => {
+                    if (activeTab === 'existing') {
+                        btnSubmit.disabled = !selectedPageId;
+                        btnSubmit.style.opacity = selectedPageId ? '1' : '0.5';
+                        btnSubmit.textContent = 'Link Page';
+                    } else {
+                        const hasTitle = !!inputTitle.value.trim();
+                        btnSubmit.disabled = !hasTitle;
+                        btnSubmit.style.opacity = hasTitle ? '1' : '0.5';
+                        btnSubmit.textContent = 'Create & Link';
+                    }
+                };
+
+                inputTitle.oninput = updateSubmitState;
+                updateSubmitState();
+
+                tabExisting.onclick = () => {
+                    activeTab = 'existing';
+                    tabExisting.className = "flex-1 py-2 text-center text-xs font-bold border-b-2 border-indigo-500 text-indigo-400 focus:outline-none transition-all cursor-pointer bg-transparent";
+                    tabNew.className = "flex-1 py-2 text-center text-xs font-bold border-b-2 border-transparent text-slate-400 hover:text-slate-200 focus:outline-none transition-all cursor-pointer bg-transparent";
+                    sectionExisting.classList.remove('hidden');
+                    sectionNew.classList.add('hidden');
+                    updateSubmitState();
+                };
+
+                tabNew.onclick = () => {
+                    activeTab = 'new';
+                    tabNew.className = "flex-1 py-2 text-center text-xs font-bold border-b-2 border-indigo-500 text-indigo-400 focus:outline-none transition-all cursor-pointer bg-transparent";
+                    tabExisting.className = "flex-1 py-2 text-center text-xs font-bold border-b-2 border-transparent text-slate-400 hover:text-slate-200 focus:outline-none transition-all cursor-pointer bg-transparent";
+                    sectionExisting.classList.add('hidden');
+                    sectionNew.classList.remove('hidden');
+                    inputTitle.focus();
+                    inputTitle.select();
+                    updateSubmitState();
+                };
+
+                btnSelector.onclick = (e) => {
+                    e.stopPropagation();
+                    const dropdownId = 'mm-portal-target-dropdown';
+                    const existingDropdown = document.getElementById(dropdownId);
+                    if (existingDropdown) {
+                        existingDropdown.remove();
+                        return;
+                    }
+
+                    const rect = btnSelector.getBoundingClientRect();
+                    const panel = document.createElement('div');
+                    panel.id = dropdownId;
+                    panel.className = "fixed z-[9999999] bg-slate-950 border border-slate-700 rounded-xl shadow-2xl overflow-y-auto flex flex-col font-sans py-1 max-h-60";
+                    panel.style.left = `${rect.left}px`;
+                    panel.style.top = `${rect.bottom + 4}px`;
+                    panel.style.width = `${rect.width}px`;
+
+                    const addOption = (pageObj) => {
+                        const b = document.createElement('button');
+                        b.className = "text-left w-full px-3 py-2 text-[10px] font-medium text-slate-300 hover:bg-indigo-650 hover:text-white flex items-center justify-between transition-colors border-none bg-transparent cursor-pointer";
+                        const pageTypeStr = pageObj.meta.type || 'generic';
+                        const escapedTitle = this.escapeHTML(pageObj.meta.title);
+                        b.innerHTML = `<span class="truncate flex-1 font-bold">${escapedTitle}</span><span class="text-[9px] text-slate-500 uppercase tracking-wider">${pageTypeStr}</span>`;
+                        b.onclick = () => {
+                            selectedPageId = pageObj.map_id;
+                            selectedPageTitle = pageObj.meta.title;
+                            labelSelector.textContent = pageObj.meta.title;
+                            labelSelector.classList.remove('text-slate-400');
+                            labelSelector.classList.add('text-slate-200');
+                            updateSubmitState();
+                            panel.remove();
+                        };
+                        panel.appendChild(b);
+                    };
+
+                    if (sameProjectPages.length > 0) {
+                        const header = document.createElement('div');
+                        header.className = "px-3 py-1 text-[8px] font-bold text-slate-550 uppercase tracking-wider bg-slate-900/40 select-none";
+                        header.textContent = `${activeProjTitle} (Active)`;
+                        panel.appendChild(header);
+                        sameProjectPages.forEach(p => addOption(p));
+                    }
+
+                    if (otherProjectPages.length > 0) {
+                        const header = document.createElement('div');
+                        header.className = "px-3 py-1 text-[8px] font-bold text-slate-550 uppercase tracking-wider bg-slate-900/40 select-none mt-1";
+                        header.textContent = "Other Projects";
+                        panel.appendChild(header);
+                        otherProjectPages.forEach(p => addOption(p));
+                    }
+
+                    if (sameProjectPages.length === 0 && otherProjectPages.length === 0) {
+                        const noPages = document.createElement('div');
+                        noPages.className = "px-3 py-2 text-[10px] text-slate-500 italic select-none";
+                        noPages.textContent = "No pages found in library.";
+                        panel.appendChild(noPages);
+                    }
+
+                    document.body.appendChild(panel);
+
+                    const closeDD = (ev) => {
+                        if (!panel.contains(ev.target) && ev.target !== btnSelector) {
+                            panel.remove();
+                            document.removeEventListener('mousedown', closeDD, true);
+                        }
+                    };
+                    setTimeout(() => document.addEventListener('mousedown', closeDD, true), 0);
+                };
+
+                backdrop.querySelector('#portal-btn-cancel').onclick = () => close(null);
+                btnSubmit.onclick = async () => {
+                    close(true);
+
+                    if (activeTab === 'existing') {
+                        if (!selectedPageId) return;
+                        node.content = selectedPageId;
+                        this.kernel.saveCurrentMapToLibrary();
+
+                        const map = lib.find(m => m.map_id === selectedPageId);
+                        if (map) {
+                            this.kernel.enterPortal(map);
+                            const mapType = this.kernel.state.meta && this.kernel.state.meta.type ? this.kernel.state.meta.type : 'generic';
+                            if (mapType === 'web') this.setView('web');
+                            else this.setView('map');
+                            this.actionCloseDataManager();
+                            this.render();
+                        }
+                    } else {
+                        const title = inputTitle.value.trim();
+                        const type = selectType.value;
+                        if (!title) return;
+
+                        const newPage = await this.kernel.createPage(this.kernel.activeProjectId, title, type);
+                        if (newPage) {
+                            node.content = newPage.map_id;
+                            this.kernel.saveCurrentMapToLibrary();
+                            
+                            // Push the parent map to portalHistory so exit portal loads correctly
+                            this.kernel.portalHistory.push(JSON.parse(JSON.stringify(this.kernel.state)));
+                            this.kernel.history = []; // Clear undo
+                            this.kernel.state = this.kernel.ensureSchema(newPage);
+                            this.kernel.notify();
+
+                            if (type === 'web') this.setView('web');
+                            else this.setView('map');
+                            this.actionCloseDataManager();
+                            this.render();
+                            
+                            this.actionOpenPageSettings(newPage.map_id);
+                        } else {
+                            alert("Failed to create page.");
+                        }
+                    }
+                };
+            }
+        });
     }
     
     actionExitPortal() {
         if (this.kernel.exitPortal()) {
             this.setView('map');
+            
+            const drawer = document.getElementById('data-manager-drawer');
+            if (drawer) drawer.classList.add('translate-x-full');
         }
     }
 
-    actionSaveConstellation(id) {
+    async actionClipBranch(id) {
+        const tgt = id || this.kernel.state.session.selectedId;
+        const node = this.kernel.state.nodes.find(n => n.id === tgt);
+        if (!node) return;
+        
+        const isRoot   = node.data.isCore || node.type === 'root' || node.type.endsWith('-root');
+        const isPortal = node.type === 'portal' || node.type === 'smart-portal';
+        const isWeb    = node.type.startsWith('web-');
+        if (isRoot || isPortal || isWeb) {
+            return alert('Clip is not available for root nodes, portals, or web-type nodes.');
+        }
+        
+        const initialTitle = node.title || "Clipped Branch";
+        const initialType = node.type || "generic";
+        
+        const contentHtml = `
+            <div class="flex flex-col gap-4 font-sans text-slate-300">
+                <p class="text-xs text-slate-400">Clip the branch starting at "${initialTitle}" into a new sub-page. This replaces this node with a portal to the new space and removes all downstream sub-nodes from the current map.</p>
+                
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-slate-400 font-bold uppercase text-[9px] tracking-wider">Sub-Page Name</label>
+                    <input type="text" id="clip-page-title" value="${initialTitle}" class="bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 outline-none focus:border-indigo-500 transition-colors w-full">
+                </div>
+                
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-slate-400 font-bold uppercase text-[9px] tracking-wider">Sub-Page Type</label>
+                    <select id="clip-page-type" class="bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 outline-none focus:border-indigo-500 transition-colors w-full">
+                        <option value="generic" ${initialType === 'generic' ? 'selected' : ''}>Generic Map</option>
+                        <option value="web" ${initialType === 'web' ? 'selected' : ''}>Web Architect</option>
+                        <option value="person" ${initialType === 'person' ? 'selected' : ''}>Person Profile</option>
+                        <option value="prompt" ${initialType === 'prompt' ? 'selected' : ''}>Prompt Engine</option>
+                        <option value="agent" ${initialType === 'agent' ? 'selected' : ''}>Agent Config</option>
+                    </select>
+                </div>
+            </div>
+        `;
+        
+        const actionsHtml = `
+            <div class="flex w-full justify-end items-center gap-2">
+                <button id="clip-btn-cancel" class="border border-slate-700 hover:bg-slate-850 text-slate-300 text-[10px] font-bold py-2 px-4 rounded-lg transition-colors uppercase tracking-wide">Cancel</button>
+                <button id="clip-btn-submit" class="bg-indigo-650 hover:bg-indigo-500 text-white text-[10px] font-bold py-2 px-4 rounded-lg transition-colors shadow-lg shadow-indigo-950/20 uppercase tracking-wide">Clip Branch</button>
+            </div>
+        `;
+        
+        this.showDialogModal({
+            title: "Clip Branch to New Page",
+            contentHtml,
+            actionsHtml,
+            onRender: (backdrop, closeClip) => {
+                const titleInput = backdrop.querySelector('#clip-page-title');
+                const typeSelect = backdrop.querySelector('#clip-page-type');
+                
+                titleInput.focus();
+                titleInput.select();
+                
+                backdrop.querySelector('#clip-btn-cancel').onclick = () => closeClip(null);
+                backdrop.querySelector('#clip-btn-submit').onclick = async () => {
+                    const title = titleInput.value.trim();
+                    const type = typeSelect.value;
+                    if (!title) return alert("Sub-page name cannot be empty.");
+                    
+                    closeClip(true);
+                    
+                    const newMapId = await this.kernel.clipBranch(tgt, title, type);
+                    if (newMapId) {
+                        this.kernel.selectNode(tgt);
+                        this.actionOpenPageSettings(newMapId);
+                    } else {
+                        alert('Clip failed. The node may not be clippable.');
+                    }
+                };
+            }
+        });
+    }
+
+    async actionSaveConstellation(id) {
         const tgt = id || this.kernel.state.session.selectedId;
         const json = this.kernel.extractConstellation(tgt);
-        if (json) { this.kernel.saveConstellationToLibrary(json); alert("Saved to Library."); }
+        if (json) { 
+            const saved = await this.kernel.saveConstellationToLibrary(json); 
+            if (saved !== false) alert("Saved to Library.");
+        }
     }
 
     actionLoadRemoteTemplates() {
@@ -864,18 +1216,30 @@ class SandboxController {
 
                 let msg = `Conflict: A map titled "${newMap.meta?.title || newMap.map_id}" already exists.\nOverwrite existing map?`;
                 if (confirm(msg)) {
-                    if (target === 'template') MultiMapLibrary.saveCustomTemplate(newMap);
-                    else {
-                        await this.kernel.saveMapToLibrary(newMap);
+                    if (target === 'template') {
+                        MultiMapLibrary.saveCustomTemplate(newMap);
+                        overwritten++;
+                    } else {
+                        const saved = await this.kernel.saveMapToLibrary(newMap);
+                        if (saved !== false) {
+                            overwritten++;
+                        } else {
+                            break; // Stop importing further if quota exceeded
+                        }
                     }
-                    overwritten++;
                 } else { skipped++; }
             } else {
-                if (target === 'template') MultiMapLibrary.saveCustomTemplate(newMap);
-                else {
-                    await this.kernel.saveMapToLibrary(newMap);
+                if (target === 'template') {
+                    MultiMapLibrary.saveCustomTemplate(newMap);
+                    added++;
+                } else {
+                    const saved = await this.kernel.saveMapToLibrary(newMap);
+                    if (saved !== false) {
+                        added++;
+                    } else {
+                        break; // Stop importing further if quota exceeded
+                    }
                 }
-                added++;
             }
         }
 
@@ -931,31 +1295,471 @@ class SandboxController {
         }
     }
 
-    async actionSpawnTemplate(tplId) {
+    async actionSpawnAssetAsPortal(tplId) {
         try {
             const tplData = await this.kernel.bridge.fetchTemplateData(tplId);
-            this.kernel.saveConstellationToLibrary(tplData);
             
+            // Clone the template map, give it a new map_id, and assign to current project
+            const newMapId = this.kernel.generateId();
+            const clonedMap = JSON.parse(JSON.stringify(tplData));
+            clonedMap.map_id = newMapId;
+            clonedMap.meta.project_id = this.kernel.activeProjectId;
+            clonedMap.meta.title = tplData.meta.title || "Cloned Space";
+            
+            const saved = await this.kernel.saveConstellationToLibrary(clonedMap);
+            if (saved === false) {
+                throw new Error("Storage limit exceeded.");
+            }
+            
+            // Add the portal node to the current map pointing to newMapId
             const vp = this.kernel.state.session.viewport;
             const rect = this.dom.viewport.getBoundingClientRect();
-            const center_x = (rect.width / 2 - vp.x) / vp.scale;
-            const center_y = (rect.height / 2 - vp.y) / vp.scale;
-
-            const portal = this.kernel.addNode({ type: 'portal', title: tplData.meta.title, content: tplData.map_id, x: center_x, y: center_y });
-            this.kernel.importSubmap(portal.id, tplData);
-            alert(`Template imported successfully!`);
+            
+            // If there's a selected node, position near it, otherwise center of viewport
+            const selectedId = this.kernel.state.session.selectedId;
+            let posX = undefined;
+            let posY = undefined;
+            if (!selectedId) {
+                posX = (rect.width / 2 - vp.x) / vp.scale;
+                posY = (rect.height / 2 - vp.y) / vp.scale;
+            }
+            
+            const portalNode = this.kernel.addNode({
+                type: 'portal',
+                title: clonedMap.meta.title,
+                content: newMapId,
+                x: posX,
+                y: posY
+            }, selectedId);
+            
+            // Link portal node to selected node or root
+            let parentId = selectedId;
+            if (!parentId) {
+                // Find a core or root node
+                const rootNode = this.kernel.state.nodes.find(n => n.data && n.data.isCore) || 
+                                 this.kernel.state.nodes.find(n => n.type === 'root' || n.type === 'file-root') || 
+                                 this.kernel.state.nodes[0];
+                if (rootNode) parentId = rootNode.id;
+            }
+            
+            if (parentId && portalNode) {
+                this.kernel.addConnection(parentId, portalNode.id);
+            }
+            
             this.setView('map');
-            this.kernel.selectNode(portal.id);
-        } catch (e) { alert("Failed to spawn template."); }
+            this.kernel.selectNode(portalNode.id);
+            this.actionCloseDataManager();
+            this.actionOpenPageSettings(clonedMap.map_id);
+        } catch (e) {
+            console.error(e);
+            alert("Failed to spawn asset as portal: " + e.message);
+        }
     }
 
-    actionSaveCurrentToLibrary() {
+    /** Shared implementation: clone asset template into a specific project */
+    async _importAssetToProject(tplId, targetProjectId) {
+        const tplData = await this.kernel.bridge.fetchTemplateData(tplId);
+        const projects = this.kernel.getProjects();
+
+        const newMapId = this.kernel.generateId();
+        const clonedMap = JSON.parse(JSON.stringify(tplData));
+        clonedMap.map_id = newMapId;
+        clonedMap.meta.project_id = targetProjectId;
+        clonedMap.meta.title = tplData.meta.title || 'Imported Page';
+
+        // Library templates use meta.target_type (e.g. "web-root") instead of meta.type.
+        // Reverse-map it to the schema's mapType key so ensureSchema never falls back to "generic".
+        if (!clonedMap.meta.type && clonedMap.meta.target_type) {
+            const targetRootType = clonedMap.meta.target_type;
+            if (typeof MultiMapSchema !== 'undefined' && MultiMapSchema.mapTypes) {
+                const matchedType = Object.keys(MultiMapSchema.mapTypes).find(
+                    m => MultiMapSchema.mapTypes[m].rootNode === targetRootType
+                );
+                if (matchedType) clonedMap.meta.type = matchedType;
+            }
+        }
+
+        const saved = await this.kernel.saveConstellationToLibrary(clonedMap);
+        if (saved === false) throw new Error('Storage limit exceeded.');
+
+        // Register the page under its project
+        const proj = projects.find(p => p.project_id === targetProjectId)
+            || (this.kernel.firestoreProjects || []).find(p => p.project_id === targetProjectId);
+        if (proj && !proj.page_ids.includes(newMapId)) {
+            proj.page_ids.push(newMapId);
+            if (this.kernel.isUsingCloudVault()) {
+                const uid = window.FirebaseAuth.currentUser.uid;
+                const projRef = window.Firestore.doc(window.FirebaseDb, 'users', uid, 'projects', targetProjectId);
+                await window.Firestore.setDoc(projRef, proj);
+            } else {
+                localStorage.setItem('mm_projects', JSON.stringify(this.kernel.projects));
+            }
+        }
+
+        return { clonedMap, projTitle: proj ? proj.meta.title : targetProjectId };
+    }
+
+    /** Called by the dropdown when the user picks an existing project */
+    async actionImportAssetToProjectId(tplId, projectId) {
+        // Close any open dropdown for this asset before doing async work
+        const ddKey = 'asset_dd_' + tplId;
+        const engine = this.registry.get('data');
+        if (engine && engine.ui.openItems[ddKey]) engine.toggleItem(ddKey);
+
+        try {
+            const { clonedMap, projTitle } = await this._importAssetToProject(tplId, projectId);
+            const openNow = confirm(`"${clonedMap.meta.title}" added to "${projTitle}". Open it now?`);
+            if (openNow) {
+                this.kernel.activeProjectId = projectId;
+                this.kernel.loadMapState(clonedMap);
+                this.setView('map');
+                const drawer = document.getElementById('data-manager-drawer');
+                if (drawer) drawer.classList.add('translate-x-full');
+            } else {
+                this.render();
+            }
+        } catch (e) {
+            console.error(e);
+            alert('Failed to import asset: ' + e.message);
+        }
+    }
+
+    /** Called by the dropdown when the user chooses "+ New Project…" */
+    async actionImportAssetToNewProject(tplId) {
+        const ddKey = 'asset_dd_' + tplId;
+        const engine = this.registry.get('data');
+        if (engine && engine.ui.openItems[ddKey]) engine.toggleItem(ddKey);
+
+        const tplData = await this.kernel.bridge.fetchTemplateData(tplId).catch(() => null);
+        const defaultName = tplData ? `${tplData.meta.title} Project` : 'New Project';
+        const newProjName = prompt('New project name:', defaultName);
+        if (!newProjName) return;
+
+        try {
+            const newProjId = await this.kernel.createProject(newProjName, '', '📁', '#6366f1', false);
+            if (!newProjId) throw new Error('Could not create project.');
+            const { clonedMap } = await this._importAssetToProject(tplId, newProjId);
+            const openNow = confirm(`Project "${newProjName}" created with page "${clonedMap.meta.title}". Open it now?`);
+            if (openNow) {
+                this.kernel.activeProjectId = newProjId;
+                this.kernel.loadMapState(clonedMap);
+                this.setView('map');
+                const drawer = document.getElementById('data-manager-drawer');
+                if (drawer) drawer.classList.add('translate-x-full');
+            } else {
+                this.render();
+            }
+        } catch (e) {
+            console.error(e);
+            alert('Failed to create project or import asset: ' + e.message);
+        }
+    }
+
+    /** @deprecated — kept in case anything still references the old single-method flow */
+    async actionImportAssetToPage(tplId) {
+        return this.actionImportAssetToProjectId(tplId, this.kernel.activeProjectId);
+    }
+
+    /**
+     * Renders a body-level fixed dropdown anchored to the "New Page" button.
+     * Avoids overflow-hidden clipping from the asset card / scrollable list.
+     */
+    showAssetProjectDropdown(event, tplId) {
+        // Remove any existing dropdown
+        const existing = document.getElementById('mm-asset-proj-dd');
+        if (existing) {
+            existing.remove();
+            // If same button was clicked again, just close (toggle off)
+            if (existing.dataset.tplId === tplId) return;
+        }
+
+        const btn = event.currentTarget;
+        const rect = btn.getBoundingClientRect();
+        const projects = this.kernel.getProjects();
+
+        const panel = document.createElement('div');
+        panel.id = 'mm-asset-proj-dd';
+        panel.dataset.tplId = tplId;
+        panel.style.cssText = `
+            position: fixed;
+            left: ${rect.left}px;
+            top: ${rect.bottom + 4}px;
+            min-width: ${Math.max(rect.width, 180)}px;
+            z-index: 99999;
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 10px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            font-family: inherit;
+        `;
+
+        // Keep panel on-screen if it would overflow viewport bottom
+        const estimatedHeight = (projects.length + 1) * 32 + 8;
+        if (rect.bottom + 4 + estimatedHeight > window.innerHeight) {
+            panel.style.top = '';
+            panel.style.bottom = `${window.innerHeight - rect.top + 4}px`;
+        }
+
+        const activeId = this.kernel.activeProjectId;
+
+        projects.forEach(proj => {
+            const b = document.createElement('button');
+            b.style.cssText = 'text-align:left;width:100%;padding:6px 12px;font-size:10px;font-weight:500;color:#cbd5e1;background:transparent;border:none;cursor:pointer;display:flex;align-items:center;gap:6px;white-space:nowrap;';
+            b.innerHTML = `<span>${proj.meta.icon || '📁'}</span><span style="flex:1">${proj.meta.title}</span>${proj.project_id === activeId ? '<span style="font-size:8px;color:#64748b">current</span>' : ''}`;
+            b.onmouseover = () => { b.style.background = '#2563eb'; b.style.color = '#fff'; };
+            b.onmouseout  = () => { b.style.background = 'transparent'; b.style.color = '#cbd5e1'; };
+            b.onclick = () => {
+                panel.remove();
+                this.actionImportAssetToProjectId(tplId, proj.project_id);
+            };
+            panel.appendChild(b);
+        });
+
+        // Divider
+        const hr = document.createElement('div');
+        hr.style.cssText = 'border-top:1px solid #334155;margin:2px 0;';
+        panel.appendChild(hr);
+
+        // + New Project
+        const newBtn = document.createElement('button');
+        newBtn.style.cssText = 'text-align:left;width:100%;padding:6px 12px;font-size:10px;font-weight:600;color:#34d399;background:transparent;border:none;cursor:pointer;display:flex;align-items:center;gap:6px;';
+        newBtn.innerHTML = '＋ New Project…';
+        newBtn.onmouseover = () => { newBtn.style.background = '#059669'; newBtn.style.color = '#fff'; };
+        newBtn.onmouseout  = () => { newBtn.style.background = 'transparent'; newBtn.style.color = '#34d399'; };
+        newBtn.onclick = () => {
+            panel.remove();
+            this.actionImportAssetToNewProject(tplId);
+        };
+        panel.appendChild(newBtn);
+
+        document.body.appendChild(panel);
+
+        // Auto-close on outside click or scroll
+        const close = (e) => {
+            if (!panel.contains(e.target) && e.target !== btn) {
+                panel.remove();
+                document.removeEventListener('mousedown', close, true);
+                document.removeEventListener('scroll', close, true);
+            }
+        };
+        // Slight delay so the current click doesn't immediately close
+        setTimeout(() => {
+            document.addEventListener('mousedown', close, true);
+            document.addEventListener('scroll', close, { capture: true, passive: true });
+        }, 0);
+    }
+
+    // ─────────────────────────────────────────────
+    // MAP SHARING
+    // ─────────────────────────────────────────────
+
+    /** Generate a UUID v4 */
+    _generateToken() {
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+            const r = Math.random() * 16 | 0;
+            return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+        });
+    }
+
+    /**
+     * Share a page by writing its full payload to shared_maps/{token}.
+     * Cloud-vault only — local pages cannot be served publicly.
+     */
+    async actionSharePage(mapId) {
+        const lib = this.kernel.getLibrary();
+        const page = lib.find(p => p.map_id === mapId);
+        if (!page) return alert('Page not found in library.');
+
+        const user = window.FirebaseAuth?.currentUser;
+        if (!user) {
+            return alert('You must be signed in (even as a guest) to share maps.');
+        }
+
+        // Expiry prompt
+        const expiryChoice = prompt(
+            `Share "${page.meta?.title || 'Untitled'}":\n` +
+            `Choose link expiry:\n` +
+            `  1. No expiry\n` +
+            `  2. 7 days\n` +
+            `  3. 30 days\n` +
+            `  4. 90 days\n` +
+            `Enter 1–4:`, '1'
+        );
+        if (!expiryChoice) return;
+        const expiryDays = { '2': 7, '3': 30, '4': 90 }[expiryChoice.trim()] || null;
+        const shareExpires = expiryDays
+            ? new Date(Date.now() + expiryDays * 86400000).toISOString()
+            : null;
+
+        const token = this._generateToken();
+
+        // Deep clone without transient session data
+        const payload = JSON.parse(JSON.stringify(page));
+        delete payload.session;
+        payload.meta.shared = true;
+        payload.meta.share_token = token;
+        payload.meta.share_expires = shareExpires;
+        payload.owner_uid = user.uid;
+        payload.owner_display = user.displayName || user.email || 'Anonymous';
+
+        try {
+            const ref = window.Firestore.doc(window.FirebaseDb, 'shared_maps', token);
+            await window.Firestore.setDoc(ref, payload);
+
+            // Update the map's own metadata in the library
+            page.meta.shared = true;
+            page.meta.share_token = token;
+            page.meta.share_expires = shareExpires;
+            await this.kernel.saveConstellationToLibrary(page);
+
+            const shareUrl = `${window.location.origin}/view.html?token=${token}`;
+            this.showShareLinkPanel(shareUrl, page.meta?.title || 'Untitled');
+        } catch (e) {
+            console.error(e);
+            alert('Failed to share map: ' + e.message);
+        }
+    }
+
+    /**
+     * Revoke sharing — delete the shared_maps document and clear meta flags.
+     */
+    async actionRevokeShare(mapId) {
+        const lib = this.kernel.getLibrary();
+        const page = lib.find(p => p.map_id === mapId);
+        if (!page || !page.meta?.share_token) return;
+
+        if (!confirm(`Revoke the public link for "${page.meta?.title || 'Untitled'}"? The link will stop working immediately.`)) return;
+
+        try {
+            const ref = window.Firestore.doc(window.FirebaseDb, 'shared_maps', page.meta.share_token);
+            await window.Firestore.deleteDoc(ref);
+
+            page.meta.shared = false;
+            page.meta.share_token = '';
+            page.meta.share_expires = null;
+            await this.kernel.saveConstellationToLibrary(page);
+
+            this.render();
+        } catch (e) {
+            console.error(e);
+            alert('Failed to revoke share: ' + e.message);
+        }
+    }
+
+    /**
+     * Fork a shared map into the viewer's workspace.
+     * Guests fork to local browser storage; auth users fork to their active project.
+     */
+    async actionForkSharedMap(token) {
+        try {
+            const ref = window.Firestore.doc(window.FirebaseDb, 'shared_maps', token);
+            const snap = await window.Firestore.getDoc(ref);
+            if (!snap.exists()) return alert('This shared map no longer exists.');
+
+            const data = snap.data();
+            // Expiry check
+            if (data.meta?.share_expires && new Date(data.meta.share_expires) < new Date()) {
+                return alert('This shared link has expired.');
+            }
+
+            const cloned = JSON.parse(JSON.stringify(data));
+            const newMapId = this.kernel.generateId();
+            cloned.map_id = newMapId;
+            cloned.meta.shared = false;
+            cloned.meta.share_token = '';
+            cloned.meta.share_expires = null;
+            cloned.meta.title = (cloned.meta.title || 'Forked Map') + ' (fork)';
+            cloned.meta.project_id = this.kernel.activeProjectId || 'default_project';
+            delete cloned.owner_uid;
+            delete cloned.owner_display;
+
+            const saved = await this.kernel.saveConstellationToLibrary(cloned);
+            if (saved === false) {
+                // Guest hit local storage limit — prompt sign-up
+                return alert('Local storage is full. Sign in to get more space.');
+            }
+
+            // Register under active project if possible
+            const projects = this.kernel.getProjects();
+            const proj = projects.find(p => p.project_id === cloned.meta.project_id);
+            if (proj && !proj.page_ids.includes(newMapId)) {
+                proj.page_ids.push(newMapId);
+                if (!this.kernel.isUsingCloudVault()) {
+                    localStorage.setItem('mm_projects', JSON.stringify(this.kernel.projects));
+                }
+            }
+
+            alert(`"${cloned.meta.title}" forked to your workspace!`);
+        } catch (e) {
+            console.error(e);
+            alert('Fork failed: ' + e.message);
+        }
+    }
+
+    /**
+     * Body-level panel showing the share URL with a copy button.
+     * Dismisses on outside click.
+     */
+    showShareLinkPanel(url, title = 'Shared Map') {
+        document.getElementById('mm-share-panel')?.remove();
+
+        const panel = document.createElement('div');
+        panel.id = 'mm-share-panel';
+        panel.style.cssText = `
+            position: fixed; inset: 0; z-index: 99999;
+            display: flex; align-items: center; justify-content: center;
+            background: rgba(0,0,0,0.55); backdrop-filter: blur(4px);
+            font-family: inherit;
+        `;
+
+        panel.innerHTML = `
+            <div style="background:#0f172a;border:1px solid #334155;border-radius:16px;padding:24px;max-width:480px;width:90%;box-shadow:0 24px 64px rgba(0,0,0,0.7);display:flex;flex-direction:column;gap:16px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <span style="font-weight:700;font-size:14px;color:#e2e8f0;">🔗 Share Link</span>
+                    <button id="mm-share-close" style="background:transparent;border:none;color:#64748b;font-size:18px;cursor:pointer;padding:0 4px;">✕</button>
+                </div>
+                <div style="font-size:11px;color:#94a3b8;">"${title}" is now publicly accessible at:</div>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <input id="mm-share-url" readonly value="${url}"
+                        style="flex:1;background:#1e293b;border:1px solid #334155;border-radius:8px;padding:8px 10px;font-size:11px;color:#cbd5e1;outline:none;font-family:monospace;">
+                    <button id="mm-share-copy" style="background:#2563eb;border:none;border-radius:8px;padding:8px 14px;font-size:11px;font-weight:700;color:#fff;cursor:pointer;white-space:nowrap;">Copy</button>
+                </div>
+                <div style="font-size:10px;color:#475569;">Anyone with this link can view and fork the map.</div>
+            </div>
+        `;
+
+        document.body.appendChild(panel);
+
+        panel.querySelector('#mm-share-copy').onclick = () => {
+            navigator.clipboard.writeText(url).then(() => {
+                const btn = panel.querySelector('#mm-share-copy');
+                btn.textContent = 'Copied!';
+                btn.style.background = '#16a34a';
+                setTimeout(() => { btn.textContent = 'Copy'; btn.style.background = '#2563eb'; }, 2000);
+            });
+        };
+
+        const dismiss = (e) => {
+            if (!panel.querySelector('div > div').contains(e.target)) {
+                panel.remove();
+            }
+        };
+        panel.querySelector('#mm-share-close').onclick = () => panel.remove();
+        setTimeout(() => panel.addEventListener('mousedown', dismiss), 0);
+    }
+
+    async actionSaveCurrentToLibrary() {
         const copy = JSON.parse(JSON.stringify(this.kernel.state));
         copy.map_id = this.kernel.generateId();
         copy.meta.title = (copy.meta.title || "Untitled") + " (Copy)";
-        this.kernel.saveConstellationToLibrary(copy);
-        alert("Session saved to Library!");
-        this.render(); 
+        const saved = await this.kernel.saveConstellationToLibrary(copy);
+        if (saved !== false) {
+            alert("Session saved to Library!");
+            this.render(); 
+        }
     }
     
     actionLoadFromLibrary(id) {
@@ -964,8 +1768,14 @@ class SandboxController {
         if (map) { 
             this.kernel.activeProjectId = map.meta?.project_id || 'default_project';
             this.kernel.loadMapState(map); 
-            this.setView('map'); 
+            this.setView('map');
+            this.actionCloseDataManager();
         }
+    }
+
+    actionCloseDataManager() {
+        const drawer = document.getElementById('data-manager-drawer');
+        if (drawer) drawer.classList.add('translate-x-full');
     }
 
     actionSetActiveProject(projId) {
@@ -984,52 +1794,41 @@ class SandboxController {
         this.render();
     }
 
+    async actionChangeVault(vault) {
+        await this.kernel.setVault(vault);
+        this.render();
+    }
+
     actionCreateProject() {
-        const name = prompt("Enter Project Name:", "New Project");
-        if (name) {
-            const desc = prompt("Enter Project Description:", "");
-            this.kernel.createProject(name, desc);
-        }
+        this.actionCreateProjectCustom();
     }
 
     actionPromptRenameProject(projId) {
-        const projects = this.kernel.getProjects();
-        const proj = projects.find(p => p.project_id === projId);
-        if (proj) {
-            const name = prompt("Rename Project:", proj.meta.title);
-            if (name) {
-                const desc = prompt("Update Description:", proj.meta.description || "");
-                this.kernel.renameProject(projId, name, desc, proj.meta.icon, proj.meta.color);
-            }
-        }
+        this.actionOpenProjectSettings(projId);
     }
 
-    actionDeleteProject(projId) {
-        if (confirm("Are you sure you want to delete this project and all its pages? This action cannot be undone.")) {
+    async actionDeleteProject(projId) {
+        const projects = this.kernel.getProjects();
+        const proj = projects.find(p => p.project_id === projId);
+        if (!proj) return;
+
+        const ok = await this.actionConfirm({
+            title: "Delete Project",
+            message: `Are you sure you want to delete the project "${proj.meta.title || 'Untitled'}" and all its pages? This action cannot be undone.`,
+            confirmText: "Delete Project",
+            isDestructive: true
+        });
+        if (ok) {
             this.kernel.deleteProject(projId);
         }
     }
 
     actionCreatePage() {
-        const title = prompt("Enter Page Name:", "New Space");
-        if (title) {
-            const type = prompt("Enter Page Type (generic, web, person, prompt, agent):", "generic");
-            this.kernel.createPage(this.kernel.activeProjectId, title, type).then(page => {
-                this.kernel.loadMapState(page);
-                this.setView('map');
-            });
-        }
+        this.actionCreatePageCustom();
     }
 
     actionPromptRenamePage(pageId) {
-        const lib = this.kernel.getLibrary();
-        const page = lib.find(p => p.map_id === pageId);
-        if (page) {
-            const newTitle = prompt("Rename Page:", page.meta?.title || "");
-            if (newTitle) {
-                this.kernel.updateLibraryItem(pageId, { title: newTitle });
-            }
-        }
+        this.actionOpenPageSettings(pageId);
     }
 
     async actionPromptCopyPage(pageId) {
@@ -1038,7 +1837,11 @@ class SandboxController {
         if (page) {
             const pageTitle = page.meta?.title || "Page";
             const defaultProjName = `${pageTitle} Project`;
-            const newProjName = prompt("Enter a title for the new project to copy this page into:", defaultProjName);
+            const newProjName = await this.actionPrompt({
+                title: "Copy Page to Project",
+                label: "Enter a title for the new project to copy this page into:",
+                defaultValue: defaultProjName
+            });
             if (newProjName) {
                 await this.kernel.clonePage(pageId, 'new', null, newProjName);
                 this.render();
@@ -1125,6 +1928,8 @@ class SandboxController {
             return;
         }
         
+        if (!this.kernel.checkStorageLimit(1024 * pages.length)) return;
+        
         let targetProjId = project.project_id;
         const existingProjects = this.kernel.getProjects();
         const conflict = existingProjects.some(p => p.project_id === targetProjId);
@@ -1182,8 +1987,21 @@ class SandboxController {
         this.render();
     }
     
-    actionDeleteFromLibrary(id) {
-        if(confirm("Permanently delete this saved constellation?")) { this.kernel.deleteFromLibrary(id); this.render(); }
+    async actionDeleteFromLibrary(id) {
+        const lib = this.kernel.getLibrary();
+        const page = lib.find(p => p.map_id === id);
+        const title = page?.meta?.title || "this page";
+
+        const ok = await this.actionConfirm({
+            title: "Delete Page",
+            message: `Permanently delete "${title}"? This action cannot be undone.`,
+            confirmText: "Delete Page",
+            isDestructive: true
+        });
+        if (ok) {
+            await this.kernel.deleteFromLibrary(id);
+            this.render();
+        }
     }
 
     actionDownloadLibrary() {
@@ -1795,8 +2613,11 @@ class SandboxController {
             const type = selectedNode.type;
             if (type === 'portal' || type === 'smart-portal') {
                 action = () => this.actionEnterPortal(selectedNode.id);
-                text = 'Enter Portal ➔';
-                themeClasses = 'bg-emerald-600 hover:bg-emerald-500 border-emerald-400 text-emerald-100 hover:text-white shadow-[0_0_15px_rgba(16,185,129,0.4)]';
+                const hasTarget = !!selectedNode.content;
+                text = hasTarget ? 'Enter Portal ➔' : 'Set Target 🎯';
+                themeClasses = hasTarget 
+                    ? 'bg-emerald-600 hover:bg-emerald-500 border-emerald-400 text-emerald-100 hover:text-white shadow-[0_0_15px_rgba(16,185,129,0.4)]'
+                    : 'bg-purple-650 hover:bg-purple-500 border-purple-400 text-purple-100 hover:text-white shadow-[0_0_15px_rgba(168,85,247,0.4)]';
             } else if (type === 'person-root') {
                 action = () => this.setView('person');
                 text = 'View Profile 👤';
@@ -1853,5 +2674,1037 @@ class SandboxController {
                 }
             }
         }
+    }
+
+    // ─────────────────────────────────────────────
+    // NATIVE-STYLED MODAL DIALOGS SYSTEM
+    // ─────────────────────────────────────────────
+
+    /**
+     * Show a beautiful custom modal dialog.
+     * Returns a Promise resolving to the action clicked, or null if dismissed.
+     */
+    showDialogModal({ title, contentHtml, actionsHtml, onRender }) {
+        return new Promise((resolve) => {
+            const backdrop = document.createElement('div');
+            backdrop.className = "fixed inset-0 z-[99999] flex items-center justify-center bg-slate-950/75 backdrop-blur-sm transition-all duration-300 opacity-0 pointer-events-auto";
+            backdrop.style.fontFamily = "inherit";
+            backdrop.innerHTML = `
+                <div class="bg-slate-900 border border-slate-700/80 rounded-2xl shadow-[0_24px_64px_rgba(0,0,0,0.8)] w-full max-w-lg mx-4 overflow-hidden transform scale-95 transition-all duration-300 flex flex-col max-h-[90vh]">
+                    <!-- Header -->
+                    <div class="px-6 py-4 border-b border-slate-800 flex justify-between items-center bg-slate-950/30 shrink-0">
+                        <h3 class="text-slate-200 font-bold text-xs uppercase tracking-wider flex items-center gap-2">${title}</h3>
+                        <button class="close-btn text-slate-400 hover:text-white transition-colors p-1 text-base leading-none">✕</button>
+                    </div>
+                    <!-- Body -->
+                    <div class="px-6 py-5 overflow-y-auto custom-scrollbar flex-1 text-slate-300 text-xs">
+                        ${contentHtml}
+                    </div>
+                    <!-- Footer / Actions -->
+                    <div class="px-6 py-4 border-t border-slate-800 bg-slate-950/20 flex flex-wrap justify-end gap-2 shrink-0">
+                        ${actionsHtml}
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(backdrop);
+            
+            // Trigger animation
+            requestAnimationFrame(() => {
+                backdrop.classList.remove('opacity-0');
+                backdrop.querySelector('div').classList.remove('scale-95');
+            });
+            
+            const close = (val) => {
+                backdrop.classList.add('opacity-0');
+                backdrop.querySelector('div').classList.add('scale-95');
+                setTimeout(() => {
+                    backdrop.remove();
+                    resolve(val);
+                }, 300);
+            };
+            
+            backdrop.querySelector('.close-btn').onclick = () => close(null);
+            backdrop.onclick = (e) => {
+                if (e.target === backdrop) close(null);
+            };
+            
+            if (onRender) {
+                onRender(backdrop, close);
+            }
+        });
+    }
+
+    /** Replaces standard confirm() */
+    actionConfirm({ title, message, confirmText = "Confirm", cancelText = "Cancel", isDestructive = false }) {
+        return this.showDialogModal({
+            title: title || "Confirm Action",
+            contentHtml: `<div class="text-slate-300 text-sm leading-relaxed">${message}</div>`,
+            actionsHtml: `
+                <button class="cancel-btn px-4 py-2 border border-slate-700 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg transition-colors font-bold text-[11px] uppercase tracking-wider">${cancelText}</button>
+                <button class="confirm-btn px-4 py-2 ${isDestructive ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-lg shadow-rose-950/30' : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-950/30'} rounded-lg transition-colors font-bold text-[11px] uppercase tracking-wider">${confirmText}</button>
+            `,
+            onRender: (el, close) => {
+                el.querySelector('.cancel-btn').onclick = () => close(false);
+                el.querySelector('.confirm-btn').onclick = () => close(true);
+            }
+        });
+    }
+
+    /** Replaces standard prompt() */
+    actionPrompt({ title, label, defaultValue = "", placeholder = "" }) {
+        return this.showDialogModal({
+            title: title || "Input Required",
+            contentHtml: `
+                <div class="flex flex-col gap-2">
+                    ${label ? `<label class="text-slate-400 font-bold mb-1 text-[10px] uppercase tracking-wider">${label}</label>` : ''}
+                    <input type="text" id="prompt-input" value="${defaultValue}" placeholder="${placeholder}" class="bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-xs text-slate-200 outline-none focus:border-indigo-500 transition-colors w-full">
+                </div>
+            `,
+            actionsHtml: `
+                <button class="cancel-btn px-4 py-2 border border-slate-700 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg transition-colors font-bold text-[11px] uppercase tracking-wider">Cancel</button>
+                <button class="confirm-btn px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors font-bold text-[11px] uppercase tracking-wider">OK</button>
+            `,
+            onRender: (el, close) => {
+                const input = el.querySelector('#prompt-input');
+                input.focus();
+                input.select();
+                input.onkeydown = (e) => {
+                    if (e.key === 'Enter') close(input.value);
+                    if (e.key === 'Escape') close(null);
+                };
+                el.querySelector('.cancel-btn').onclick = () => close(null);
+                el.querySelector('.confirm-btn').onclick = () => close(input.value);
+            }
+        });
+    }
+
+    /**
+     * Unified Page Settings & Sharing Modal.
+     * Replaces rename prompt, copy prompt, share prompt, delete confirmation, and loading button.
+     */
+    actionOpenPageSettings(pageId) {
+        const lib = this.kernel.getLibrary();
+        const page = lib.find(p => p.map_id === pageId);
+        if (!page) return alert('Page not found in library.');
+
+        const initialTitle = page.meta?.title || "Untitled Page";
+        const initialType = page.meta?.type || "generic";
+        const storageText = page.meta?.storage_target === 'google_drive' ? '🔺 Google Drive' : (page.meta?.storage_target === 'local_os' ? '📁 Local OS' : '☁️ Cloud Vault / Local Database');
+
+        const contentHtml = `
+            <div class="flex flex-col gap-4">
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-slate-400 font-bold uppercase text-[9px] tracking-wider">Page Name</label>
+                    <input type="text" id="settings-page-title" value="${initialTitle}" class="bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 outline-none focus:border-indigo-500 transition-colors w-full">
+                </div>
+                
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-slate-400 font-bold uppercase text-[9px] tracking-wider">Page Type</label>
+                    <select id="settings-page-type" class="bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 outline-none focus:border-indigo-500 transition-colors w-full">
+                        <option value="generic" ${initialType === 'generic' ? 'selected' : ''}>Generic Map</option>
+                        <option value="web" ${initialType === 'web' ? 'selected' : ''}>Web Architect</option>
+                        <option value="person" ${initialType === 'person' ? 'selected' : ''}>Person Profile</option>
+                        <option value="prompt" ${initialType === 'prompt' ? 'selected' : ''}>Prompt Engine</option>
+                        <option value="agent" ${initialType === 'agent' ? 'selected' : ''}>Agent Config</option>
+                        <option value="file-root" ${initialType === 'file-root' ? 'selected' : ''}>File Root</option>
+                        <option value="file-document" ${initialType === 'file-document' ? 'selected' : ''}>File Document</option>
+                    </select>
+                </div>
+
+                <div class="flex items-center justify-between text-[10px] text-slate-500 px-1">
+                    <span>Storage Target:</span>
+                    <span class="font-bold text-slate-400">${storageText}</span>
+                </div>
+
+                <div class="h-px bg-slate-800/80 my-1"></div>
+
+                <!-- Sharing Panel Section (updated dynamically) -->
+                <div id="settings-share-section" class="flex flex-col gap-2 bg-slate-950/40 border border-slate-800/80 rounded-xl p-3">
+                    <!-- Populated dynamically -->
+                </div>
+            </div>
+        `;
+
+        const actionsHtml = `
+            <div class="flex w-full justify-between items-center gap-2 flex-wrap">
+                <div class="flex gap-2">
+                    <button id="settings-btn-load" class="bg-sky-600 hover:bg-sky-500 text-white text-[10px] font-bold py-2 px-3.5 rounded-lg transition-colors shadow-lg shadow-sky-950/20 uppercase tracking-wide">Load Map</button>
+                    <button id="settings-btn-copy" class="border border-slate-700 hover:bg-slate-850 text-slate-300 text-[10px] font-bold py-2 px-3 rounded-lg transition-colors uppercase tracking-wide">Copy Page</button>
+                    <button id="settings-btn-dl" class="border border-slate-700 hover:bg-slate-850 text-slate-300 text-[10px] font-bold py-2 px-3 rounded-lg transition-colors uppercase tracking-wide">JSON</button>
+                    <button id="settings-btn-del" class="hover:bg-rose-950/40 border border-rose-900/50 text-rose-400 hover:text-rose-300 text-[10px] font-bold py-2 px-3 rounded-lg transition-colors uppercase tracking-wide">Delete</button>
+                </div>
+                <div class="flex gap-2">
+                    <button id="settings-btn-save" class="bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold py-2 px-4 rounded-lg transition-colors shadow-lg shadow-indigo-950/20 uppercase tracking-wide">Save Details</button>
+                </div>
+            </div>
+        `;
+
+        this.showDialogModal({
+            title: "Page Settings & Sharing",
+            contentHtml,
+            actionsHtml,
+            onRender: (backdrop, close) => {
+                const titleInput = backdrop.querySelector('#settings-page-title');
+                const typeSelect = backdrop.querySelector('#settings-page-type');
+                
+                // Helper to check if inputs are modified
+                const isDirty = () => {
+                    return titleInput.value.trim() !== initialTitle || typeSelect.value !== initialType;
+                };
+
+                // Sharing block update handler
+                const updateShareSection = () => {
+                    const shareSection = backdrop.querySelector('#settings-share-section');
+                    const isLoggedIn = !!(window.FirebaseAuth?.currentUser);
+                    
+                    if (!isLoggedIn) {
+                        shareSection.innerHTML = `
+                            <div class="text-slate-500 text-center py-2 text-[10px] font-medium">
+                                Sign in (even as a guest) required to share maps publicly.
+                            </div>
+                        `;
+                        return;
+                    }
+                    
+                    if (page.meta?.shared) {
+                        const shareUrl = `${window.location.origin}/view.html?token=${page.meta.share_token}`;
+                        shareSection.innerHTML = `
+                            <div class="flex flex-col gap-2">
+                                <div class="flex justify-between items-center">
+                                    <span class="text-teal-400 font-bold uppercase text-[9px] tracking-wider">🔗 Active Share Link</span>
+                                    ${page.meta.share_expires ? `<span class="text-[9px] text-slate-500">Expires: ${new Date(page.meta.share_expires).toLocaleDateString()}</span>` : '<span class="text-[9px] text-slate-500">Permanent Link</span>'}
+                                </div>
+                                <div class="flex gap-2 items-center">
+                                    <input id="settings-share-url" readonly value="${shareUrl}" class="flex-1 bg-slate-950 border border-slate-800 rounded-lg p-2 text-[10px] text-slate-400 font-mono outline-none">
+                                    <button id="settings-btn-copy-url" class="bg-teal-600 hover:bg-teal-500 text-white text-[10px] font-bold py-2 px-3.5 rounded-lg transition-colors">Copy</button>
+                                    <button id="settings-btn-revoke" class="bg-rose-900/60 hover:bg-rose-800 text-rose-300 text-[10px] font-bold py-2 px-3 rounded-lg transition-colors">Revoke</button>
+                                </div>
+                            </div>
+                        `;
+                        
+                        shareSection.querySelector('#settings-btn-copy-url').onclick = () => {
+                            navigator.clipboard.writeText(shareUrl).then(() => {
+                                const btn = shareSection.querySelector('#settings-btn-copy-url');
+                                btn.textContent = 'Copied!';
+                                btn.className = "bg-green-600 text-white text-[10px] font-bold py-2 px-3.5 rounded-lg";
+                                setTimeout(() => {
+                                    btn.textContent = 'Copy';
+                                    btn.className = "bg-teal-600 hover:bg-teal-500 text-white text-[10px] font-bold py-2 px-3.5 rounded-lg transition-colors";
+                                }, 2000);
+                            });
+                        };
+                        
+                        shareSection.querySelector('#settings-btn-revoke').onclick = async () => {
+                            const confirmRevoke = await this.actionConfirm({
+                                title: "Revoke Share Link",
+                                message: `Are you sure you want to revoke the public share link for "${page.meta?.title || 'Untitled'}"? The link will stop working immediately.`,
+                                confirmText: "Revoke",
+                                cancelText: "Keep Active",
+                                isDestructive: true
+                            });
+                            if (!confirmRevoke) return;
+                            
+                            try {
+                                const ref = window.Firestore.doc(window.FirebaseDb, 'shared_maps', page.meta.share_token);
+                                await window.Firestore.deleteDoc(ref);
+                                
+                                page.meta.shared = false;
+                                page.meta.share_token = '';
+                                page.meta.share_expires = null;
+                                await this.kernel.saveConstellationToLibrary(page);
+                                this.render();
+                                updateShareSection();
+                            } catch (e) {
+                                console.error(e);
+                                alert('Failed to revoke share link: ' + e.message);
+                            }
+                        };
+                    } else {
+                        shareSection.innerHTML = `
+                            <div class="flex flex-col gap-2">
+                                <span class="text-slate-400 font-bold uppercase text-[9px] tracking-wider block">🔗 Share Map Publicly</span>
+                                <div class="flex gap-2 items-center">
+                                    <select id="settings-share-expiry" class="bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 outline-none flex-1">
+                                        <option value="1">No Expiry (Permanent)</option>
+                                        <option value="2">7 Days Expiry</option>
+                                        <option value="3">30 Days Expiry</option>
+                                        <option value="4">90 Days Expiry</option>
+                                    </select>
+                                    <button id="settings-btn-share" class="bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold py-2 px-4 rounded-lg transition-colors shrink-0 uppercase tracking-wide">Publish Link</button>
+                                </div>
+                            </div>
+                        `;
+                        
+                        shareSection.querySelector('#settings-btn-share').onclick = async () => {
+                            const user = window.FirebaseAuth?.currentUser;
+                            if (!user) return alert('You must be signed in to share maps.');
+                            
+                            const expiryChoice = shareSection.querySelector('#settings-share-expiry').value;
+                            const expiryDays = { '2': 7, '3': 30, '4': 90 }[expiryChoice] || null;
+                            const shareExpires = expiryDays
+                                ? new Date(Date.now() + expiryDays * 86400000).toISOString()
+                                : null;
+                                
+                            const token = this._generateToken();
+                            
+                            const payload = JSON.parse(JSON.stringify(page));
+                            delete payload.session;
+                            payload.meta.shared = true;
+                            payload.meta.share_token = token;
+                            payload.meta.share_expires = shareExpires;
+                            payload.owner_uid = user.uid;
+                            payload.owner_display = user.displayName || user.email || 'Anonymous';
+                            
+                            try {
+                                const ref = window.Firestore.doc(window.FirebaseDb, 'shared_maps', token);
+                                await window.Firestore.setDoc(ref, payload);
+                                
+                                page.meta.shared = true;
+                                page.meta.share_token = token;
+                                page.meta.share_expires = shareExpires;
+                                await this.kernel.saveConstellationToLibrary(page);
+                                
+                                this.render();
+                                updateShareSection();
+                            } catch (e) {
+                                console.error(e);
+                                alert('Failed to publish share link: ' + e.message);
+                            }
+                        };
+                    }
+                };
+
+                // Initial share section build
+                updateShareSection();
+
+                // Setup Close / Cancel dirty checking
+                const handleCancel = async () => {
+                    if (isDirty()) {
+                        const saveConfirm = await this.showDialogModal({
+                            title: "Unsaved Changes",
+                            contentHtml: `<div class="text-slate-300 text-sm leading-relaxed">You have unsaved changes to this page. Do you want to save them before closing?</div>`,
+                            actionsHtml: `
+                                <button class="discard-btn px-4 py-2 border border-slate-700 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg transition-colors font-bold text-[11px] uppercase tracking-wider">Discard</button>
+                                <button class="keep-btn px-4 py-2 border border-slate-700 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg transition-colors font-bold text-[11px] uppercase tracking-wider">Keep Editing</button>
+                                <button class="save-btn px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors font-bold text-[11px] uppercase tracking-wider shadow-lg">Save & Close</button>
+                            `,
+                            onRender: (el, clsConfirm) => {
+                                el.querySelector('.discard-btn').onclick = () => clsConfirm('discard');
+                                el.querySelector('.keep-btn').onclick = () => clsConfirm('keep');
+                                el.querySelector('.save-btn').onclick = () => clsConfirm('save');
+                            }
+                        });
+                        
+                        if (saveConfirm === 'save') {
+                            await this.kernel.updateLibraryItem(pageId, { title: titleInput.value.trim(), type: typeSelect.value });
+                            this.render();
+                            close(true);
+                        } else if (saveConfirm === 'discard') {
+                            close(false);
+                        }
+                        // If 'keep', we do nothing and stay on the settings page modal!
+                    } else {
+                        close(false);
+                    }
+                };
+
+                // Overrides backdrop click & default close button to check dirty state
+                backdrop.querySelector('.close-btn').onclick = handleCancel;
+                backdrop.onclick = (e) => { if (e.target === backdrop) handleCancel(); };
+
+                // Load button action
+                backdrop.querySelector('#settings-btn-load').onclick = async () => {
+                    if (isDirty()) {
+                        const saveConfirm = await this.showDialogModal({
+                            title: "Unsaved Changes",
+                            contentHtml: `<div class="text-slate-300 text-sm leading-relaxed">You have unsaved changes to this page. Do you want to save them before loading the map?</div>`,
+                            actionsHtml: `
+                                <button class="discard-btn px-4 py-2 border border-slate-700 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg transition-colors font-bold text-[11px] uppercase tracking-wider">Discard</button>
+                                <button class="keep-btn px-4 py-2 border border-slate-700 hover:bg-slate-850 text-slate-300 hover:text-white rounded-lg transition-colors font-bold text-[11px] uppercase tracking-wider">Keep Editing</button>
+                                <button class="save-btn px-4 py-2 bg-indigo-650 hover:bg-indigo-500 text-white rounded-lg transition-colors font-bold text-[11px] uppercase tracking-wider shadow-lg">Save & Load</button>
+                            `,
+                            onRender: (el, clsConfirm) => {
+                                el.querySelector('.discard-btn').onclick = () => clsConfirm('discard');
+                                el.querySelector('.keep-btn').onclick = () => clsConfirm('keep');
+                                el.querySelector('.save-btn').onclick = () => clsConfirm('save');
+                            }
+                        });
+                        
+                        if (saveConfirm === 'save') {
+                            await this.kernel.updateLibraryItem(pageId, { title: titleInput.value.trim(), type: typeSelect.value });
+                            this.render();
+                            close(true);
+                            this.actionLoadFromLibrary(pageId);
+                        } else if (saveConfirm === 'discard') {
+                            close(false);
+                            this.actionLoadFromLibrary(pageId);
+                        }
+                        // If 'keep', stay in settings modal
+                    } else {
+                        close(false);
+                        this.actionLoadFromLibrary(pageId);
+                    }
+                };
+
+                // Copy Page action (triggers custom copy sub-modal)
+                backdrop.querySelector('#settings-btn-copy').onclick = (e) => {
+                    e.stopPropagation();
+                    this.actionPromptCopyPageCustom(pageId, close);
+                };
+
+                // JSON download action
+                backdrop.querySelector('#settings-btn-dl').onclick = () => {
+                    this.actionDownloadSingleConstellation(pageId);
+                };
+
+                // Delete page action
+                backdrop.querySelector('#settings-btn-del').onclick = async () => {
+                    close(false);
+                    this.actionDeleteFromLibrary(pageId);
+                };
+
+                // Save button action
+                backdrop.querySelector('#settings-btn-save').onclick = async () => {
+                    const newTitle = titleInput.value.trim();
+                    const newType = typeSelect.value;
+                    if (!newTitle) return alert("Title cannot be empty.");
+                    
+                    await this.kernel.updateLibraryItem(pageId, { title: newTitle, type: newType });
+                    this.render();
+                    close(true);
+                };
+            }
+        });
+    }
+
+    /**
+     * Unified Project Settings & Details Modal.
+     * Replaces rename prompts and delete confirmation for projects.
+     */
+    actionOpenProjectSettings(projectId) {
+        const projects = this.kernel.getProjects();
+        const proj = projects.find(p => p.project_id === projectId);
+        if (!proj) return;
+
+        const initialTitle = proj.meta.title || "Untitled Project";
+        const initialDesc = proj.meta.description || "";
+        const initialIcon = proj.meta.icon || "📁";
+        const initialColor = proj.meta.color || "#8b5cf6";
+
+        const contentHtml = `
+            <div class="flex flex-col gap-4">
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-slate-400 font-bold uppercase text-[9px] tracking-wider">Project Name</label>
+                    <input type="text" id="settings-proj-title" value="${initialTitle}" class="bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 outline-none focus:border-indigo-500 transition-colors w-full">
+                </div>
+                
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-slate-400 font-bold uppercase text-[9px] tracking-wider">Description</label>
+                    <input type="text" id="settings-proj-desc" value="${initialDesc}" class="bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 outline-none focus:border-indigo-500 transition-colors w-full">
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="flex flex-col gap-1.5">
+                        <label class="text-slate-400 font-bold uppercase text-[9px] tracking-wider">Emoji Icon</label>
+                        <input type="text" id="settings-proj-icon" value="${initialIcon}" class="bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 outline-none focus:border-indigo-500 transition-colors w-full text-center">
+                    </div>
+                    <div class="flex flex-col gap-1.5">
+                        <label class="text-slate-400 font-bold uppercase text-[9px] tracking-wider">Theme Color</label>
+                        <div class="flex gap-2 items-center">
+                            <input type="color" id="settings-proj-color" value="${initialColor}" class="bg-slate-950 border border-slate-800 rounded-lg p-1 text-xs outline-none focus:border-indigo-500 transition-colors w-12 h-9 cursor-pointer">
+                            <span id="settings-proj-color-text" class="text-[10px] font-mono text-slate-500">${initialColor}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        const actionsHtml = `
+            <div class="flex w-full justify-between items-center gap-2">
+                <button id="settings-proj-btn-del" class="hover:bg-rose-950/40 border border-rose-900/50 text-rose-400 hover:text-rose-300 text-[10px] font-bold py-2 px-3 rounded-lg transition-colors uppercase tracking-wide">Delete Project</button>
+                <div class="flex gap-2">
+                    <button id="settings-proj-btn-save" class="bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold py-2 px-4 rounded-lg transition-colors shadow-lg shadow-indigo-950/20 uppercase tracking-wide">Save Details</button>
+                </div>
+            </div>
+        `;
+
+        this.showDialogModal({
+            title: "Project Settings",
+            contentHtml,
+            actionsHtml,
+            onRender: (backdrop, close) => {
+                const titleInput = backdrop.querySelector('#settings-proj-title');
+                const descInput = backdrop.querySelector('#settings-proj-desc');
+                const iconInput = backdrop.querySelector('#settings-proj-icon');
+                const colorInput = backdrop.querySelector('#settings-proj-color');
+                const colorText = backdrop.querySelector('#settings-proj-color-text');
+
+                colorInput.oninput = () => { colorText.textContent = colorInput.value; };
+
+                const isDirty = () => {
+                    return titleInput.value.trim() !== initialTitle ||
+                           descInput.value.trim() !== initialDesc ||
+                           iconInput.value.trim() !== initialIcon ||
+                           colorInput.value !== initialColor;
+                };
+
+                const handleCancel = async () => {
+                    if (isDirty()) {
+                        const saveConfirm = await this.showDialogModal({
+                            title: "Unsaved Changes",
+                            contentHtml: `<div class="text-slate-300 text-sm leading-relaxed">You have unsaved changes to this project. Do you want to save them before closing?</div>`,
+                            actionsHtml: `
+                                <button class="discard-btn px-4 py-2 border border-slate-700 hover:bg-slate-850 text-slate-300 hover:text-white rounded-lg transition-colors font-bold text-[11px] uppercase tracking-wider">Discard</button>
+                                <button class="keep-btn px-4 py-2 border border-slate-700 hover:bg-slate-850 text-slate-300 hover:text-white rounded-lg transition-colors font-bold text-[11px] uppercase tracking-wider">Keep Editing</button>
+                                <button class="save-btn px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors font-bold text-[11px] uppercase tracking-wider shadow-lg">Save & Close</button>
+                            `,
+                            onRender: (el, clsConfirm) => {
+                                el.querySelector('.discard-btn').onclick = () => clsConfirm('discard');
+                                el.querySelector('.keep-btn').onclick = () => clsConfirm('keep');
+                                el.querySelector('.save-btn').onclick = () => clsConfirm('save');
+                            }
+                        });
+                        
+                        if (saveConfirm === 'save') {
+                            await this.kernel.renameProject(projectId, titleInput.value.trim(), descInput.value.trim(), iconInput.value.trim(), colorInput.value);
+                            this.render();
+                            close(true);
+                        } else if (saveConfirm === 'discard') {
+                            close(false);
+                        }
+                    } else {
+                        close(false);
+                    }
+                };
+
+                // Override closes
+                backdrop.querySelector('.close-btn').onclick = handleCancel;
+                backdrop.onclick = (e) => { if (e.target === backdrop) handleCancel(); };
+
+                // Delete button
+                backdrop.querySelector('#settings-proj-btn-del').onclick = async () => {
+                    close(false);
+                    this.actionDeleteProject(projectId);
+                };
+
+                // Save button
+                backdrop.querySelector('#settings-proj-btn-save').onclick = async () => {
+                    const newTitle = titleInput.value.trim();
+                    const newDesc = descInput.value.trim();
+                    const newIcon = iconInput.value.trim() || '📁';
+                    const newColor = colorInput.value;
+                    
+                    if (!newTitle) return alert("Project name cannot be empty.");
+                    
+                    await this.kernel.renameProject(projectId, newTitle, newDesc, newIcon, newColor);
+                    this.render();
+                    close(true);
+                };
+            }
+        });
+    }
+
+    /** Custom Modal Project Creation Form */
+    actionCreateProjectCustom() {
+        const contentHtml = `
+            <div class="flex flex-col gap-4">
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-slate-400 font-bold uppercase text-[9px] tracking-wider">Project Name</label>
+                    <input type="text" id="create-proj-title" value="New Project" class="bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 outline-none focus:border-indigo-500 transition-colors w-full">
+                </div>
+                
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-slate-400 font-bold uppercase text-[9px] tracking-wider">Description</label>
+                    <input type="text" id="create-proj-desc" placeholder="Workspace details..." class="bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 outline-none focus:border-indigo-500 transition-colors w-full">
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="flex flex-col gap-1.5">
+                        <label class="text-slate-400 font-bold uppercase text-[9px] tracking-wider">Emoji Icon</label>
+                        <input type="text" id="create-proj-icon" value="📁" class="bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 outline-none focus:border-indigo-500 transition-colors w-full text-center">
+                    </div>
+                    <div class="flex flex-col gap-1.5">
+                        <label class="text-slate-400 font-bold uppercase text-[9px] tracking-wider">Theme Color</label>
+                        <div class="flex gap-2 items-center">
+                            <input type="color" id="create-proj-color" value="#8b5cf6" class="bg-slate-950 border border-slate-800 rounded-lg p-1 text-xs outline-none focus:border-indigo-500 transition-colors w-12 h-9 cursor-pointer">
+                            <span id="create-proj-color-text" class="text-[10px] font-mono text-slate-500">#8b5cf6</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        const actionsHtml = `
+            <button id="create-proj-btn-cancel" class="border border-slate-700 hover:bg-slate-850 text-slate-300 text-[10px] font-bold py-2 px-4 rounded-lg transition-colors uppercase tracking-wide">Cancel</button>
+            <button id="create-proj-btn-save" class="bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold py-2 px-4 rounded-lg transition-colors shadow-lg shadow-indigo-950/20 uppercase tracking-wide">Create Project</button>
+        `;
+
+        this.showDialogModal({
+            title: "Create New Project",
+            contentHtml,
+            actionsHtml,
+            onRender: (backdrop, close) => {
+                const titleInput = backdrop.querySelector('#create-proj-title');
+                const descInput = backdrop.querySelector('#create-proj-desc');
+                const iconInput = backdrop.querySelector('#create-proj-icon');
+                const colorInput = backdrop.querySelector('#create-proj-color');
+                const colorText = backdrop.querySelector('#create-proj-color-text');
+
+                titleInput.focus();
+                titleInput.select();
+                colorInput.oninput = () => { colorText.textContent = colorInput.value; };
+
+                backdrop.querySelector('#create-proj-btn-cancel').onclick = () => close(null);
+                backdrop.querySelector('#create-proj-btn-save').onclick = async () => {
+                    const name = titleInput.value.trim();
+                    const desc = descInput.value.trim();
+                    const icon = iconInput.value.trim() || '📁';
+                    const color = colorInput.value;
+                    
+                    if (!name) return alert("Project name cannot be empty.");
+                    
+                    close(true);
+                    
+                    const projectId = await this.kernel.createProject(name, desc, icon, color, false);
+                    if (projectId) {
+                        const openNow = await this.actionConfirm({
+                            title: "Project Created",
+                            message: `Project "${name}" created. Open it now?`,
+                            confirmText: "Open Project",
+                            cancelText: "Keep Current"
+                        });
+                        if (openNow) {
+                            this.kernel.activeProjectId = projectId;
+                            const pages = this.kernel.getPages(projectId);
+                            if (pages.length > 0) {
+                                this.kernel.loadMapState(pages[0]);
+                            }
+                            this.setView('map');
+                            const drawer = document.getElementById('data-manager-drawer');
+                            if (drawer) drawer.classList.add('translate-x-full');
+                        } else {
+                            this.render();
+                        }
+                    }
+                };
+            }
+        });
+    }
+
+    /** Custom Modal Page Creation Form */
+    actionCreatePageCustom() {
+        const contentHtml = `
+            <div class="flex flex-col gap-4">
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-slate-400 font-bold uppercase text-[9px] tracking-wider">Page Name</label>
+                    <input type="text" id="create-page-title" value="New Space" class="bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 outline-none focus:border-indigo-500 transition-colors w-full">
+                </div>
+                
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-slate-400 font-bold uppercase text-[9px] tracking-wider">Page Type</label>
+                    <select id="create-page-type" class="bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 outline-none focus:border-indigo-500 transition-colors w-full">
+                        <option value="generic" selected>Generic Map</option>
+                        <option value="web">Web Architect</option>
+                        <option value="person">Person Profile</option>
+                        <option value="prompt">Prompt Engine</option>
+                        <option value="agent">Agent Config</option>
+                        <option value="file-root">File Root</option>
+                        <option value="file-document">File Document</option>
+                    </select>
+                </div>
+            </div>
+        `;
+
+        const actionsHtml = `
+            <button id="create-page-btn-cancel" class="border border-slate-700 hover:bg-slate-850 text-slate-300 text-[10px] font-bold py-2 px-4 rounded-lg transition-colors uppercase tracking-wide">Cancel</button>
+            <button id="create-page-btn-save" class="bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold py-2 px-4 rounded-lg transition-colors shadow-lg shadow-indigo-950/20 uppercase tracking-wide">Create Page</button>
+        `;
+
+        this.showDialogModal({
+            title: "Create New Page",
+            contentHtml,
+            actionsHtml,
+            onRender: (backdrop, close) => {
+                const titleInput = backdrop.querySelector('#create-page-title');
+                const typeSelect = backdrop.querySelector('#create-page-type');
+
+                titleInput.focus();
+                titleInput.select();
+
+                backdrop.querySelector('#create-page-btn-cancel').onclick = () => close(null);
+                backdrop.querySelector('#create-page-btn-save').onclick = async () => {
+                    const title = titleInput.value.trim();
+                    const type = typeSelect.value;
+                    
+                    if (!title) return alert("Page name cannot be empty.");
+                    
+                    close(true);
+                    
+                    const page = await this.kernel.createPage(this.kernel.activeProjectId, title, type);
+                    if (page) {
+                        this.actionOpenPageSettings(page.map_id);
+                    }
+                };
+            }
+        });
+    }
+
+    /** Custom sub-modal for page copying with project selection dropdown and dependency cloning */
+    async actionPromptCopyPageCustom(pageId, parentModalClose) {
+        const lib = this.kernel.getLibrary();
+        const page = lib.find(p => p.map_id === pageId);
+        if (!page) return;
+
+        const projects = this.kernel.getProjects();
+        const activeProjId = this.kernel.activeProjectId;
+        const activeProj = projects.find(p => p.project_id === activeProjId);
+
+        let selectedProjId = activeProjId;
+        let isNewProject = false;
+
+        const contentHtml = `
+            <div class="flex flex-col gap-4 font-sans text-slate-300">
+                <p class="text-xs text-slate-400">Create a copy of this space. You can clone it into an existing project or create a new project for it.</p>
+                
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-slate-400 font-bold uppercase text-[9px] tracking-wider">Destination Project</label>
+                    <div class="relative w-full">
+                        <button id="copy-proj-selector-btn" class="bg-slate-950 hover:bg-slate-800 text-xs text-slate-200 px-3 py-2.5 rounded-lg border border-slate-800 font-semibold flex items-center justify-between transition-colors cursor-pointer w-full">
+                            <span id="copy-proj-selected-label">${activeProj ? activeProj.meta.icon + ' ' + activeProj.meta.title : 'Select Project...'}</span>
+                            <span class="text-[8px] opacity-60">▼</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div id="copy-new-proj-input-container" class="hidden flex flex-col gap-1.5">
+                    <label class="text-slate-400 font-bold uppercase text-[9px] tracking-wider">New Project Name</label>
+                    <input type="text" id="copy-new-proj-title" placeholder="Enter new project name" class="bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 outline-none focus:border-indigo-500 transition-colors w-full">
+                </div>
+            </div>
+        `;
+
+        const actionsHtml = `
+            <div class="flex w-full justify-end items-center gap-2">
+                <button id="copy-modal-submit" class="bg-indigo-650 hover:bg-indigo-500 text-white text-[10px] font-bold py-2 px-4 rounded-lg transition-colors shadow-lg shadow-indigo-950/20 uppercase tracking-wide">Copy Page</button>
+            </div>
+        `;
+
+        await this.showDialogModal({
+            title: `Copy "${page.meta?.title || 'Page'}"`,
+            contentHtml,
+            actionsHtml,
+            onRender: (backdrop, closeCopyModal) => {
+                const btnSelector = backdrop.querySelector('#copy-proj-selector-btn');
+                const labelSelected = backdrop.querySelector('#copy-proj-selected-label');
+                const containerNewProj = backdrop.querySelector('#copy-new-proj-input-container');
+                const inputNewProj = backdrop.querySelector('#copy-new-proj-title');
+                const btnSubmit = backdrop.querySelector('#copy-modal-submit');
+
+                const updateSubmitState = () => {
+                    if (isNewProject) {
+                        btnSubmit.disabled = !inputNewProj.value.trim();
+                        btnSubmit.style.opacity = inputNewProj.value.trim() ? '1' : '0.5';
+                    } else {
+                        btnSubmit.disabled = !selectedProjId;
+                        btnSubmit.style.opacity = selectedProjId ? '1' : '0.5';
+                    }
+                };
+
+                inputNewProj.oninput = updateSubmitState;
+                updateSubmitState();
+
+                btnSelector.onclick = (e) => {
+                    e.stopPropagation();
+                    
+                    const rect = btnSelector.getBoundingClientRect();
+                    const panel = document.createElement('div');
+                    panel.id = 'mm-copy-proj-dropdown';
+                    panel.className = "fixed z-[9999999] bg-slate-950 border border-slate-700 rounded-xl shadow-2xl overflow-hidden flex flex-col font-sans py-1";
+                    panel.style.left = `${rect.left}px`;
+                    panel.style.top = `${rect.bottom + 4}px`;
+                    panel.style.width = `${rect.width}px`;
+
+                    projects.forEach(proj => {
+                        const b = document.createElement('button');
+                        b.className = "text-left w-full px-3 py-2 text-[10px] font-medium text-slate-355 hover:bg-indigo-600 hover:text-white flex items-center gap-2 transition-colors border-none bg-transparent cursor-pointer";
+                        b.innerHTML = `<span>${proj.meta.icon || '📁'}</span><span class="flex-1 truncate">${proj.meta.title}</span>`;
+                        b.onclick = () => {
+                            selectedProjId = proj.project_id;
+                            isNewProject = false;
+                            labelSelected.textContent = `${proj.meta.icon || '📁'} ${proj.meta.title}`;
+                            containerNewProj.classList.add('hidden');
+                            updateSubmitState();
+                            panel.remove();
+                        };
+                        panel.appendChild(b);
+                    });
+
+                    // Divider
+                    const hr = document.createElement('div');
+                    hr.className = "border-t border-slate-800 my-1";
+                    panel.appendChild(hr);
+
+                    // + New Project
+                    const newBtn = document.createElement('button');
+                    newBtn.className = "text-left w-full px-3 py-2 text-[10px] font-bold text-emerald-450 hover:bg-emerald-600 hover:text-white flex items-center gap-2 transition-colors border-none bg-transparent cursor-pointer";
+                    newBtn.innerHTML = '＋ New Project…';
+                    newBtn.onclick = () => {
+                        selectedProjId = null;
+                        isNewProject = true;
+                        labelSelected.textContent = '＋ New Project…';
+                        containerNewProj.classList.remove('hidden');
+                        inputNewProj.focus();
+                        updateSubmitState();
+                        panel.remove();
+                    };
+                    panel.appendChild(newBtn);
+
+                    document.body.appendChild(panel);
+
+                    const closeDD = (ev) => {
+                        if (!panel.contains(ev.target) && ev.target !== btnSelector) {
+                            panel.remove();
+                            document.removeEventListener('mousedown', closeDD, true);
+                        }
+                    };
+                    setTimeout(() => document.addEventListener('mousedown', closeDD, true), 0);
+                };
+
+                btnSubmit.onclick = async () => {
+                    let targetProjId = selectedProjId;
+                    let targetProjName = '';
+
+                    if (isNewProject) {
+                        targetProjName = inputNewProj.value.trim();
+                        if (!targetProjName) return;
+                        targetProjId = 'new';
+                    }
+
+                    closeCopyModal(true);
+                    parentModalClose(false);
+
+                    const sourceProjId = page.meta?.project_id || 'default_project';
+                    const isBetweenProjects = (targetProjId === 'new' || targetProjId !== sourceProjId);
+                    const hasPortals = page.nodes && page.nodes.some(n => (n.type === 'portal' || n.type === 'smart-portal') && n.content);
+
+                    let copyMode = 'keep'; // Default for within-project copy is to keep targets
+
+                    if (isBetweenProjects && hasPortals) {
+                        const choice = await this.showDialogModal({
+                            title: "Portal Dependencies",
+                            contentHtml: `
+                                <div class="flex flex-col gap-3 font-sans text-slate-350 text-xs">
+                                    <p class="leading-relaxed">This space contains portals linking to other pages. Since you are copying it to a different project, select how these portal connections should be handled:</p>
+                                    <div class="flex flex-col gap-2.5 mt-1 select-none">
+                                        <div id="option-keep" class="option-card p-3 rounded-xl border border-indigo-650 bg-indigo-950/20 text-slate-200 cursor-pointer transition-all flex items-start gap-3 shadow-lg shadow-indigo-950/20">
+                                            <div class="radio-indicator w-4 h-4 rounded-full border-2 border-indigo-500 flex items-center justify-center shrink-0 mt-0.5">
+                                                <div class="radio-fill w-2 h-2 rounded-full bg-indigo-500"></div>
+                                            </div>
+                                            <div class="flex-1">
+                                                <span class="font-bold text-teal-400 block mb-0.5">🔗 Link Across Projects</span>
+                                                <span class="text-[10px] text-slate-500 leading-tight">Keep the original portal targets. The copied portals will link back to the pages in the source project.</span>
+                                            </div>
+                                        </div>
+                                        <div id="option-clone" class="option-card p-3 rounded-xl border border-slate-800 hover:border-slate-700 bg-slate-950/40 text-slate-300 cursor-pointer transition-all flex items-start gap-3">
+                                            <div class="radio-indicator w-4 h-4 rounded-full border-2 border-slate-650 flex items-center justify-center shrink-0 mt-0.5">
+                                                <div class="radio-fill w-2 h-2 rounded-full bg-transparent"></div>
+                                            </div>
+                                            <div class="flex-1">
+                                                <span class="font-bold text-indigo-400 block mb-0.5">🌀 Clone Dependencies</span>
+                                                <span class="text-[10px] text-slate-500 leading-tight">Duplicate the linked pages into the destination project, and update the copied portals to point to these new duplicates.</span>
+                                            </div>
+                                        </div>
+                                        <div id="option-clear" class="option-card p-3 rounded-xl border border-slate-800 hover:border-slate-700 bg-slate-950/40 text-slate-300 cursor-pointer transition-all flex items-start gap-3">
+                                            <div class="radio-indicator w-4 h-4 rounded-full border-2 border-slate-650 flex items-center justify-center shrink-0 mt-0.5">
+                                                <div class="radio-fill w-2 h-2 rounded-full bg-transparent"></div>
+                                            </div>
+                                            <div class="flex-1">
+                                                <span class="font-bold text-slate-400 block mb-0.5">🧹 Clear Portal Targets</span>
+                                                <span class="text-[10px] text-slate-500 leading-tight">Reset the copied portals. They will remain in the copied map but will be empty and unlinked.</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            `,
+                            actionsHtml: `
+                                <div class="flex w-full justify-between items-center gap-2">
+                                    <button class="cancel-btn border border-slate-700 hover:bg-slate-850 text-slate-300 text-[10px] font-bold py-2 px-4 rounded-lg transition-colors uppercase tracking-wide">Cancel Copy</button>
+                                    <button class="confirm-btn bg-indigo-650 hover:bg-indigo-500 text-white text-[10px] font-bold py-2 px-5 rounded-lg transition-colors shadow-lg shadow-indigo-950/20 uppercase tracking-wide">Confirm Copy</button>
+                                </div>
+                            `,
+                            onRender: (el, cls) => {
+                                let selected = 'keep';
+                                const cardKeep = el.querySelector('#option-keep');
+                                const cardClone = el.querySelector('#option-clone');
+                                const cardClear = el.querySelector('#option-clear');
+                                
+                                const updateCards = () => {
+                                    [cardKeep, cardClone, cardClear].forEach(c => {
+                                        const opt = c.id.replace('option-', '');
+                                        const radioFill = c.querySelector('.radio-fill');
+                                        const radioInd = c.querySelector('.radio-indicator');
+                                        if (opt === selected) {
+                                            c.className = "option-card p-3 rounded-xl border border-indigo-650 bg-indigo-950/20 text-slate-200 cursor-pointer transition-all flex items-start gap-3 shadow-lg shadow-indigo-950/20";
+                                            radioFill.className = "radio-fill w-2 h-2 rounded-full bg-indigo-500";
+                                            radioInd.className = "radio-indicator w-4 h-4 rounded-full border-2 border-indigo-500 flex items-center justify-center shrink-0 mt-0.5";
+                                        } else {
+                                            c.className = "option-card p-3 rounded-xl border border-slate-800 hover:border-slate-700 bg-slate-950/40 text-slate-300 cursor-pointer transition-all flex items-start gap-3";
+                                            radioFill.className = "radio-fill w-2 h-2 rounded-full bg-transparent";
+                                            radioInd.className = "radio-indicator w-4 h-4 rounded-full border-2 border-slate-650 flex items-center justify-center shrink-0 mt-0.5";
+                                        }
+                                    });
+                                };
+                                
+                                cardKeep.onclick = () => { selected = 'keep'; updateCards(); };
+                                cardClone.onclick = () => { selected = 'clone'; updateCards(); };
+                                cardClear.onclick = () => { selected = 'clear'; updateCards(); };
+                                
+                                el.querySelector('.cancel-btn').onclick = () => cls('cancel');
+                                el.querySelector('.confirm-btn').onclick = () => cls(selected);
+                            }
+                        });
+                        
+                        if (choice === 'cancel' || choice === null) {
+                            return; // Abort copy
+                        }
+                        copyMode = choice;
+                    }
+
+                    let clonedPageId = null;
+
+                    if (copyMode === 'clone') {
+                        const mapIdMapping = {};
+                        
+                        // Recursive cloner helper
+                        const cloneWithDependencies = async (sourceId, targetProjectId, targetProjectTitle) => {
+                            if (mapIdMapping[sourceId]) return mapIdMapping[sourceId];
+
+                            // Clone the page
+                            const newPageId = await this.kernel.clonePage(sourceId, targetProjectId, null, targetProjectTitle);
+                            if (!newPageId) return null;
+                            mapIdMapping[sourceId] = newPageId;
+
+                            // Find the project ID used/generated
+                            const currentLib = this.kernel.getLibrary();
+                            const clonedPageObj = currentLib.find(p => p.map_id === newPageId);
+                            if (!clonedPageObj) return newPageId;
+
+                            const resolvedProjectId = clonedPageObj.meta?.project_id;
+
+                            // Recursively clone portal targets
+                            let updated = false;
+                            if (clonedPageObj.nodes) {
+                                for (const node of clonedPageObj.nodes) {
+                                    if ((node.type === 'portal' || node.type === 'smart-portal') && node.content) {
+                                        const origTgtId = node.content;
+                                        const origTgtPage = currentLib.find(p => p.map_id === origTgtId);
+                                        if (origTgtPage) {
+                                            // Pass the resolved target project ID so they all end up in the same project!
+                                            const newTgtId = await cloneWithDependencies(origTgtId, resolvedProjectId, targetProjectTitle);
+                                            if (newTgtId) {
+                                                node.content = newTgtId;
+                                                updated = true;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (updated) {
+                                await this.kernel.saveMapToLibrary(clonedPageObj);
+                            }
+
+                            return newPageId;
+                        };
+
+                        clonedPageId = await cloneWithDependencies(pageId, targetProjId, targetProjName);
+                    } else {
+                        clonedPageId = await this.kernel.clonePage(pageId, targetProjId, null, targetProjName);
+                        if (clonedPageId && copyMode === 'clear') {
+                            const updatedLib = this.kernel.getLibrary();
+                            const clonedPageObj = updatedLib.find(p => p.map_id === clonedPageId);
+                            if (clonedPageObj && clonedPageObj.nodes) {
+                                let updated = false;
+                                clonedPageObj.nodes.forEach(node => {
+                                    if ((node.type === 'portal' || node.type === 'smart-portal') && node.content) {
+                                        node.content = '';
+                                        updated = true;
+                                    }
+                                });
+                                if (updated) {
+                                    await this.kernel.saveMapToLibrary(clonedPageObj);
+                                }
+                            }
+                        }
+                    }
+
+                    if (clonedPageId) {
+                        const updatedLib = this.kernel.getLibrary();
+                        const clonedPageObj = updatedLib.find(p => p.map_id === clonedPageId);
+                        if (clonedPageObj) {
+                            this.actionCloseDataManager();
+                            this.actionOpenPageSettings(clonedPageObj.map_id);
+                        }
+                    }
+                };
+            }
+        });
+    }
+
+    /** Stylized custom select dropdown for Data Vault targeting */
+    showVaultSelectorDropdown(event) {
+        const btn = event.currentTarget;
+        const rect = btn.getBoundingClientRect();
+        
+        const activeVault = this.kernel.isUsingCloudVault() ? 'firebase' : 'local';
+        const isLoggedIn = window.FirebaseAuth && window.FirebaseAuth.currentUser && !window.FirebaseAuth.currentUser.isAnonymous;
+
+        const panel = document.createElement('div');
+        panel.id = 'mm-vault-selector-dd';
+        panel.className = "fixed z-[99999] bg-slate-950 border border-slate-700 rounded-xl shadow-2xl overflow-hidden flex flex-col font-sans py-1";
+        panel.style.left = `${rect.left}px`;
+        panel.style.top = `${rect.bottom + 4}px`;
+        panel.style.minWidth = `${Math.max(rect.width, 220)}px`;
+
+        const options = [
+            { value: 'firebase', label: 'Firebase (Cloud) ☁️', enabled: isLoggedIn, desc: isLoggedIn ? 'Active cloud-synchronized vault' : 'Requires full account sign-in' },
+            { value: 'local', label: 'Local Browser (Legacy) 📁', enabled: true, desc: 'Saves locally inside browser cache' },
+            { value: 'gdrive', label: 'Google Drive (Coming Soon) 🔺', enabled: false, desc: 'Personal Drive synchronization' },
+            { value: 'local-os', label: 'Local OS (Coming Soon) 💾', enabled: false, desc: 'Access local computer directory' }
+        ];
+
+        options.forEach(opt => {
+            const b = document.createElement('button');
+            b.className = `text-left w-full px-3 py-2 text-[10px] font-medium flex flex-col transition-colors border-none bg-transparent cursor-pointer ${opt.enabled ? 'text-slate-300 hover:bg-indigo-650 hover:text-white' : 'text-slate-600 cursor-not-allowed'}`;
+            b.disabled = !opt.enabled;
+            b.innerHTML = `
+                <div class="flex justify-between items-center w-full font-bold">
+                    <span>${opt.label}</span>
+                    ${opt.value === activeVault ? '<span class="text-[8px] text-emerald-400 font-extrabold uppercase tracking-wider select-none">active</span>' : ''}
+                </div>
+                <div class="text-[8px] text-slate-500 mt-0.5 leading-tight">${opt.desc}</div>
+            `;
+            if (opt.enabled) {
+                b.onclick = () => {
+                    panel.remove();
+                    this.actionChangeVault(opt.value);
+                };
+            }
+            panel.appendChild(b);
+        });
+
+        document.body.appendChild(panel);
+
+        const close = (e) => {
+            if (!panel.contains(e.target) && e.target !== btn) {
+                panel.remove();
+                document.removeEventListener('mousedown', close, true);
+                document.removeEventListener('scroll', close, true);
+            }
+        };
+        setTimeout(() => {
+            document.addEventListener('mousedown', close, true);
+            document.addEventListener('scroll', close, { capture: true, passive: true });
+        }, 0);
     }
 }

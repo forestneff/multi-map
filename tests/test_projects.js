@@ -341,6 +341,71 @@ async function runTests() {
 
     console.log("✓ Packaged project export and import verified successfully");
 
+    // ==========================================
+    // Test Case 5: Project ID Conflict Merging
+    // ==========================================
+    console.log("\n--- Test Case 5: Project ID Conflict Merging ---");
+    
+    // Clear Local Storage
+    localStore = {};
+    
+    // Set up a project that already exists in Firestore
+    const conflictProjId = "conflict-proj-123";
+    firestoreDB[`users/user-xyz-789/projects/${conflictProjId}`] = {
+        project_id: conflictProjId,
+        meta: { title: "Cloud Project Title", color: "#ff0000" },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        page_ids: ["cloud-page-1"]
+    };
+    firestoreDB[`users/user-xyz-789/projects/${conflictProjId}/pages/cloud-page-1`] = {
+        map_id: "cloud-page-1",
+        meta: { title: "Cloud Page 1", project_id: conflictProjId },
+        nodes: [{ id: "n-cp1", type: "root", title: "Cloud Page 1 Root", data: { x: 0, y: 0 } }],
+        connections: []
+    };
+    
+    // Set up local storage guest data with the same project ID but different pages
+    localStore["mm_projects"] = JSON.stringify([
+        {
+            project_id: conflictProjId,
+            meta: { title: "Guest Project Title", color: "#00ff00" },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            page_ids: ["guest-page-1"]
+        }
+    ]);
+    const guestConflictPage = {
+        map_id: "guest-page-1",
+        meta: { title: "Guest Page 1", type: "generic", project_id: conflictProjId },
+        nodes: [{ id: "n-gp1", type: "root", title: "Guest Page 1 Root", data: { x: 0, y: 0 } }],
+        connections: []
+    };
+    localStore["mm_constellation_lib"] = JSON.stringify([guestConflictPage]);
+    
+    // Reset kernel internal properties to mimic freshly logged in sync state
+    kernel.firestoreProjects = [];
+    kernel.firestorePagesByProject = {};
+    
+    // Run syncWithFirestore
+    await kernel.syncWithFirestore("user-xyz-789");
+    
+    // 1. Verify Guest Local Storage is cleared
+    console.assert(localStore["mm_projects"] === undefined, "Guest projects should be cleared");
+    console.assert(localStore["mm_constellation_lib"] === undefined, "Guest pages library should be cleared");
+    
+    // 2. Verify both pages now exist in Firestore project and page_ids lists are merged
+    const mergedProj = firestoreDB[`users/user-xyz-789/projects/${conflictProjId}`];
+    console.assert(mergedProj !== undefined, "Project should exist in Firestore");
+    console.assert(mergedProj.page_ids.includes("cloud-page-1"), "Merged project page_ids should still include cloud page 1");
+    console.assert(mergedProj.page_ids.includes("guest-page-1"), "Merged project page_ids should now include guest page 1");
+    console.assert(mergedProj.page_ids.length === 2, "Merged project page_ids length should be exactly 2");
+    
+    console.assert(firestoreDB[`users/user-xyz-789/projects/${conflictProjId}/pages/cloud-page-1`] !== undefined, "Cloud Page 1 should still exist in Firestore");
+    console.assert(firestoreDB[`users/user-xyz-789/projects/${conflictProjId}/pages/guest-page-1`] !== undefined, "Guest Page 1 should now exist in Firestore");
+    
+    console.log("✓ Project ID conflict merging verified successfully");
+
     console.log("\nAll Projects & Pages Architecture Tests Passed Successfully! 🎉");
 }
 
