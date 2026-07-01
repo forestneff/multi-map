@@ -1,3 +1,21 @@
+# Secrets & credentials
 .env
 passwords.txt
-*.log
+
+# Logs
+*.log
+
+# Dev/local only (not needed on DreamHost)
+node_modules/
+scratch/
+legacy/
+tests/
+.agents/
+skills/how-todo/
+
+# Firebase backend — deploy via CLI, not git/DreamHost
+functions/
+firestore.rules
+firestore.indexes.json
+firebase.json
+
