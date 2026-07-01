@@ -67,6 +67,14 @@
             return d.innerHTML;
         }
 
+        function renderContent(str) {
+            if (str === null || str === undefined) return '';
+            if (/<[a-z][\s\S]*>/i.test(str)) {
+                return str;
+            }
+            return escapeHTML(str).replace(/\n/g, '<br>');
+        }
+
         function generateHTML(root, state) {
             const getKids = (id) => state.connections.filter(c => c.from === id).map(c => state.nodes.find(n => n.id === c.to)).filter(n => n);
             
@@ -192,7 +200,7 @@
                             `;
                         }
 
-                        let textContent = (!isUrl && contentRaw) ? `<div class="py-12 px-8 max-w-5xl mx-auto prose text-slate-700">${contentRaw.replace(/\n/g, '<br>')}</div>` : '';
+                        let textContent = (!isUrl && contentRaw) ? `<div class="py-12 px-8 max-w-5xl mx-auto prose text-slate-700">${renderContent(contentRaw)}</div>` : '';
                         const kidsContainer = kids ? `<div class="${isUrl ? 'relative z-10 bg-slate-50 shadow-[0_-20px_50px_rgba(0,0,0,0.15)] pt-10' : ''}">${kids}</div>` : '';
                         
                         return `<main ${getAttrs('')}>${iframeHtml}${textContent}${kidsContainer}</main>`;
@@ -204,14 +212,14 @@
                         let bgStyle = src ? `style="background-image: url('${escapeHTML(src)}'); background-size: cover; background-position: center;"` : '';
                         return `<header ${getAttrs('bg-gradient-to-br from-slate-900 to-indigo-950 text-white py-24 md:py-32 px-4 md:px-8 text-center w-full relative')} ${bgStyle}>
                             ${src ? '<div class="absolute inset-0 bg-slate-900/70 z-0"></div>' : ''}
-                            <div class="relative z-10"><h1 class="text-5xl md:text-7xl font-black mb-6 tracking-tight">${title}</h1><div class="text-lg md:text-xl text-indigo-200 max-w-3xl mx-auto mb-10">${escapeHTML(content || '')}</div><div class="flex flex-wrap justify-center gap-4">${kids}</div></div>
+                            <div class="relative z-10"><h1 class="text-5xl md:text-7xl font-black mb-6 tracking-tight">${title}</h1><div class="text-lg md:text-xl text-indigo-200 max-w-3xl mx-auto mb-10">${renderContent(content || '')}</div><div class="flex flex-wrap justify-center gap-4">${kids}</div></div>
                         </header>`;
 
                     case 'web-section':
                         return `<section ${getAttrs('py-16 md:py-20 px-4 md:px-8 max-w-6xl mx-auto w-full')}><h2 class="text-3xl md:text-4xl font-black mb-10 text-center">${title}</h2><div class="flex flex-col gap-8 w-full">${kids}</div></section>`;
 
                     case 'web-card':
-                        return `<div ${getAttrs('bg-white border border-slate-100 rounded-2xl p-6 shadow-sm hover:shadow-md hover:border-indigo-100 transition-all flex flex-col gap-3 h-full')}>${title ? `<h3 class="font-bold text-lg text-slate-900 mb-1 leading-snug">${title}</h3>` : ''}${content ? `<p class="text-slate-600 text-sm leading-relaxed">${escapeHTML(content).replace(/\n/g, '<br>')}</p>` : ''}${kids ? `<div class="mt-2 flex flex-col gap-2">${kids}</div>` : ''}</div>`;
+                        return `<div ${getAttrs('bg-white border border-slate-100 rounded-2xl p-6 shadow-sm hover:shadow-md hover:border-indigo-100 transition-all flex flex-col gap-3 h-full')}>${title ? `<h3 class="font-bold text-lg text-slate-900 mb-1 leading-snug">${title}</h3>` : ''}${content ? `<div class="text-slate-600 text-sm leading-relaxed">${renderContent(content)}</div>` : ''}${kids ? `<div class="mt-2 flex flex-col gap-2">${kids}</div>` : ''}</div>`;
 
                     case 'web-button':
                         return `<button ${getAttrs('px-6 md:px-8 py-3 bg-indigo-600 text-white font-bold rounded-full shadow-lg shadow-indigo-500/30 hover:bg-indigo-500 hover:-translate-y-0.5 transition-all inline-block')}>${title || content}</button>`;
@@ -253,10 +261,10 @@
                         return `<footer ${getAttrs('py-12 px-4 md:px-8 mt-12 border-t border-slate-200 text-center bg-slate-100 w-full')}>${kids || `<p class="text-slate-500 text-sm font-semibold">${escapeHTML(content || title)}</p>`}</footer>`;
 
                     case 'web-text':
-                        return `<div ${getAttrs('mb-4 w-full')}><h3 class="font-bold text-xl text-slate-800 mb-3">${title}</h3><p class="text-slate-600 leading-relaxed">${escapeHTML(content || '').replace(/\n/g, '<br>')}</p>${kids}</div>`;
+                        return `<div ${getAttrs('mb-4 w-full')}><h3 class="font-bold text-xl text-slate-800 mb-3">${title}</h3><div class="text-slate-600 leading-relaxed">${renderContent(content || '')}</div>${kids}</div>`;
 
                     default:
-                        return `<div ${getAttrs('mb-6')}><h3 class="font-bold text-lg text-slate-800 mb-2">${title}</h3><div class="prose text-slate-600 leading-relaxed">${content ? escapeHTML(content).replace(/\n/g, '<br>') : ''}</div>${kids}</div>`;
+                        return `<div ${getAttrs('mb-6')}><h3 class="font-bold text-lg text-slate-800 mb-2">${title}</h3><div class="prose text-slate-600 leading-relaxed">${renderContent(content)}</div>${kids}</div>`;
                 }
             };
             return renderNode(root);

@@ -125,6 +125,7 @@ class TutorialOrchestrator {
         `;
 
         this.modalElement.classList.remove('hidden');
+        if (window.SC) window.SC.pushUiStack('tutorial-modal');
         // Trigger reflow
         void this.modalElement.offsetWidth;
         this.modalElement.classList.remove('opacity-0');
@@ -152,6 +153,7 @@ class TutorialOrchestrator {
     }
 
     closeSelectionModal() {
+        if (window.SC) window.SC.popUiStack('tutorial-modal');
         this.modalElement.classList.remove('opacity-100');
         this.modalElement.classList.add('opacity-0');
         setTimeout(() => {

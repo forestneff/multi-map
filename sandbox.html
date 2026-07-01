@@ -227,11 +227,15 @@
             if (isOpening) {
                 // Opening this drawer, close others
                 drawer.classList.remove('translate-x-full');
+                if (window.SC) window.SC.pushUiStack(drawerId);
+                
                 if (drawerId === 'data-manager-drawer') {
                     document.getElementById('profile-drawer').classList.add('translate-x-full');
+                    if (window.SC) window.SC.popUiStack('profile-drawer');
                     if (window.Auth) window.Auth.renderDataManager(document.getElementById('data-manager-content'));
                 } else if (drawerId === 'profile-drawer') {
                     document.getElementById('data-manager-drawer').classList.add('translate-x-full');
+                    if (window.SC) window.SC.popUiStack('data-manager-drawer');
                     if (window.Auth) window.Auth.renderProfile(document.getElementById('profile-content'));
                 }
                 
@@ -247,6 +251,7 @@
             } else {
                 // Closing
                 drawer.classList.add('translate-x-full');
+                if (window.SC) window.SC.popUiStack(drawerId);
             }
         }
 

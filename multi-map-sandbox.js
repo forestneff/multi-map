@@ -34,6 +34,14 @@ class SandboxController {
         this.userHasPanned = false;
         this.parentSelectMode = false;
         this.parentSelectSourceId = null;
+        this.uiStack = [];
+        this.sessionStartTime = Date.now();
+        
+        // Smart action options popover state
+        this.isSmartOptionsOpen = false;
+        this.selectedSmartOptionIdx = 0;
+        this.smartButtonOptions = null;
+        this._lastSelectedNodeId = null;
         
         // NEW: Tracks what to highlight in the inspector
         this.activeSearchHighlight = null; 
@@ -88,36 +96,35 @@ class SandboxController {
         window.addEventListener('pointercancel', (e) => this.handlePointerUp(e));
         vp.addEventListener('wheel', (e) => this.handleWheel(e), { passive: false });
         window.addEventListener('resize', () => this.render());
-        window.addEventListener('beforeunload', () => this.kernel.saveCurrentMapToLibrary());
-        window.addEventListener('pagehide', () => this.kernel.saveCurrentMapToLibrary());
+        
+        const logNavAway = () => {
+            this.kernel.saveCurrentMapToLibrary();
+            const durationSec = Math.round((Date.now() - this.sessionStartTime) / 1000);
+            this.logTelemetrySync('session_end', { duration_seconds: durationSec });
+        };
+        window.addEventListener('beforeunload', logNavAway);
+        window.addEventListener('pagehide', logNavAway);
 
-        // --- GLOBAL ESCAPE HANDLER (CASCADING CLOSE) ---
-        window.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
-                // 1. Close Tutorial Menu Modal
-                if (window.Tutorials && window.Tutorials.modalElement && !window.Tutorials.modalElement.classList.contains('hidden')) {
-                    window.Tutorials.closeSelectionModal();
-                    return;
-                }
-                // 2. Close AI Chat
-                if (window.AI && window.AI.isVisible) {
-                    window.AI.hideChat();
-                    return;
-                }
-                // 3. Close Inspector Sidebar
-                if (this.dom.sidebar && this.dom.sidebar.classList.contains('open')) {
-                    this.closeSidebar();
-                    return;
-                }
-            }
-        });
+        // --- GLOBAL KEYBOARD SHORTCUTS & ESCAPE HANDLER ---
+        window.addEventListener('keydown', (e) => this.handleGlobalKeydown(e));
 
-        // --- WEB EDIT MODE MESSAGE LISTENER ---
+        // --- MESSAGE LISTENER (EDIT MODE & KEYDOWN FORWARDING) ---
         window.addEventListener('message', (e) => {
             if (e.data && e.data.type === 'mm-select-node' && e.data.id) {
                 if (this.kernel.webEditMode) {
                     this.actionEdit(e.data.id);
                 }
+            }
+            if (e.data && e.data.type === 'mm-keydown') {
+                const simulatedEvent = {
+                    key: e.data.key,
+                    shiftKey: e.data.shiftKey,
+                    ctrlKey: e.data.ctrlKey,
+                    metaKey: e.data.metaKey,
+                    target: document.body,
+                    preventDefault: () => {}
+                };
+                this.handleGlobalKeydown(simulatedEvent);
             }
         });
 
@@ -212,11 +219,26 @@ class SandboxController {
         }
     }
 
+    pushUiStack(id) {
+        this.uiStack = this.uiStack.filter(item => item !== id);
+        this.uiStack.push(id);
+    }
+
+    popUiStack(id) {
+        this.uiStack = this.uiStack.filter(item => item !== id);
+    }
+
     toggleSidebar() {
         if (this.dom.sidebar) {
             this.dom.sidebar.classList.toggle('open');
+            const isOpen = this.dom.sidebar.classList.contains('open');
+            if (isOpen) {
+                this.pushUiStack('inspector-sidebar');
+            } else {
+                this.popUiStack('inspector-sidebar');
+            }
             // On mobile, opening the sidebar should close the right drawers
-            if (this.dom.sidebar.classList.contains('open') && window.innerWidth <= 768) {
+            if (isOpen && window.innerWidth <= 768) {
                 const p = document.getElementById('profile-drawer');
                 if (p) p.classList.add('translate-x-full');
                 const d = document.getElementById('data-manager-drawer');
@@ -818,6 +840,333 @@ class SandboxController {
             this.kernel.addConnection(pid, child.id);
             this.kernel.selectNode(child.id); 
             p.data.collapsed = false; 
+        }
+    }
+
+    focusInspectorTitle() {
+        if (this.dom.sidebar && !this.dom.sidebar.classList.contains('open')) {
+            this.toggleSidebar();
+        }
+        setTimeout(() => {
+            const universalEngine = this.registry.get('inspector');
+            if (universalEngine && universalEngine.iframe && universalEngine.iframe.contentWindow) {
+                universalEngine.iframe.contentWindow.postMessage({ type: 'FOCUS_TITLE' }, '*');
+            }
+        }, 100);
+    }
+
+    actionAddSibling() {
+        const selectedId = this.kernel.state.session.selectedId;
+        if (!selectedId) return;
+        const parentConnection = this.kernel.state.connections.find(c => c.to === selectedId && c.type === 'structural');
+        const parentId = parentConnection ? parentConnection.from : null;
+        if (parentId) {
+            this.actionAddChild(parentId);
+            this.focusInspectorTitle();
+        }
+    }
+
+    handleGlobalKeydown(e) {
+        // Escape handler runs regardless of input focus
+        if (e.key === 'Escape') {
+            if (this.isSmartOptionsOpen) {
+                this.isSmartOptionsOpen = false;
+                this.updateSmartActionButton();
+                return;
+            }
+
+            // Find the first actually open element from the top of the stack (most recent first)
+            while (this.uiStack.length > 0) {
+                const topId = this.uiStack[this.uiStack.length - 1];
+                
+                if (topId === 'dialog') {
+                    const closeBtn = document.querySelector('.fixed.inset-0.z-\\[99999\\] .close-btn');
+                    if (closeBtn) {
+                        closeBtn.click();
+                        return;
+                    }
+                } else if (topId === 'profile-drawer') {
+                    const drawer = document.getElementById('profile-drawer');
+                    if (drawer && !drawer.classList.contains('translate-x-full')) {
+                        drawer.classList.add('translate-x-full');
+                        this.popUiStack('profile-drawer');
+                        return;
+                    }
+                } else if (topId === 'data-manager-drawer') {
+                    const drawer = document.getElementById('data-manager-drawer');
+                    if (drawer && !drawer.classList.contains('translate-x-full')) {
+                        drawer.classList.add('translate-x-full');
+                        this.popUiStack('data-manager-drawer');
+                        return;
+                    }
+                } else if (topId === 'tutorial-modal') {
+                    if (window.Tutorials && window.Tutorials.modalElement && !window.Tutorials.modalElement.classList.contains('hidden')) {
+                        window.Tutorials.closeSelectionModal();
+                        return;
+                    }
+                } else if (topId === 'ai-chat') {
+                    if (window.AI && window.AI.isOpen) {
+                        window.AI.toggleChat();
+                        return;
+                    }
+                } else if (topId === 'inspector-sidebar') {
+                    if (this.dom.sidebar && this.dom.sidebar.classList.contains('open')) {
+                        this.toggleSidebar();
+                        return;
+                    }
+                }
+                
+                // If it wasn't actually open, pop it from the stack and continue checking the next one
+                this.uiStack.pop();
+            }
+
+            // Fallback: Check elements directly in case they were opened without stack registration
+            const activeDialogCloseBtn = document.querySelector('.fixed.inset-0.z-\\[99999\\] .close-btn');
+            if (activeDialogCloseBtn) {
+                activeDialogCloseBtn.click();
+                return;
+            }
+            const profileDrawer = document.getElementById('profile-drawer');
+            if (profileDrawer && !profileDrawer.classList.contains('translate-x-full')) {
+                profileDrawer.classList.add('translate-x-full');
+                return;
+            }
+            const dataDrawer = document.getElementById('data-manager-drawer');
+            if (dataDrawer && !dataDrawer.classList.contains('translate-x-full')) {
+                dataDrawer.classList.add('translate-x-full');
+                return;
+            }
+            if (window.Tutorials && window.Tutorials.modalElement && !window.Tutorials.modalElement.classList.contains('hidden')) {
+                window.Tutorials.closeSelectionModal();
+                return;
+            }
+            if (window.AI && window.AI.isOpen) {
+                window.AI.toggleChat();
+                return;
+            }
+            if (this.dom.sidebar && this.dom.sidebar.classList.contains('open')) {
+                this.toggleSidebar();
+                return;
+            }
+            
+            // If absolutely no overlays are open, navigate up selected node's branch to the root
+            const selectedId = this.kernel.state.session.selectedId;
+            if (selectedId) {
+                const parentConnection = this.kernel.state.connections.find(c => c.to === selectedId && c.type === 'structural');
+                const parentId = parentConnection ? parentConnection.from : null;
+                if (parentId) {
+                    this.kernel.selectNode(parentId);
+                    this.render();
+                    return;
+                }
+            }
+        }
+
+        // Do not interfere with text inputs, textareas, contenteditable elements, or open modal dialogs
+        const target = e.target;
+        const isEditable = target.tagName === 'INPUT' || 
+                           target.tagName === 'TEXTAREA' || 
+                           target.isContentEditable || 
+                           target.closest('[contenteditable="true"]');
+        if (isEditable) return;
+
+        // Do not interfere if a modal backdrop is active
+        if (document.querySelector('.fixed.inset-0.z-\\[99999\\]')) return;
+
+        // Do not interfere if AI Chat is open
+        if (window.AI && window.AI.isOpen) return;
+
+        const selectedId = this.kernel.state.session.selectedId;
+
+        if (e.key === 'Tab') {
+            e.preventDefault();
+            if (selectedId) {
+                this.actionAddChild();
+                this.focusInspectorTitle();
+            }
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            if (selectedId) {
+                this.actionAddSibling();
+            }
+        } else if (e.key === 'Delete') {
+            e.preventDefault();
+            if (selectedId) {
+                this.actionDelete(selectedId);
+            }
+        } else if (e.key === ' ' || e.key === 'Spacebar') {
+            if (selectedId && this.viewMode === 'map') {
+                e.preventDefault();
+                if (this.smartButtonOptions && this.smartButtonOptions.length > 0) {
+                    if (!this.isSmartOptionsOpen) {
+                        this.isSmartOptionsOpen = true;
+                        this.selectedSmartOptionIdx = 0;
+                        this.updateSmartActionButton();
+                    } else {
+                        const opt = this.smartButtonOptions[this.selectedSmartOptionIdx];
+                        if (opt) {
+                            opt.action();
+                            this.isSmartOptionsOpen = false;
+                            this.updateSmartActionButton();
+                        }
+                    }
+                } else {
+                    const btn = document.getElementById('btn-smart-action');
+                    if (btn && !btn.classList.contains('hidden')) {
+                        btn.click();
+                    }
+                }
+            }
+        } else if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+            e.preventDefault();
+            if (this.isSmartOptionsOpen && this.smartButtonOptions) {
+                if (e.key === 'ArrowUp') {
+                    this.selectedSmartOptionIdx = (this.selectedSmartOptionIdx - 1 + this.smartButtonOptions.length) % this.smartButtonOptions.length;
+                    this.updateSmartActionButton();
+                } else if (e.key === 'ArrowDown') {
+                    this.selectedSmartOptionIdx = (this.selectedSmartOptionIdx + 1) % this.smartButtonOptions.length;
+                    this.updateSmartActionButton();
+                }
+            } else {
+                this.navigateSelection(e.key);
+            }
+        }
+    }
+
+    navigateSelection(direction) {
+        const getRootNode = () => {
+            return this.kernel.state.nodes.find(n => n.type === 'root' || n.type.endsWith('-root') || n.data?.isCore);
+        };
+        
+        const root = getRootNode();
+        const selectedId = this.kernel.state.session.selectedId;
+        if (!selectedId) {
+            if (root) {
+                this.kernel.selectNode(root.id);
+                this.render();
+            }
+            return;
+        }
+
+        const node = this.kernel.state.nodes.find(n => n.id === selectedId);
+        if (!node) return;
+
+        const nodePos = this.getVisualPos(node);
+        const rootPos = root ? this.getVisualPos(root) : { x: 0, y: 0 };
+        const isOnRight = nodePos.x >= rootPos.x;
+
+        // Helper to find closest child by Y coordinate
+        const getClosestChild = (childList, targetY) => {
+            if (childList.length === 0) return null;
+            return childList.reduce((closest, child) => {
+                const closestPos = this.getVisualPos(closest);
+                const childPos = this.getVisualPos(child);
+                return Math.abs(childPos.y - targetY) < Math.abs(closestPos.y - targetY) ? child : closest;
+            });
+        };
+
+        // Find structural children
+        const childConnections = this.kernel.state.connections.filter(c => c.from === node.id && c.type === 'structural');
+        const children = childConnections.map(c => this.kernel.state.nodes.find(n => n.id === c.to)).filter(Boolean);
+
+        // Find structural parent
+        const parentConnection = this.kernel.state.connections.find(c => c.to === node.id && c.type === 'structural');
+        const parent = parentConnection ? this.kernel.state.nodes.find(n => n.id === parentConnection.from) : null;
+
+        let targetNode = null;
+
+        // --- 1. TRY SEMANTIC TRAVERSAL ---
+        if (direction === 'ArrowLeft') {
+            if (node === root) {
+                // From root, go to left branch children
+                const leftChildren = children.filter(c => this.getVisualPos(c).x < rootPos.x);
+                targetNode = getClosestChild(leftChildren, rootPos.y);
+            } else if (isOnRight) {
+                // If on right side, left arrow goes back towards parent
+                targetNode = parent;
+            } else {
+                // If on left side, left arrow goes deeper into left children
+                const leftChildren = children.filter(c => this.getVisualPos(c).x < nodePos.x);
+                targetNode = getClosestChild(leftChildren.length > 0 ? leftChildren : children, nodePos.y);
+            }
+        } else if (direction === 'ArrowRight') {
+            if (node === root) {
+                // From root, go to right branch children
+                const rightChildren = children.filter(c => this.getVisualPos(c).x > rootPos.x);
+                targetNode = getClosestChild(rightChildren, rootPos.y);
+            } else if (isOnRight) {
+                // If on right side, right arrow goes deeper into right children
+                const rightChildren = children.filter(c => this.getVisualPos(c).x > nodePos.x);
+                targetNode = getClosestChild(rightChildren.length > 0 ? rightChildren : children, nodePos.y);
+            } else {
+                // If on left side, right arrow goes back towards parent
+                targetNode = parent;
+            }
+        } else if (direction === 'ArrowUp' || direction === 'ArrowDown') {
+            if (parent) {
+                const siblingConnections = this.kernel.state.connections.filter(c => c.from === parent.id && c.type === 'structural');
+                const siblings = siblingConnections.map(c => this.kernel.state.nodes.find(n => n.id === c.to)).filter(Boolean);
+                
+                // Sort siblings by Y coordinate
+                siblings.sort((a, b) => this.getVisualPos(a).y - this.getVisualPos(b).y);
+                
+                const idx = siblings.findIndex(s => s.id === node.id);
+                if (idx !== -1) {
+                    if (direction === 'ArrowUp') {
+                        targetNode = siblings[idx - 1] || null;
+                    } else {
+                        targetNode = siblings[idx + 1] || null;
+                    }
+                }
+            }
+        }
+
+        // --- 2. FALLBACK TO SPATIAL TRAVERSAL ---
+        if (!targetNode) {
+            const allNodes = this.kernel.state.nodes.filter(n => n.id !== selectedId);
+            let bestScore = Infinity;
+
+            allNodes.forEach(n => {
+                const pos = this.getVisualPos(n);
+                const dx = pos.x - nodePos.x;
+                const dy = pos.y - nodePos.y;
+                const dist = Math.hypot(dx, dy);
+
+                let isHeadingCorrect = false;
+                let directionalDiff = 0;
+
+                switch (direction) {
+                    case 'ArrowLeft':
+                        isHeadingCorrect = dx < 0;
+                        directionalDiff = Math.abs(dy);
+                        break;
+                    case 'ArrowRight':
+                        isHeadingCorrect = dx > 0;
+                        directionalDiff = Math.abs(dy);
+                        break;
+                    case 'ArrowUp':
+                        isHeadingCorrect = dy < 0;
+                        directionalDiff = Math.abs(dx);
+                        break;
+                    case 'ArrowDown':
+                        isHeadingCorrect = dy > 0;
+                        directionalDiff = Math.abs(dx);
+                        break;
+                }
+
+                if (isHeadingCorrect) {
+                    const score = dist + directionalDiff * 1.5;
+                    if (score < bestScore) {
+                        bestScore = score;
+                        targetNode = n;
+                    }
+                }
+            });
+        }
+
+        if (targetNode) {
+            this.kernel.selectNode(targetNode.id);
+            this.render();
         }
     }
 
@@ -2048,7 +2397,11 @@ class SandboxController {
             const val = document.getElementById('json-exchange').value;
             this.kernel.loadMapState(JSON.parse(val));
             alert("Mapstate Applied Successfully.");
-        } catch (e) { alert("Invalid JSON format."); }
+            this.logTelemetry('sync_json_success');
+        } catch (e) { 
+            alert("Invalid JSON format."); 
+            this.logTelemetry('sync_json_error', { raw_input: document.getElementById('json-exchange').value.substring(0, 1000) }, e, 'error');
+        }
     }
 
     actionCopyJson() {
@@ -2086,8 +2439,16 @@ class SandboxController {
         if (!file) return;
         const reader = new FileReader();
         reader.onload = (e) => {
-            try { this.kernel.loadMapState(JSON.parse(e.target.result)); alert("Mapstate Imported."); this.render(); } 
-            catch (err) { alert("Invalid JSON file."); }
+            try { 
+                this.kernel.loadMapState(JSON.parse(e.target.result)); 
+                alert("Mapstate Imported."); 
+                this.render(); 
+                this.logTelemetry('import_json_success', { filename: file.name });
+            } 
+            catch (err) { 
+                alert("Invalid JSON file."); 
+                this.logTelemetry('import_json_error', { filename: file.name }, err, 'error');
+            }
         };
         reader.readAsText(file);
         event.target.value = ''; 
@@ -2601,38 +2962,60 @@ class SandboxController {
         if (!btn || !tooltipBar) return;
 
         const selectedId = this.kernel.state.session.selectedId;
+        
+        // Reset options if node selection changed
+        if (this._lastSelectedNodeId !== selectedId) {
+            this.isSmartOptionsOpen = false;
+            this.selectedSmartOptionIdx = 0;
+            this._lastSelectedNodeId = selectedId;
+        }
+
         const selectedNode = this.kernel.state.nodes.find(n => n.id === selectedId);
         const canExit = this.kernel.portalHistory && this.kernel.portalHistory.length > 0;
 
         let action = null;
         let text = '';
         let themeClasses = '';
+        let options = null;
         
-        // Check for node-specific actions first
+        // Scaffold options & default action
         if (selectedNode && this.viewMode === 'map') {
             const type = selectedNode.type;
             if (type === 'portal' || type === 'smart-portal') {
                 action = () => this.actionEnterPortal(selectedNode.id);
                 const hasTarget = !!selectedNode.content;
-                text = hasTarget ? 'Enter Portal ➔' : 'Set Target 🎯';
+                text = hasTarget ? 'Enter Portal' : 'Set Target';
                 themeClasses = hasTarget 
                     ? 'bg-emerald-600 hover:bg-emerald-500 border-emerald-400 text-emerald-100 hover:text-white shadow-[0_0_15px_rgba(16,185,129,0.4)]'
                     : 'bg-purple-650 hover:bg-purple-500 border-purple-400 text-purple-100 hover:text-white shadow-[0_0_15px_rgba(168,85,247,0.4)]';
+                options = [
+                    { text: hasTarget ? 'Enter Portal ➔' : 'Set Target 🎯', action: () => this.actionEnterPortal(selectedNode.id) },
+                    { text: 'Configure Portal ⚙️', action: () => this.actionSetPortalTarget(selectedNode.id) }
+                ];
             } else if (type === 'person-root') {
                 action = () => this.setView('person');
-                text = 'View Profile 👤';
+                text = 'View Profile';
                 themeClasses = 'bg-indigo-600 hover:bg-indigo-500 border-indigo-400 text-indigo-100 hover:text-white shadow-[0_0_15px_rgba(79,70,229,0.4)]';
+                options = [
+                    { text: 'View Profile 👤', action: () => this.setView('person') },
+                    { text: 'Export CV 📄', action: () => alert('Exporting profile CV...') }
+                ];
             } else if (type === 'web-root' || type.startsWith('web-')) {
                 action = () => this.setView('web');
-                text = 'Visual Editor 🌐';
+                text = 'Visual Editor';
                 themeClasses = 'bg-sky-600 hover:bg-sky-500 border-sky-400 text-sky-100 hover:text-white shadow-[0_0_15px_rgba(14,165,233,0.4)]';
+                options = [
+                    { text: 'Visual Editor 🌐', action: () => this.setView('web') },
+                    { text: 'Preview Page 👁️', action: () => alert('Previewing generated site...') },
+                    { text: 'Download Code 💾', action: () => alert('Downloading HTML/CSS package...') }
+                ];
             } else if (type === 'prompt-root') {
                 action = () => this.setView('prompt');
-                text = 'Run Chain 💬';
+                text = 'Run Chain';
                 themeClasses = 'bg-amber-600 hover:bg-amber-500 border-amber-400 text-amber-100 hover:text-white shadow-[0_0_15px_rgba(217,119,6,0.4)]';
             } else if (type === 'agent-root') {
                 action = () => this.setView('agent');
-                text = 'Configure Agent 🤖';
+                text = 'Configure Agent';
                 themeClasses = 'bg-rose-600 hover:bg-rose-500 border-rose-400 text-rose-100 hover:text-white shadow-[0_0_15px_rgba(225,29,72,0.4)]';
             }
         }
@@ -2644,14 +3027,54 @@ class SandboxController {
             themeClasses = 'bg-purple-600 hover:bg-purple-500 border-purple-400 text-purple-100 hover:text-white shadow-[0_0_15px_rgba(168,85,247,0.4)]';
         }
 
+        this.smartButtonOptions = options;
+
         const tutorialActive = window.Tutorials && window.Tutorials.isActive;
 
+        // Render options popover if open
+        let popover = document.getElementById('smart-action-options-popover');
+        if (popover) popover.remove();
+
+        if (this.isSmartOptionsOpen && this.smartButtonOptions && !tutorialActive) {
+            const rect = btn.getBoundingClientRect();
+            popover = document.createElement('div');
+            popover.id = 'smart-action-options-popover';
+            popover.className = 'fixed z-[99999] bg-slate-950/95 backdrop-blur-xl border border-slate-800 rounded-2xl shadow-[0_10px_25px_-5px_rgba(0,0,0,0.5),0_0_20px_rgba(99,102,241,0.15)] p-1.5 flex flex-col gap-1 w-56 font-sans';
+            popover.style.left = `${rect.left}px`;
+            popover.style.bottom = `${window.innerHeight - rect.top + 8}px`;
+
+            this.smartButtonOptions.forEach((opt, idx) => {
+                const optBtn = document.createElement('button');
+                optBtn.className = `w-full text-left text-xs p-2 rounded-xl transition-all cursor-pointer bg-transparent border-none ${
+                    idx === this.selectedSmartOptionIdx 
+                        ? 'bg-gradient-to-r from-indigo-650 to-indigo-550 text-white font-bold shadow-[0_0_12px_rgba(79,70,229,0.4)]' 
+                        : 'text-slate-450 hover:bg-slate-900 hover:text-slate-200'
+                }`;
+                optBtn.innerHTML = opt.text;
+                optBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    opt.action();
+                    this.isSmartOptionsOpen = false;
+                    this.updateSmartActionButton();
+                };
+                popover.appendChild(optBtn);
+            });
+            document.body.appendChild(popover);
+        }
+
         if (action && !tutorialActive) {
-            btn.className = `text-xs font-bold uppercase tracking-widest px-6 py-3 rounded-full border shadow-lg transition-all flex items-center gap-2 ${themeClasses}`;
-            btn.innerHTML = text;
+            const displaySubtext = options && options.length > 0 ? ' <span class="text-[9px] opacity-75 ml-1.5">▼</span>' : '';
+            btn.className = `text-xs font-bold uppercase tracking-widest px-6 py-3 rounded-full border shadow-lg transition-all flex items-center gap-2 cursor-pointer ${themeClasses}`;
+            btn.innerHTML = text + displaySubtext;
             btn.onclick = (e) => {
                 e.stopPropagation();
-                action();
+                if (options && options.length > 0) {
+                    this.isSmartOptionsOpen = !this.isSmartOptionsOpen;
+                    this.selectedSmartOptionIdx = 0;
+                    this.updateSmartActionButton();
+                } else {
+                    action();
+                }
             };
             btn.classList.remove('hidden');
 
@@ -2663,7 +3086,6 @@ class SandboxController {
         } else {
             btn.classList.add('hidden');
             if (!tutorialActive) {
-                // If the tooltip was only showing the smart button, hide it
                 if (tooltipContent && tooltipContent.classList.contains('hidden')) {
                     tooltipBar.classList.add('translate-x-4', 'opacity-0');
                     setTimeout(() => {
@@ -2673,6 +3095,66 @@ class SandboxController {
                     }, 300);
                 }
             }
+        }
+    }
+
+    getFunctionsBaseUrl() {
+        const prodUrl = "https://us-central1-mm-multi-map.cloudfunctions.net/generateMapState";
+        const localUrl = "http://127.0.0.1:5001/mm-multi-map/us-central1/generateMapState";
+        const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        return isLocal ? localUrl : prodUrl;
+    }
+
+    async logTelemetry(action, details = {}, error = null, type = 'telemetry') {
+        try {
+            const uid = (this.kernel && this.kernel.state && this.kernel.state.session) ? (this.kernel.state.session.uid || window.FirebaseAuth?.currentUser?.uid || 'anonymous') : 'anonymous';
+            const sessionId = (this.kernel && this.kernel.state && this.kernel.state.session) ? (this.kernel.state.session.sessionId || 'unknown') : 'unknown';
+            const mapId = (this.kernel && this.kernel.state && this.kernel.state.meta) ? (this.kernel.state.meta.map_id || 'unknown') : 'unknown';
+            
+            const payload = {
+                uid,
+                sessionId,
+                mapId,
+                action,
+                type,
+                details,
+                error: error ? { message: error.message || String(error), stack: error.stack || null } : null
+            };
+            
+            await fetch(`${this.getFunctionsBaseUrl()}/telemetry`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+        } catch (e) {
+            console.warn("Failed to send telemetry:", e);
+        }
+    }
+
+    logTelemetrySync(action, details = {}, error = null, type = 'telemetry') {
+        try {
+            const uid = (this.kernel && this.kernel.state && this.kernel.state.session) ? (this.kernel.state.session.uid || window.FirebaseAuth?.currentUser?.uid || 'anonymous') : 'anonymous';
+            const sessionId = (this.kernel && this.kernel.state && this.kernel.state.session) ? (this.kernel.state.session.sessionId || 'unknown') : 'unknown';
+            const mapId = (this.kernel && this.kernel.state && this.kernel.state.meta) ? (this.kernel.state.meta.map_id || 'unknown') : 'unknown';
+            
+            const payload = {
+                uid,
+                sessionId,
+                mapId,
+                action,
+                type,
+                details,
+                error: error ? { message: error.message || String(error), stack: error.stack || null } : null
+            };
+            
+            fetch(`${this.getFunctionsBaseUrl()}/telemetry`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+                keepalive: true
+            }).catch(() => {});
+        } catch (e) {
+            console.warn("Failed to send sync telemetry:", e);
         }
     }
 
@@ -2707,6 +3189,7 @@ class SandboxController {
                 </div>
             `;
             document.body.appendChild(backdrop);
+            this.pushUiStack('dialog');
             
             // Trigger animation
             requestAnimationFrame(() => {
@@ -2715,6 +3198,7 @@ class SandboxController {
             });
             
             const close = (val) => {
+                this.popUiStack('dialog');
                 backdrop.classList.add('opacity-0');
                 backdrop.querySelector('div').classList.add('scale-95');
                 setTimeout(() => {
@@ -2746,6 +3230,23 @@ class SandboxController {
             onRender: (el, close) => {
                 el.querySelector('.cancel-btn').onclick = () => close(false);
                 el.querySelector('.confirm-btn').onclick = () => close(true);
+
+                // Allow Enter to confirm and Escape to cancel
+                const onKey = (e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); close(true); }
+                    if (e.key === 'Escape') { e.preventDefault(); close(false); }
+                };
+                document.addEventListener('keydown', onKey);
+                // Cleanup listener when dialog resolves
+                el.addEventListener('remove', () => document.removeEventListener('keydown', onKey), { once: true });
+                // Fallback cleanup: remove on backdrop removal via MutationObserver
+                const observer = new MutationObserver(() => {
+                    if (!document.body.contains(el)) {
+                        document.removeEventListener('keydown', onKey);
+                        observer.disconnect();
+                    }
+                });
+                observer.observe(document.body, { childList: true });
             }
         });
     }

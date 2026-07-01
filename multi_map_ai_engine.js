@@ -430,6 +430,13 @@ class MultiMapAI {
     toggleChat() {
         const panel = document.getElementById('ai-chat-panel');
         this.isOpen = !this.isOpen;
+        if (window.SC) {
+            if (this.isOpen) {
+                window.SC.pushUiStack('ai-chat');
+            } else {
+                window.SC.popUiStack('ai-chat');
+            }
+        }
         if (this.isOpen) {
             panel.classList.remove('hidden');
             setTimeout(() => {
@@ -452,6 +459,97 @@ class MultiMapAI {
         div.innerHTML = text.replace(/\n/g, '<br>') + actionHtml;
         msgs.appendChild(div);
         msgs.scrollTop = msgs.scrollHeight;
+    }
+
+    addFeedbackFormMessage() {
+        const msgs = document.getElementById('ai-messages');
+        const div = document.createElement('div');
+        div.className = 'self-start w-full max-w-[90%] mt-2';
+        
+        const formId = `feedback-form-${Date.now()}`;
+        div.innerHTML = `
+            <div id="${formId}" class="bg-slate-900 border border-indigo-500/40 rounded-xl p-4 flex flex-col gap-3 font-sans">
+                <div class="text-[10px] font-bold text-indigo-400 uppercase tracking-wider">Submit Feedback / Report Bug</div>
+                <p class="text-[11px] text-slate-400">Your feedback helps us improve Multi-Map! Submit your suggestion or bug description below.</p>
+                
+                <div class="flex flex-col gap-1">
+                    <label class="text-[9px] uppercase font-bold text-slate-500">Contact Email (Optional)</label>
+                    <input type="email" id="${formId}-email" placeholder="you@example.com" class="bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 outline-none focus:border-indigo-500">
+                </div>
+                
+                <div class="flex flex-col gap-1">
+                    <label class="text-[9px] uppercase font-bold text-slate-500">Message / Bug Details</label>
+                    <textarea id="${formId}-message" rows="3" placeholder="Describe the suggestion or bug..." class="bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 outline-none focus:border-indigo-500 resize-none"></textarea>
+                </div>
+                
+                <div class="flex gap-2 justify-end mt-1">
+                    <button id="${formId}-cancel" class="px-3 py-1.5 border border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-900 rounded-lg text-[10px] font-bold uppercase transition-all cursor-pointer bg-transparent">Cancel</button>
+                    <button id="${formId}-submit" class="px-3 py-1.5 bg-indigo-650 hover:bg-indigo-500 text-white rounded-lg text-[10px] font-bold uppercase transition-all shadow shadow-indigo-900/50 cursor-pointer border-none">Submit</button>
+                </div>
+            </div>
+        `;
+        msgs.appendChild(div);
+        msgs.scrollTop = msgs.scrollHeight;
+
+        const cancelBtn = document.getElementById(`${formId}-cancel`);
+        const submitBtn = document.getElementById(`${formId}-submit`);
+        const emailInput = document.getElementById(`${formId}-email`);
+        const messageInput = document.getElementById(`${formId}-message`);
+
+        cancelBtn.onclick = (e) => {
+            e.stopPropagation();
+            div.innerHTML = `<div class="text-xs p-3 rounded-xl border max-w-[90%] self-start bg-slate-800/80 border-indigo-700/30 text-slate-450 italic border-none">Feedback form cancelled.</div>`;
+        };
+
+        submitBtn.onclick = async (e) => {
+            e.stopPropagation();
+            const email = emailInput.value.trim();
+            const message = messageInput.value.trim();
+
+            if (!message) {
+                alert("Please provide a message or bug description.");
+                return;
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.innerText = 'Submitting...';
+
+            try {
+                const uid = window.FirebaseAuth?.currentUser?.uid || 'anonymous';
+                const sessionId = this.kernel?.state?.session?.sessionId || 'unknown';
+                const mapId = this.kernel?.state?.map_id || 'unknown';
+
+                let CLOUD_AGENT_URL = "https://us-central1-mm-multi-map.cloudfunctions.net/generateMapState";
+                if (window.location.hostname !== "mm.forestneff.com") {
+                    const projectId = "mm-multi-map";
+                    const host = (window.location.hostname === "0.0.0.0" || window.location.hostname === "[::1]" || !window.location.hostname) ? "127.0.0.1" : window.location.hostname;
+                    CLOUD_AGENT_URL = `http://${host}:5001/${projectId}/us-central1/generateMapState`;
+                }
+
+                const res = await fetch(`${CLOUD_AGENT_URL}/telemetry`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        uid,
+                        sessionId,
+                        mapId,
+                        action: 'user_submitted_feedback',
+                        type: 'feedback',
+                        message,
+                        contactEmail: email
+                    })
+                });
+
+                if (!res.ok) throw new Error(`Server responded with ${res.status}`);
+
+                div.innerHTML = `<div class="text-xs p-3 rounded-xl border max-w-[90%] self-start bg-slate-800/80 border-indigo-700/30 text-emerald-400 font-semibold border-none">Thank you! Your feedback has been logged successfully for developer review.</div>`;
+            } catch (err) {
+                console.error("Failed to submit feedback:", err);
+                alert("Failed to submit feedback. Please try again.");
+                submitBtn.disabled = false;
+                submitBtn.innerText = 'Submit';
+            }
+        };
     }
 
     handleSmartNodeConnection(sourceNode, targetNode) {
@@ -688,6 +786,19 @@ class MultiMapAI {
         input.style.height = 'auto';
         this.addMessage('user', text);
 
+        const textLower = text.toLowerCase();
+        const isFeedbackIntent = textLower.includes('feedback') || 
+                                 textLower.includes('suggestion') || 
+                                 textLower.includes('bug') || 
+                                 textLower.includes('issue') ||
+                                 textLower.includes('ticket') ||
+                                 textLower.includes('report');
+                                 
+        if (isFeedbackIntent) {
+            this.addFeedbackFormMessage();
+            return;
+        }
+
         if (this.tryExecuteLocalCommand(text)) {
             return;
         }
@@ -706,9 +817,9 @@ class MultiMapAI {
             const contextStr = this.buildContextString();
             const contextualPrompt = text + (contextStr ? "\n\n" + contextStr : "");
             let mode = 'generate';
+            let aiResult;
 
             if (this.selectedModel === 'native-mock') {
-                // Keep local keyword matching for the mock
                 const textLower = text.toLowerCase();
                 if (textLower.includes('update') || textLower.includes('edit') || textLower.includes('add') || textLower.includes('delete') || textLower.includes('change')) {
                     mode = 'edit';
@@ -716,8 +827,9 @@ class MultiMapAI {
                     mode = 'analyze';
                 }
                 jsonString = await this.mockAIGeneration(contextualPrompt, mode);
+                aiResult = { text: jsonString, mode, intent: null };
             } else {
-                const aiResult = await this.geminiAPIGeneration(text, contextStr);
+                aiResult = await this.geminiAPIGeneration(text, contextStr);
                 jsonString = aiResult.text;
                 mode = aiResult.mode;
             }
@@ -784,13 +896,22 @@ class MultiMapAI {
                 }
                 this.addMessage('system', `Map generated: **${aiData.meta?.title || 'Map'}** (${aiData.nodes.length} nodes). How would you like to deploy it?`, actionHtml);
             } else if (aiData.message) {
-                // New Analyze or Edit Mode
                 if (document.getElementById('ai-loading')) {
                     document.getElementById('ai-loading').remove();
                 }
 
-                // Print Message
-                this.addMessage('system', aiData.message);
+                let actionHtml = '';
+                if (aiResult && aiResult.intent === 'out-of-scope') {
+                    actionHtml = `
+                        <div class="mt-3 border-t border-slate-800/80 pt-2 flex flex-col gap-2">
+                            <button onclick="window.AI.addFeedbackFormMessage()" class="w-full py-1.5 bg-slate-900 border border-slate-700 hover:bg-slate-800 text-slate-350 hover:text-white rounded-lg text-[10px] font-bold uppercase transition-all flex items-center justify-center gap-1 cursor-pointer">
+                                💡 Suggest Feature / Report Bug
+                            </button>
+                        </div>
+                    `;
+                }
+
+                this.addMessage('system', aiData.message, actionHtml);
 
                 // Apply Edits if they exist
                 if (aiData.edits && Array.isArray(aiData.edits)) {
@@ -1205,6 +1326,6 @@ class MultiMapAI {
             throw new Error("Invalid response format from Cloud Agent");
         }
 
-        return { text: outputText, mode: data.mode || 'generate' };
+        return { text: outputText, mode: data.mode || 'generate', intent: data.intent || null };
     }
 }

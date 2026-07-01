@@ -63,9 +63,15 @@
                 </h1>
                 <p class="text-xs text-slate-400 font-medium uppercase tracking-widest mt-1">AI Request Audit & Regression Testing Dashboard</p>
             </div>
-            <div class="flex items-center gap-3">
+            <div class="flex items-center gap-3 flex-wrap">
                 <a href="sandbox.html" class="px-4 py-2 bg-slate-900 border border-slate-800 hover:bg-slate-800/60 rounded-xl text-xs font-bold transition-all flex items-center gap-2">
                     🏠 Sandbox Workspace
+                </a>
+                <a href="https://aistudio.google.com/rate-limit?timeRange=last-28-days" target="_blank" rel="noopener" class="px-4 py-2 bg-slate-900 border border-slate-800 hover:bg-amber-900/40 hover:border-amber-700/50 rounded-xl text-xs font-bold transition-all flex items-center gap-2 text-amber-400 hover:text-amber-300">
+                    ⚡ Rate Limits
+                </a>
+                <a href="https://aistudio.google.com/spend" target="_blank" rel="noopener" class="px-4 py-2 bg-slate-900 border border-slate-800 hover:bg-emerald-900/40 hover:border-emerald-700/50 rounded-xl text-xs font-bold transition-all flex items-center gap-2 text-emerald-400 hover:text-emerald-300">
+                    💸 Spend
                 </a>
                 <button onclick="loadLogs()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition-all shadow-[0_0_15px_rgba(79,70,229,0.4)]">
                     🔄 Refresh Logs
@@ -73,112 +79,234 @@
             </div>
         </header>
 
-        <!-- Filters Bar -->
-        <section class="glass p-4 rounded-2xl flex flex-wrap items-center gap-4 shrink-0 shadow-lg">
-            <div class="flex flex-col gap-1 min-w-[200px]">
-                <label class="text-[10px] text-slate-400 uppercase font-black tracking-wider">Skill / Intent</label>
-                <select id="filter-skill" onchange="loadLogs()" class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-indigo-500">
-                    <option value="">All Skills</option>
-                    <option value="generate-mapstate">Generate Map</option>
-                    <option value="generate-web-mapstate">Generate Web</option>
-                    <option value="edit-mapstate">Edit Map</option>
-                    <option value="analyze-mapstate">Analyze Map</option>
-                    <option value="faq">FAQ</option>
-                    <option value="out-of-scope">Out of Scope</option>
-                </select>
-            </div>
-            <div class="flex flex-col gap-1 min-w-[200px]">
-                <label class="text-[10px] text-slate-400 uppercase font-black tracking-wider">User / UID</label>
-                <input type="text" id="filter-uid" placeholder="Filter by User UID" oninput="loadLogs()" class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-indigo-500">
-            </div>
-            <div class="flex items-center gap-2 mt-4">
-                <input type="checkbox" id="filter-golden" onchange="loadLogs()" class="w-4 h-4 accent-indigo-500 bg-slate-950 border-slate-800 rounded cursor-pointer">
-                <label for="filter-golden" class="text-xs text-slate-300 font-bold select-none cursor-pointer">⭐ Golden Prompts Only</label>
-            </div>
-            <div class="flex flex-col gap-1 min-w-[100px] ml-auto">
-                <label class="text-[10px] text-slate-400 uppercase font-black tracking-wider">Count Limit</label>
-                <select id="filter-limit" onchange="loadLogs()" class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-indigo-500">
-                    <option value="25">25 logs</option>
-                    <option value="50" selected>50 logs</option>
-                    <option value="100">100 logs</option>
-                </select>
-            </div>
-        </section>
+        <!-- Main Dashboard Tabs -->
+        <div class="flex gap-4 border-b border-slate-800/80 pb-2 shrink-0">
+            <button id="tab-btn-ai" onclick="switchMainDashboardTab('ai')" class="text-xs font-black uppercase tracking-wider pb-2 border-b-2 border-indigo-500 text-indigo-400 cursor-pointer bg-transparent border-none">AI Prompt Audits</button>
+            <button id="tab-btn-telemetry" onclick="switchMainDashboardTab('telemetry')" class="text-xs font-black uppercase tracking-wider pb-2 border-b-2 border-transparent text-slate-400 hover:text-slate-300 cursor-pointer bg-transparent border-none">Telemetry & Feedback</button>
+        </div>
 
-        <!-- Main Workspace -->
-        <div class="flex flex-1 gap-6 min-h-0 overflow-hidden pb-4">
-            
-            <!-- Left Side: Logs Table -->
-            <section class="glass flex-1 rounded-2xl overflow-hidden flex flex-col shadow-xl">
-                <div class="flex-1 overflow-y-auto">
-                    <table class="w-full text-left border-collapse">
-                        <thead class="sticky top-0 bg-slate-950/80 backdrop-blur-md border-b border-slate-800/80 z-10">
-                            <tr class="text-[10px] text-slate-400 uppercase font-bold tracking-wider">
-                                <th class="p-4">Time</th>
-                                <th class="p-4">User Status</th>
-                                <th class="p-4">Skill</th>
-                                <th class="p-4">Prompt</th>
-                                <th class="p-4 text-center">Tokens</th>
-                                <th class="p-4 text-center">Latency</th>
-                                <th class="p-4 text-center">Status</th>
-                            </tr>
-                        </thead>
-                        <tbody id="logs-body">
-                            <!-- Populated dynamically -->
-                            <tr>
-                                <td colspan="7" class="p-8 text-center text-slate-500 text-xs italic">Loading logs...</td>
-                            </tr>
-                        </tbody>
-                    </table>
+        <!-- AI Tab Content -->
+        <div id="ai-tab-content" class="flex flex-col flex-1 gap-6 min-h-0">
+            <!-- Filters Bar -->
+            <section class="glass p-4 rounded-2xl flex flex-wrap items-center gap-4 shrink-0 shadow-lg">
+                <div class="flex flex-col gap-1 min-w-[200px]">
+                    <label class="text-[10px] text-slate-400 uppercase font-black tracking-wider">Skill / Intent</label>
+                    <select id="filter-skill" onchange="loadLogs()" class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-indigo-500">
+                        <option value="">All Skills</option>
+                        <option value="generate-mapstate">Generate Map</option>
+                        <option value="generate-web-mapstate">Generate Web</option>
+                        <option value="edit-mapstate">Edit Map</option>
+                        <option value="analyze-mapstate">Analyze Map</option>
+                        <option value="faq">FAQ</option>
+                        <option value="out-of-scope">Out of Scope</option>
+                    </select>
+                </div>
+                <div class="flex flex-col gap-1 min-w-[200px]">
+                    <label class="text-[10px] text-slate-400 uppercase font-black tracking-wider">User / UID</label>
+                    <input type="text" id="filter-uid" placeholder="Filter by User UID" oninput="loadLogs()" class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-indigo-500">
+                </div>
+                <div class="flex items-center gap-2 mt-4">
+                    <input type="checkbox" id="filter-golden" onchange="loadLogs()" class="w-4 h-4 accent-indigo-500 bg-slate-950 border-slate-800 rounded cursor-pointer">
+                    <label for="filter-golden" class="text-xs text-slate-300 font-bold select-none cursor-pointer">⭐ Golden Prompts Only</label>
+                </div>
+                
+                <!-- Log Source Filter -->
+                <div class="flex items-center gap-4 mt-4 ml-6">
+                    <div class="flex items-center gap-2">
+                        <input type="checkbox" id="source-local" checked onchange="loadLogs()" class="w-4 h-4 accent-indigo-500 bg-slate-950 border-slate-800 rounded cursor-pointer">
+                        <label for="source-local" class="text-xs text-slate-300 font-bold select-none cursor-pointer">Local Logs</label>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <input type="checkbox" id="source-cloud" checked onchange="loadLogs()" class="w-4 h-4 accent-indigo-500 bg-slate-950 border-slate-800 rounded cursor-pointer">
+                        <label for="source-cloud" class="text-xs text-slate-300 font-bold select-none cursor-pointer">Cloud Logs</label>
+                    </div>
+                </div>
+
+                <div class="flex flex-col gap-1 min-w-[100px] ml-auto">
+                    <label class="text-[10px] text-slate-400 uppercase font-black tracking-wider">Count Limit</label>
+                    <select id="filter-limit" onchange="loadLogs()" class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-indigo-500">
+                        <option value="25">25 logs</option>
+                        <option value="50" selected>50 logs</option>
+                        <option value="100">100 logs</option>
+                    </select>
                 </div>
             </section>
 
-            <!-- Right Side: Details & Side-by-Side Comparison -->
-            <section id="detail-panel" class="w-[500px] glass rounded-2xl p-6 shadow-xl flex flex-col gap-6 overflow-y-auto hidden">
-                <!-- Detailed info header -->
-                <div class="flex justify-between items-start border-b border-slate-800 pb-4">
-                    <div>
-                        <span id="detail-skill" class="px-2 py-0.5 bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 rounded text-[10px] font-bold uppercase tracking-wider">SKILL</span>
-                        <div id="detail-time" class="text-xs text-slate-400 mt-2 font-medium">Timestamp</div>
-                        <div id="detail-uid" class="text-[11px] text-slate-500 font-mono mt-1 truncate max-w-[350px]">UID: 123</div>
+            <!-- Main Workspace -->
+            <div class="flex flex-1 gap-6 min-h-0 overflow-hidden pb-4">
+                
+                <!-- Left Side: Logs Table -->
+                <section class="glass flex-1 rounded-2xl overflow-hidden flex flex-col shadow-xl">
+                    <div class="flex-1 overflow-y-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead class="sticky top-0 bg-slate-950/80 backdrop-blur-md border-b border-slate-800/80 z-10">
+                                <tr class="text-[10px] text-slate-400 uppercase font-bold tracking-wider">
+                                    <th class="p-4">Time</th>
+                                    <th class="p-4">Source</th>
+                                    <th class="p-4">User Status</th>
+                                    <th class="p-4">Skill</th>
+                                    <th class="p-4">Prompt</th>
+                                    <th class="p-4 text-center">Tokens</th>
+                                    <th class="p-4 text-center">Latency</th>
+                                    <th class="p-4 text-center">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="logs-body">
+                                <!-- Populated dynamically -->
+                                <tr>
+                                    <td colspan="8" class="p-8 text-center text-slate-500 text-xs italic">Loading logs...</td>
+                                </tr>
+                            </tbody>
+                        </table>
                     </div>
-                    <button id="btn-toggle-golden" onclick="toggleGoldenStatus()" class="px-3 py-1.5 border rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all">
-                        ⭐ Mark Golden
-                    </button>
-                </div>
+                </section>
 
-                <!-- Prompt Section -->
-                <div>
-                    <h3 class="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Prompt</h3>
-                    <div id="detail-prompt" class="bg-slate-950 border border-slate-800/50 rounded-xl p-3 text-xs font-mono whitespace-pre-wrap max-h-[120px] overflow-y-auto leading-relaxed text-slate-300"></div>
-                </div>
-
-                <!-- Responses Section -->
-                <div class="flex flex-col gap-4 flex-1">
-                    <div class="flex justify-between items-center">
-                        <h3 class="text-xs font-black text-slate-400 uppercase tracking-widest">Response Comparison</h3>
-                        <button id="btn-replay" onclick="replayPrompt()" class="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-all shadow-[0_0_10px_rgba(16,185,129,0.3)]">
-                            ⚡ Replay Prompt
+                <!-- Right Side: Details & Side-by-Side Comparison -->
+                <section id="detail-panel" class="w-[500px] glass rounded-2xl p-6 shadow-xl flex flex-col gap-6 overflow-y-auto hidden">
+                    <!-- Detailed info header -->
+                    <div class="flex justify-between items-start border-b border-slate-800 pb-4">
+                        <div>
+                            <span id="detail-skill" class="px-2 py-0.5 bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 rounded text-[10px] font-bold uppercase tracking-wider">SKILL</span>
+                            <div id="detail-time" class="text-xs text-slate-400 mt-2 font-medium">Timestamp</div>
+                            <div id="detail-uid" class="text-[11px] text-slate-500 font-mono mt-1 truncate max-w-[350px]">UID: 123</div>
+                        </div>
+                        <button id="btn-toggle-golden" onclick="toggleGoldenStatus()" class="px-3 py-1.5 border rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all">
+                            ⭐ Mark Golden
                         </button>
                     </div>
 
-                    <!-- Tabs/Panels for Comparison -->
-                    <div class="flex-1 flex flex-col gap-3 min-h-0">
-                        <div class="flex border-b border-slate-800 text-xs">
-                            <button id="tab-original" onclick="switchViewTab('original')" class="px-3 py-1.5 border-b-2 border-indigo-500 text-indigo-400 font-bold transition-all">Original</button>
-                            <button id="tab-rerun" onclick="switchViewTab('rerun')" class="px-3 py-1.5 border-b-2 border-transparent text-slate-400 hover:text-slate-300 transition-all hidden">Re-Run Output</button>
-                            <button id="tab-diff" onclick="switchViewTab('diff')" class="px-3 py-1.5 border-b-2 border-transparent text-slate-400 hover:text-slate-300 transition-all hidden">Diff Highlight</button>
+                    <!-- Prompt Section -->
+                    <div>
+                        <h3 class="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Prompt</h3>
+                        <div id="detail-prompt" class="bg-slate-950 border border-slate-800/50 rounded-xl p-3 text-xs font-mono whitespace-pre-wrap max-h-[120px] overflow-y-auto leading-relaxed text-slate-300"></div>
+                    </div>
+
+                    <!-- Responses Section -->
+                    <div class="flex flex-col gap-4 flex-1">
+                        <div class="flex justify-between items-center">
+                            <h3 class="text-xs font-black text-slate-400 uppercase tracking-widest">Response Comparison</h3>
+                            <button id="btn-replay" onclick="replayPrompt()" class="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-all shadow-[0_0_10px_rgba(16,185,129,0.3)]">
+                                ⚡ Replay Prompt
+                            </button>
                         </div>
 
-                        <!-- Viewer containers -->
-                        <div class="flex-1 min-h-[200px] bg-slate-950 border border-slate-800 rounded-xl overflow-hidden flex flex-col font-mono text-[11px] leading-relaxed">
-                            <div id="panel-original" class="p-3 overflow-y-auto flex-1 h-full text-emerald-400 whitespace-pre-wrap"></div>
-                            <div id="panel-rerun" class="p-3 overflow-y-auto flex-1 h-full text-cyan-400 whitespace-pre-wrap hidden"></div>
-                            <div id="panel-diff" class="p-3 overflow-y-auto flex-1 h-full whitespace-pre-wrap hidden"></div>
+                        <!-- Tabs/Panels for Comparison -->
+                        <div class="flex-1 flex flex-col gap-3 min-h-0">
+                            <div class="flex border-b border-slate-800 text-xs">
+                                <button id="tab-original" onclick="switchViewTab('original')" class="px-3 py-1.5 border-b-2 border-indigo-500 text-indigo-400 font-bold transition-all">Original</button>
+                                <button id="tab-rerun" onclick="switchViewTab('rerun')" class="px-3 py-1.5 border-b-2 border-transparent text-slate-400 hover:text-slate-300 transition-all hidden">Re-Run Output</button>
+                                <button id="tab-diff" onclick="switchViewTab('diff')" class="px-3 py-1.5 border-b-2 border-transparent text-slate-400 hover:text-slate-300 transition-all hidden">Diff Highlight</button>
+                            </div>
+
+                            <!-- Viewer containers -->
+                            <div class="flex-1 min-h-[200px] bg-slate-950 border border-slate-800 rounded-xl overflow-hidden flex flex-col font-mono text-[11px] leading-relaxed">
+                                <div id="panel-original" class="p-3 overflow-y-auto flex-1 h-full text-emerald-400 whitespace-pre-wrap"></div>
+                                <div id="panel-rerun" class="p-3 overflow-y-auto flex-1 h-full text-cyan-400 whitespace-pre-wrap hidden"></div>
+                                <div id="panel-diff" class="p-3 overflow-y-auto flex-1 h-full whitespace-pre-wrap hidden"></div>
+                            </div>
                         </div>
                     </div>
+                </section>
+            </div>
+        </div>
+
+        <!-- Telemetry Tab Content -->
+        <div id="telemetry-tab-content" class="flex flex-col flex-1 gap-6 min-h-0 hidden">
+            <!-- Telemetry Filter Bar -->
+            <section class="glass p-4 rounded-2xl flex flex-wrap items-center gap-4 shrink-0 shadow-lg">
+                <div class="flex flex-col gap-1 min-w-[200px]">
+                    <label class="text-[10px] text-slate-400 uppercase font-black tracking-wider">Log Type</label>
+                    <select id="telemetry-filter-type" onchange="loadTelemetryLogs()" class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-indigo-500">
+                        <option value="">All Types</option>
+                        <option value="feedback">User Feedback / Bugs</option>
+                        <option value="error">Errors / Exceptions</option>
+                        <option value="telemetry">System Events</option>
+                    </select>
+                </div>
+                <div class="flex flex-col gap-1 min-w-[200px]">
+                    <label class="text-[10px] text-slate-400 uppercase font-black tracking-wider">User / UID</label>
+                    <input type="text" id="telemetry-filter-uid" placeholder="Filter by User UID" oninput="loadTelemetryLogs()" class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-indigo-500">
+                </div>
+                
+                <!-- Log Source Filter -->
+                <div class="flex items-center gap-4 mt-4 ml-6">
+                    <div class="flex items-center gap-2">
+                        <input type="checkbox" id="telemetry-source-local" checked onchange="loadTelemetryLogs()" class="w-4 h-4 accent-indigo-500 bg-slate-950 border-slate-800 rounded cursor-pointer">
+                        <label for="telemetry-source-local" class="text-xs text-slate-300 font-bold select-none cursor-pointer">Local Logs</label>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <input type="checkbox" id="telemetry-source-cloud" checked onchange="loadTelemetryLogs()" class="w-4 h-4 accent-indigo-500 bg-slate-950 border-slate-800 rounded cursor-pointer">
+                        <label for="telemetry-source-cloud" class="text-xs text-slate-300 font-bold select-none cursor-pointer">Cloud Logs</label>
+                    </div>
+                </div>
+
+                <div class="flex flex-col gap-1 min-w-[100px] ml-auto">
+                    <label class="text-[10px] text-slate-400 uppercase font-black tracking-wider">Count Limit</label>
+                    <select id="telemetry-filter-limit" onchange="loadTelemetryLogs()" class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-indigo-500">
+                        <option value="25">25 logs</option>
+                        <option value="50" selected>50 logs</option>
+                        <option value="100">100 logs</option>
+                    </select>
                 </div>
             </section>
+
+            <!-- Telemetry Logs Workspace -->
+            <div class="flex flex-1 gap-6 min-h-0 overflow-hidden pb-4">
+                <!-- Left: Telemetry Table -->
+                <section class="glass flex-1 rounded-2xl overflow-hidden flex flex-col shadow-xl">
+                    <div class="flex-1 overflow-y-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead class="sticky top-0 bg-slate-950/80 backdrop-blur-md border-b border-slate-800/80 z-10">
+                                <tr class="text-[10px] text-slate-400 uppercase font-bold tracking-wider">
+                                    <th class="p-4">Time</th>
+                                    <th class="p-4">Source</th>
+                                    <th class="p-4">Type</th>
+                                    <th class="p-4">Action / Event</th>
+                                    <th class="p-4">Map ID</th>
+                                    <th class="p-4">User Details / Email</th>
+                                    <th class="p-4">Message / Error</th>
+                                </tr>
+                            </thead>
+                            <tbody id="telemetry-logs-body">
+                                <tr>
+                                    <td colspan="7" class="p-8 text-center text-slate-500 text-xs italic">Loading telemetry...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- Right: Details Panel -->
+                <section id="telemetry-detail-panel" class="w-[500px] glass rounded-2xl p-6 shadow-xl flex flex-col gap-6 overflow-y-auto hidden">
+                    <div class="flex justify-between items-start border-b border-slate-800 pb-4">
+                        <div>
+                            <span id="telemetry-detail-type" class="px-2 py-0.5 bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 rounded text-[10px] font-bold uppercase tracking-wider">TYPE</span>
+                            <div id="telemetry-detail-time" class="text-xs text-slate-400 mt-2 font-medium">Timestamp</div>
+                            <div id="telemetry-detail-uid" class="text-[11px] text-slate-500 font-mono mt-1 truncate max-w-[350px]">UID: anonymous</div>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <h3 class="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Event Action</h3>
+                        <div id="telemetry-detail-action" class="text-sm font-bold text-slate-200">session_end</div>
+                    </div>
+
+                    <div id="telemetry-detail-message-container" class="hidden">
+                        <h3 class="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">User Message / Feedback</h3>
+                        <div id="telemetry-detail-message" class="bg-indigo-950/20 border border-indigo-500/30 rounded-xl p-3 text-xs text-indigo-300 whitespace-pre-wrap leading-relaxed"></div>
+                    </div>
+
+                    <div id="telemetry-detail-email-container" class="hidden">
+                        <h3 class="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Contact Email</h3>
+                        <div id="telemetry-detail-email" class="text-xs text-slate-350 font-mono"></div>
+                    </div>
+
+                    <div>
+                        <h3 class="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Metadata Details</h3>
+                        <pre id="telemetry-detail-json" class="bg-slate-950 border border-slate-800 rounded-xl p-3 text-[11px] font-mono text-cyan-400 overflow-x-auto max-h-[300px] overflow-y-auto"></pre>
+                    </div>
+                </section>
+            </div>
         </div>
     </div>
 
@@ -190,10 +318,65 @@
         let activeTab = 'original';
 
         // Auto-detect Local Cloud Function Endpoint
-        const getBaseUrl = () => {
-            const projectId = "mm-multi-map";
-            return `http://127.0.0.1:5001/${projectId}/us-central1/generateMapState`;
+        const getEndpoints = () => {
+            const list = [];
+            const prodUrl = "https://us-central1-mm-multi-map.cloudfunctions.net/generateMapState";
+            const localUrl = "http://127.0.0.1:5001/mm-multi-map/us-central1/generateMapState";
+            
+            const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+            
+            if (isLocal) {
+                list.push({ name: 'Local', url: localUrl });
+                list.push({ name: 'Cloud', url: prodUrl });
+            } else {
+                list.push({ name: 'Cloud', url: prodUrl });
+                // Disable local filters if in production
+                const localFilter = document.getElementById('source-local');
+                if (localFilter) {
+                    localFilter.checked = false;
+                    localFilter.disabled = true;
+                    localFilter.parentElement.style.opacity = '0.5';
+                }
+                const telLocalFilter = document.getElementById('telemetry-source-local');
+                if (telLocalFilter) {
+                    telLocalFilter.checked = false;
+                    telLocalFilter.disabled = true;
+                    telLocalFilter.parentElement.style.opacity = '0.5';
+                }
+            }
+            return list;
         };
+
+        const getBaseUrlForSource = (source) => {
+            const prodUrl = "https://us-central1-mm-multi-map.cloudfunctions.net/generateMapState";
+            const localUrl = "http://127.0.0.1:5001/mm-multi-map/us-central1/generateMapState";
+            return source === 'Local' ? localUrl : prodUrl;
+        };
+
+        function switchMainDashboardTab(tab) {
+            const aiTab = document.getElementById('ai-tab-content');
+            const telTab = document.getElementById('telemetry-tab-content');
+            const aiBtn = document.getElementById('tab-btn-ai');
+            const telBtn = document.getElementById('tab-btn-telemetry');
+
+            if (tab === 'ai') {
+                aiTab.classList.remove('hidden');
+                telTab.classList.add('hidden');
+                aiBtn.classList.add('border-indigo-500', 'text-indigo-400');
+                aiBtn.classList.remove('border-transparent', 'text-slate-400');
+                telBtn.classList.add('border-transparent', 'text-slate-400');
+                telBtn.classList.remove('border-indigo-500', 'text-indigo-400');
+                loadLogs();
+            } else {
+                aiTab.classList.add('hidden');
+                telTab.classList.remove('hidden');
+                telBtn.classList.add('border-indigo-500', 'text-indigo-400');
+                telBtn.classList.remove('border-transparent', 'text-slate-400');
+                aiBtn.classList.add('border-transparent', 'text-slate-400');
+                aiBtn.classList.remove('border-indigo-500', 'text-indigo-400');
+                loadTelemetryLogs();
+            }
+        }
 
         // Format relative timestamp
         function formatRelativeTime(isoString) {
@@ -218,20 +401,40 @@
             const isGolden = document.getElementById('filter-golden').checked;
             const limit = document.getElementById('filter-limit').value;
 
+            const showLocal = document.getElementById('source-local')?.checked ?? false;
+            const showCloud = document.getElementById('source-cloud')?.checked ?? true;
+
             let query = `?limit=${limit}`;
             if (skill) query += `&skill=${skill}`;
             if (uid) query += `&uid=${uid}`;
             if (isGolden) query += `&is_golden=true`;
 
+            const endpoints = getEndpoints();
+            const fetchPromises = endpoints.map(async (ep) => {
+                if (ep.name === 'Local' && !showLocal) return [];
+                if (ep.name === 'Cloud' && !showCloud) return [];
+
+                try {
+                    const res = await fetch(`${ep.url}/admin/logs${query}`);
+                    if (!res.ok) return [];
+                    const data = await res.json();
+                    return (data.logs || []).map(log => ({ ...log, source: ep.name }));
+                } catch (e) {
+                    console.warn(`Failed to fetch from ${ep.name}:`, e);
+                    return [];
+                }
+            });
+
             try {
-                const res = await fetch(`${getBaseUrl()}/admin/logs${query}`);
-                if (!res.ok) throw new Error(`API Error ${res.status}`);
+                const results = await Promise.all(fetchPromises);
+                currentLogs = results.flat();
                 
-                const data = await res.json();
-                currentLogs = data.logs || [];
+                // Sort by timestamp descending
+                currentLogs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+                currentLogs = currentLogs.slice(0, Number(limit));
 
                 if (currentLogs.length === 0) {
-                    logsBody.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-slate-500 text-xs italic">No matching logs found.</td></tr>`;
+                    logsBody.innerHTML = `<tr><td colspan="8" class="p-8 text-center text-slate-500 text-xs italic">No matching logs found.</td></tr>`;
                     return;
                 }
 
@@ -246,10 +449,14 @@
 
                     const promptSnippet = log.prompt.length > 55 ? log.prompt.substring(0, 52) + '...' : log.prompt;
                     const goldenStar = log.is_golden ? '⭐ ' : '';
+                    const sourceBadgeClass = log.source === 'Local' ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-400' : 'bg-purple-500/10 border-purple-500/30 text-purple-400';
 
                     return `
                         <tr onclick="selectLog('${log.id}')" class="border-b border-slate-900/60 hover:bg-indigo-600/5 cursor-pointer transition-colors text-xs text-slate-300">
                             <td class="p-4 whitespace-nowrap text-slate-400">${formatRelativeTime(log.timestamp)}</td>
+                            <td class="p-4 whitespace-nowrap">
+                                <span class="px-2 py-0.5 border rounded text-[10px] font-bold ${sourceBadgeClass}">${log.source}</span>
+                            </td>
                             <td class="p-4 whitespace-nowrap">
                                 <span class="px-2 py-0.5 border rounded text-[10px] font-bold ${userTagClass}">${userLabel}</span>
                             </td>
@@ -266,7 +473,7 @@
 
             } catch (err) {
                 console.error(err);
-                logsBody.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-rose-400 border border-rose-950/20 bg-rose-950/10 text-xs italic">Failed to load logs: ${err.message}</td></tr>`;
+                logsBody.innerHTML = `<tr><td colspan="8" class="p-8 text-center text-rose-450 border border-rose-950/20 bg-rose-950/10 text-xs italic">Failed to load logs: ${err.message}</td></tr>`;
             }
         }
 
@@ -317,9 +524,10 @@
         async function toggleGoldenStatus() {
             if (!selectedLog) return;
             const newGoldenState = !selectedLog.is_golden;
+            const baseUrl = getBaseUrlForSource(selectedLog.source);
 
             try {
-                const res = await fetch(`${getBaseUrl()}/admin/golden`, {
+                const res = await fetch(`${baseUrl}/admin/golden`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ logId: selectedLog.id, isGolden: newGoldenState })
@@ -329,20 +537,142 @@
                 selectedLog.is_golden = newGoldenState;
                 updateGoldenButtonUI(newGoldenState);
                 
-                // Refresh logs list without resetting details view
                 const index = currentLogs.findIndex(l => l.id === selectedLog.id);
                 if (index !== -1) currentLogs[index].is_golden = newGoldenState;
                 
-                // Re-render rows to update indicators
                 loadLogs();
             } catch (e) {
                 alert(`Error: ${e.message}`);
             }
         }
 
+        let currentTelemetryLogs = [];
+
+        async function loadTelemetryLogs() {
+            const body = document.getElementById('telemetry-logs-body');
+            
+            const type = document.getElementById('telemetry-filter-type').value;
+            const uid = document.getElementById('telemetry-filter-uid').value;
+            const limit = document.getElementById('telemetry-filter-limit').value;
+
+            const showLocal = document.getElementById('telemetry-source-local')?.checked ?? false;
+            const showCloud = document.getElementById('telemetry-source-cloud')?.checked ?? true;
+
+            let query = `?limit=${limit}`;
+            if (type) query += `&type=${type}`;
+            if (uid) query += `&uid=${uid}`;
+
+            const endpoints = getEndpoints();
+            const fetchPromises = endpoints.map(async (ep) => {
+                if (ep.name === 'Local' && !showLocal) return [];
+                if (ep.name === 'Cloud' && !showCloud) return [];
+
+                try {
+                    const res = await fetch(`${ep.url}/admin/telemetry${query}`);
+                    if (!res.ok) return [];
+                    const data = await res.json();
+                    return (data.logs || []).map(log => ({ ...log, source: ep.name }));
+                } catch (e) {
+                    console.warn(`Failed to fetch telemetry from ${ep.name}:`, e);
+                    return [];
+                }
+            });
+
+            try {
+                const results = await Promise.all(fetchPromises);
+                currentTelemetryLogs = results.flat();
+                
+                currentTelemetryLogs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+                currentTelemetryLogs = currentTelemetryLogs.slice(0, Number(limit));
+
+                if (currentTelemetryLogs.length === 0) {
+                    body.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-slate-500 text-xs italic">No matching telemetry logs found.</td></tr>`;
+                    return;
+                }
+
+                body.innerHTML = currentTelemetryLogs.map(log => {
+                    const timeStr = formatRelativeTime(log.timestamp);
+                    const sourceBadgeClass = log.source === 'Local' ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-400' : 'bg-purple-500/10 border-purple-500/30 text-purple-400';
+                    
+                    let typeBadgeClass = 'bg-slate-800 text-slate-400 border-slate-700';
+                    if (log.type === 'feedback') typeBadgeClass = 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 font-bold';
+                    if (log.type === 'error') typeBadgeClass = 'bg-rose-500/10 border-rose-500/30 text-rose-400 font-bold';
+
+                    const actionText = log.action || 'event';
+                    const mapIdText = log.map_id || '-';
+                    const userText = log.contact_email ? `${log.uid} (${log.contact_email})` : log.uid;
+
+                    let msgSnippet = log.message || '';
+                    if (log.error && typeof log.error === 'object') msgSnippet = log.error.message || JSON.stringify(log.error);
+                    else if (log.error) msgSnippet = String(log.error);
+
+                    if (msgSnippet.length > 55) msgSnippet = msgSnippet.substring(0, 52) + '...';
+
+                    return `
+                        <tr onclick="selectTelemetryLog('${log.id}')" class="border-b border-slate-900/60 hover:bg-indigo-600/5 cursor-pointer transition-colors text-xs text-slate-300">
+                            <td class="p-4 whitespace-nowrap text-slate-400">${timeStr}</td>
+                            <td class="p-4 whitespace-nowrap">
+                                <span class="px-2 py-0.5 border rounded text-[10px] font-bold ${sourceBadgeClass}">${log.source}</span>
+                            </td>
+                            <td class="p-4 whitespace-nowrap">
+                                <span class="px-2 py-0.5 border rounded text-[10px] font-bold uppercase ${typeBadgeClass}">${log.type}</span>
+                            </td>
+                            <td class="p-4 whitespace-nowrap font-semibold text-slate-200">${actionText}</td>
+                            <td class="p-4 font-mono truncate max-w-[120px]" title="${log.map_id}">${mapIdText}</td>
+                            <td class="p-4 truncate max-w-[180px]" title="${userText}">${userText}</td>
+                            <td class="p-4 truncate max-w-[250px]" title="${log.message || ''}">${msgSnippet}</td>
+                        </tr>
+                    `;
+                }).join('');
+            } catch (err) {
+                console.error("Failed to load telemetry logs:", err);
+                body.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-rose-500 text-xs italic">Failed to load telemetry: ${err.message}</td></tr>`;
+            }
+        }
+
+        function selectTelemetryLog(id) {
+            const log = currentTelemetryLogs.find(l => l.id === id);
+            if (!log) return;
+
+            const panel = document.getElementById('telemetry-detail-panel');
+            panel.classList.remove('hidden');
+
+            document.getElementById('telemetry-detail-type').innerText = log.type;
+            document.getElementById('telemetry-detail-time').innerText = new Date(log.timestamp).toLocaleString();
+            document.getElementById('telemetry-detail-uid').innerText = `UID: ${log.uid}`;
+            document.getElementById('telemetry-detail-action').innerText = log.action || 'unknown';
+
+            // Handle optional message
+            const msgContainer = document.getElementById('telemetry-detail-message-container');
+            const msgEl = document.getElementById('telemetry-detail-message');
+            if (log.message) {
+                msgContainer.classList.remove('hidden');
+                msgEl.innerText = log.message;
+            } else if (log.error) {
+                msgContainer.classList.remove('hidden');
+                msgEl.innerText = typeof log.error === 'object' ? JSON.stringify(log.error, null, 2) : String(log.error);
+            } else {
+                msgContainer.classList.add('hidden');
+            }
+
+            // Handle optional email
+            const emailContainer = document.getElementById('telemetry-detail-email-container');
+            const emailEl = document.getElementById('telemetry-detail-email');
+            if (log.contact_email) {
+                emailContainer.classList.remove('hidden');
+                emailEl.innerText = log.contact_email;
+            } else {
+                emailContainer.classList.add('hidden');
+            }
+
+            // Handle JSON details
+            document.getElementById('telemetry-detail-json').innerText = JSON.stringify(log.details || {}, null, 2);
+        }
+
         // Replay prompt against live model
         async function replayPrompt() {
             if (!selectedLog) return;
+            const baseUrl = getBaseUrlForSource(selectedLog.source);
 
             const btn = document.getElementById('btn-replay');
             const originalText = btn.innerText;
@@ -350,7 +680,7 @@
             btn.disabled = true;
 
             try {
-                const res = await fetch(`${getBaseUrl()}/admin/replay`, {
+                const res = await fetch(`${baseUrl}/admin/replay`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({

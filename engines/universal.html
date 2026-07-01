@@ -32,8 +32,43 @@
                 currentState = event.data.state;
                 activeHighlight = event.data.highlight || null;
                 render();
+            } else if (event.data && event.data.type === 'FOCUS_TITLE') {
+                const el = document.getElementById('edit-title');
+                if (el) {
+                    el.focus();
+                    el.select();
+                }
             }
         });
+
+        window.addEventListener('keydown', (e) => {
+            const target = e.target;
+            const isEditable = target.tagName === 'INPUT' || 
+                               target.tagName === 'TEXTAREA' || 
+                               target.isContentEditable || 
+                               target.closest('[contenteditable="true"]');
+            
+            // Allow Escape and Enter keys to propagate even if inside input (to close overlays or spawn siblings)
+            if (e.key === 'Escape' || e.key === 'Enter' || !isEditable) {
+                if (['Escape', 'Tab', 'Enter', ' ', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Delete'].includes(e.key)) {
+                    if (e.key === 'Enter' && isEditable) {
+                        target.blur();
+                    }
+                    if (e.key !== 'Escape') {
+                        e.preventDefault();
+                    }
+                    window.parent.postMessage({
+                        type: 'mm-keydown',
+                        key: e.key,
+                        shiftKey: e.shiftKey,
+                        ctrlKey: e.ctrlKey,
+                        metaKey: e.metaKey
+                    }, '*');
+                }
+            }
+        });
+
+
 
         // Communication helpers
         function notifyUpdate(id, partialData) {

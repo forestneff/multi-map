@@ -1,12 +1,14 @@
 ### Multi Map — Feature TODO
 
+### Consult the how-todo skill for instructions for reading this file. 
+
 - A living document for proposed features, improvements, and design intentions.
 - Add items freely. Expand into detail before implementation.
 - Items are ordered by dependency and recommended execution sequence.
 
 ---
 
-### [ ] Phase 1: The Data & Identity Layer
+### [x] Phase 1: The Data & Identity Layer
 - Agent Context: firestore.rules, multi-map-core.js (data manager), multi-map-library.js, auth.js, Firebase Admin functions.
 
 ### [x] 1. Guest-to-Auth Data Migration
@@ -45,7 +47,17 @@
 
 ---
 
-### [ ] 4. AI Telemetry & Automated Feedback
+### [x] 4. Standard Keyboard Editing
+- Intent: Implement standard mind-map keyboard shortcuts for rapid, mouse-free node creation and navigation.
+- Details:
+  - Bind these to the main global keydown event listener in multi-map-core.js.
+  - Tab: Trigger existing addChildNode() logic attached to the currently selected node and automatically focus it for text entry.
+  - Enter: Trigger existing addSiblingNode() logic at the same hierarchical level as the currently selected node and automatically focus it for text entry.
+  - Arrow Keys (Up/Down/Left/Right): Navigate node selection along branches based on spatial and hierarchical relationships.
+
+---
+
+### [x] 5. AI Telemetry & Automated Feedback
 - Intent: Capture user friction and bug reports directly via the AI widget to improve agentic workflows and pinpoint engine errors.
 - Details:
   - Create a structured feedback and error schema in Firestore. Ensure firestore.rules permits users to write to this log collection.
@@ -60,7 +72,7 @@
 
 ---
 
-### [ ] 5. Smart Roots
+### [ ] 6. Smart Roots
 - Intent: Upgrade root nodes so they contain structured metadata for their maps that they can easily pass to portals that call them or that exist within them.
 - Specification: feature-specs/smart-roots-spec.md
 - Details:
@@ -70,7 +82,7 @@
 
 ---
 
-### [ ] 6. Dynamic Portals
+### [ ] 7. Dynamic Portals
 - Intent: Deprecate the bespoke "smart portal" and make all portals dynamic, data-driven endpoints that utilize the new Smart Root metadata natively within the host map.
 - Specification: feature-specs/dynamic-portals-spec.md
 - Details:
@@ -82,7 +94,7 @@
 
 ---
 
-### [ ] 7. Flowchart Maptype
+### [ ] 8. Flowchart Maptype
 - Intent: Introduce a dedicated maptype designed specifically for plotting logic flows, workflow automation, and state machines (useful for the agent-root sub-components, timelines, and project design).
 - Specification: feature-specs/flowchart-spec.md
 - Details:  
@@ -91,7 +103,7 @@
 
 ---
 
-### [ ] 8. Expand Prompt-Root and Agent-Root Ecosystems
+### [ ] 9. Expand Prompt-Root and Agent-Root Ecosystems
 - Intent: Utilize the map-native interface to design and build structured, complex, high-quality prompts and agent architectures that can then be exported for use with external LLMs/Agentic Systems (like Antigravity).
 - Specification: feature-specs/prompt-root-spec.md & feature-specs/agent-root-spec.md
 - Details:
@@ -105,7 +117,7 @@
 
 ---
 
-### [ ] 9. File-Root Maptype & Local File System Explorer
+### [ ] 10. File-Root Maptype & Local File System Explorer
 - Intent: Create a map-native local file-system explorer for seamless local file management within Multi-Map.
 - Specification: feature-specs/file-root-spec.md
 - Details:
@@ -115,7 +127,7 @@
 
 ---
 
-### [ ] 10. Third-Party Cloud Storage Integrations
+### [ ] 11. Third-Party Cloud Storage Integrations
 - Intent: Extend the file system mapping capabilities to interact with external cloud drives.
 - Specification: feature-specs/third-party-cloud-spec.md
 - Details:
@@ -124,7 +136,7 @@
 
 ---
 
-### [ ] 11. Launch True Federation (WebRTC + CRDTs)
+### [ ] 12. Launch True Federation (WebRTC + CRDTs)
 - Intent: Transition Multi-Map from a centralized Firebase payload host to a true peer-to-peer (P2P) federated network, relegating Firebase strictly to an identity and WebRTC signaling switchboard.
 - Specification: feature-specs/launch-federation-spec.md
 - Details:
@@ -140,16 +152,6 @@
 
 ### [ ] Phase 3: Core Mechanics & Interaction Stability
 - Agent Context: multi-map-core.js, multi-map-rules.js, Keyboard event listeners, functions/index.js.
-
----
-
-### [ ] 12. Standard Keyboard Editing
-- Intent: Implement standard mind-map keyboard shortcuts for rapid, mouse-free node creation and navigation.
-- Details:
-  - Bind these to the main global keydown event listener in multi-map-core.js.
-  - Tab: Trigger existing addChildNode() logic attached to the currently selected node and automatically focus it for text entry.
-  - Enter: Trigger existing addSiblingNode() logic at the same hierarchical level as the currently selected node and automatically focus it for text entry.
-  - Arrow Keys (Up/Down/Left/Right): Navigate node selection along branches based on spatial and hierarchical relationships.
 
 ---
 
@@ -222,16 +224,36 @@
 
 ### Notes:
 
-1. Allow guest users to share their maps, simply publish them to firestore as anon links. 
 
-2. Change "Save Submap" radial menu button to "Clip". Remains more or less as is but clips the branch from the parent map to a new page and replaces the selected node w/ a portal that points to that page where the cliped branch is preserved, using the original node as the root. *Remove "Clip" button from root and portal radials, do not allow clipping of root, do not allow clipping of nodes that are themselves portals.
+1. Add to TODO workflow: Add "Cloud Sync" button to projects and pages (projects syncing applies to all project pages) for projects/pages from local vaults. When a project or page is marked for cloud sync, add it to the cloud vault (firestore for now, BYO-storage later). Respect user quota. Add an "All Vaults" option to Data Vault dropdown that shows all available projects sorted by category (local only, local cloud synced, cloud only). (Skip for now or scaffold only, will evolve naturally out of related features and cloud tasks)
 
-3. When a right drawer is open, clicking in viewport (ouside of drawer) should close profile or data drawer (not inspector).
+2. Refine cascading enter-portal behavior (when a portal's target has a specified smart button behavior). Smart button overhaul, sometimes options? Related: Dynamic loading of phase engines when maps contain portals to associated types. (save for dynamic portal task)
 
-4. Add "Cloud Sync" button to projects and pages (projects that are synced auto-sync all project pages) for projects/pages from non-cloud vaults. When a project or page is marked for cloud sync, add it to the cloud sync vault. Respect user quota. Add an "All Vaults" option to Data Vault dropdown that shows all available projects sorted by category (local, cloud sync, cloud only) - local projects and cloud synced projects shown in local vaults, cloud only projects shown in cloud vaults, same project won't show up in both. Cloud vault should show both local cloud synced and cloud only projects.
+3. All project pages should auto-spawn a portal at their root linking back to the project directory master map that we are now spawning w/ project creation, that map should consist entirely of portals to those pages (+ hubs for sorting). Set the default child type for these special file-root-master maps to portal. (save for file-root expansion task)
 
-5. While we're in the auth stuff, let's address the special case for the production site where I am signed in. Let's add an admin user tier with no quotas/restrictions and special access. To start out with, I need access to the admin.html, so the interface should update to give me a button in my profile drawer that links there. Only admin accounts get this button. How can we set up my Google acount to be an admin account?
+4. I am consistently getting raw html in the web phase engine viewport from the AI web-type generator maps. We may need to update the web type ai skill. 
+eg:
+Prompt: "Please generate a website that gives an overview of the Multi-Map platform"
+Returns: (snippet below copied from web phase engine viewport)
+###
+Key Features
+Visual Knowledge Mapping
+<div class='bg-slate-800 bg-opacity-70 backdrop-blur-sm rounded-xl p-8 shadow-xl border border-slate-700 transform hover:scale-105 transition-all duration-300 group'>
+<div class='text-5xl text-purple-400 mb-6 group-hover:text-pink-400 transition-colors duration-300'>&#128279;</div>
+<h3 class='text-3xl font-bold mb-4 text-transparent bg-clip-text bg-gradient-to-r from-purple-300 to-pink-400'>Visual Knowledge Mapping</h3>
+<p class='text-slate-300 leading-relaxed'>Connect ideas, projects, and data points in an intuitive, interactive map. See relationships and dependencies at a glance.</p>
+</div>
 
-6. Extract the rename tool button from the page actions toolbar and place it directly next to the title of the page. Extract download, copy, and share, and delete buttons from that same toolbar into a dropdown w/ a tools icon button to open it. Keep the "load" tool at the top level leftmost as is, place the "tools" button to the right of it. Consider parent card overflow rules so that the dropdown renders correctly (on top as we did w/ the asset import project selection dropdown).
+AI-Powered Web Generation
+<div class='bg-slate-800 bg-opacity-70 backdrop-blur-sm rounded-xl p-8 shadow-xl border border-slate-700 transform hover:scale-105 transition-all duration-300 group'>
+<div class='text-5xl text-pink-400 mb-6 group-hover:text-purple-400 transition-colors duration-300'>&#128187;</div>
+<h3 class='text-3xl font-bold mb-4 text-transparent bg-clip-text bg-gradient-to-r from-pink-300 to-purple-400'>AI-Powered Web Generation</h3>
+<p class='text-slate-300 leading-relaxed'>Generate stunning, responsive websites and dashboards directly from your map nodes with advanced AI assistance.</p>
+</div>
+###
+(save for AI telemetry/uesr feedback task), integrate into admin page for easy viewing by admin accounts.
 
-7. Data manager workspace library visible but not populating (empty, doesn't show projects/pages but does allow them to be created) when vault set to cloud. 
+5. Move item 12 (Keyboard integration) to #4 to expidite map testing. Push rest of list.
+
+6. Admin page attemping to load local apps or services (I get an aproveal notification from my os/browser), should expect/use cloud logs, cloud services, etc. 
+(save for AI telemetry/uesr feedback task)
