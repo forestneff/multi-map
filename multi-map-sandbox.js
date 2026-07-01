@@ -42,6 +42,7 @@ class SandboxController {
         this.selectedSmartOptionIdx = 0;
         this.smartButtonOptions = null;
         this._lastSelectedNodeId = null;
+        this.lastMouseMovePos = { x: 0, y: 0 };
         
         // NEW: Tracks what to highlight in the inspector
         this.activeSearchHighlight = null; 
@@ -107,6 +108,9 @@ class SandboxController {
 
         // --- GLOBAL KEYBOARD SHORTCUTS & ESCAPE HANDLER ---
         window.addEventListener('keydown', (e) => this.handleGlobalKeydown(e));
+        window.addEventListener('mousemove', (e) => {
+            this.lastMouseMovePos = { x: e.clientX, y: e.clientY };
+        });
 
         // --- MESSAGE LISTENER (EDIT MODE & KEYDOWN FORWARDING) ---
         window.addEventListener('message', (e) => {
@@ -573,7 +577,7 @@ class SandboxController {
         }
         // Intercept menu if AI Import Mode is active and target is a Smart Portal
         else if (this.aiImportMode) {
-            if (node.type === 'smart-portal') {
+            if (node.type === 'smart-portal' || node.type === 'portal') {
                 actions = [ { icon: '📥', action: 'ResolveAiImport', title: 'Inject AI Data Here' } ];
             } else {
                 actions = [ { icon: '❌', action: 'CancelAiImport', title: 'Cancel AI Import' } ];
@@ -582,9 +586,16 @@ class SandboxController {
             // Normal Operations
             actions = [
                 { icon: '📝', action: 'Edit', title: 'Edit' },
-                { icon: '🔗', action: 'Link', title: linkTitle },
-                { icon: '➕', action: 'AddChild', title: 'Add Child' }
+                { icon: '🔗', action: 'Link', title: linkTitle }
             ];
+            if (!isPortal) {
+                if (node.type === 'flow-decision') {
+                    actions.push({ icon: '✔️', action: 'AddTrueBranch', title: 'Add True Branch' });
+                    actions.push({ icon: '❌', action: 'AddFalseBranch', title: 'Add False Branch' });
+                } else {
+                    actions.push({ icon: '➕', action: 'AddChild', title: 'Add Child' });
+                }
+            }
             if (!isNodeRoot) {
                 actions.push({ icon: '🗑️', action: 'Delete', title: 'Delete Downstream' });
             }
@@ -595,6 +606,15 @@ class SandboxController {
                 actions.push({ icon: '👆', action: 'SelectParent', title: 'Select Parent' });
             }
             if (node.type === 'portal') {
+                const rootMeta = node.content ? this.kernel.getRootMetadata(node.content) : null;
+                const isPromptPortal = rootMeta && (rootMeta.portal_behavior === 'execute_prompt' || this.kernel.isPromptMap(node.content));
+                if (isPromptPortal) {
+                    actions.push({ 
+                        icon: '✨', 
+                        action: 'TriggerAI', 
+                        title: 'Trigger AI' 
+                    });
+                }
                 actions.push({ 
                     icon: node.content ? '🌀' : '🎯', 
                     action: 'EnterPortal', 
@@ -722,6 +742,47 @@ class SandboxController {
             promptStr = node.content || node.title;
         }
 
+        if (node.type === 'portal' && node.content) {
+            const targetMapId = node.content;
+            const lib = this.kernel.getLibrary();
+            const mapData = lib.find(m => m.map_id === targetMapId);
+            if (mapData) {
+                const promptRoot = mapData.nodes.find(n => n.type === 'prompt-root');
+                if (promptRoot) {
+                    const descendants = new Set();
+                    const getChildren = (nid) => mapData.connections.filter(c => c.from === nid).map(c => mapData.nodes.find(n => n.id === c.to)).filter(n => n);
+                    const gather = (n) => {
+                        if (!n || descendants.has(n)) return;
+                        descendants.add(n);
+                        getChildren(n.id).forEach(gather);
+                    };
+                    getChildren(promptRoot.id).forEach(gather);
+                    
+                    const variables = Array.from(descendants).filter(n => n.type === 'prompt-variable');
+                    const varValues = {};
+                    variables.forEach(v => {
+                        const key = v.title.replace(/[^a-zA-Z0-9_]/g, '');
+                        varValues[key] = promptStr;
+                    });
+                    
+                    const compiled = this.kernel.compilePromptMapState(mapData, varValues);
+                    
+                    if (window.AI) {
+                        const chatPanel = document.getElementById('ai-chat-container');
+                        if (chatPanel && chatPanel.classList.contains('translate-y-full')) {
+                            window.AI.toggleChat();
+                        }
+                        const input = document.getElementById('ai-input');
+                        if (input) {
+                            input.value = `Update node "${node.id}" by executing this compiled prompt:\n\n${compiled}`;
+                            window.AI.handleSend();
+                        }
+                    }
+                    return;
+                }
+            }
+        }
+
         if (window.AI && window.AI.handleSmartNodeConnection) {
             // Reusing handleSmartNodeConnection with dummy source/target for now,
             // or we could add a new method to window.AI for direct triggers.
@@ -840,6 +901,31 @@ class SandboxController {
             this.kernel.addConnection(pid, child.id);
             this.kernel.selectNode(child.id); 
             p.data.collapsed = false; 
+        }
+    }
+
+    actionAddTrueBranch(id) {
+        this._addFlowBranch(id, "Yes", "New True Branch");
+    }
+
+    actionAddFalseBranch(id) {
+        this._addFlowBranch(id, "No", "New False Branch");
+    }
+
+    _addFlowBranch(id, label, title) {
+        const pid = id || this.kernel.state.session.selectedId;
+        const p = this.kernel.state.nodes.find(n => n.id === pid);
+        if (p) {
+            const type = 'flow-process';
+            const child = this.kernel.addNode({ title: title, type: type }, pid);
+            this.kernel.addConnection(pid, child.id, 'structural');
+            const conn = this.kernel.state.connections.find(c => c.from === pid && c.to === child.id && c.type === 'structural');
+            if (conn) {
+                conn.label = label;
+            }
+            this.kernel.selectNode(child.id);
+            p.data.collapsed = false;
+            this.render();
         }
     }
 
@@ -986,7 +1072,14 @@ class SandboxController {
             }
         } else if (e.key === 'Enter') {
             e.preventDefault();
-            if (selectedId) {
+            if (this.isSmartOptionsOpen && this.smartButtonOptions && this.smartButtonOptions.length > 0) {
+                const opt = this.smartButtonOptions[this.selectedSmartOptionIdx];
+                if (opt) {
+                    opt.action();
+                    this.isSmartOptionsOpen = false;
+                    this.updateSmartActionButton();
+                }
+            } else if (selectedId) {
                 this.actionAddSibling();
             }
         } else if (e.key === 'Delete') {
@@ -997,7 +1090,7 @@ class SandboxController {
         } else if (e.key === ' ' || e.key === 'Spacebar') {
             if (selectedId && this.viewMode === 'map') {
                 e.preventDefault();
-                if (this.smartButtonOptions && this.smartButtonOptions.length > 0) {
+                if (this.smartButtonOptions && this.smartButtonOptions.length > 1) {
                     if (!this.isSmartOptionsOpen) {
                         this.isSmartOptionsOpen = true;
                         this.selectedSmartOptionIdx = 0;
@@ -1191,6 +1284,19 @@ class SandboxController {
         }
     }
 
+    async actionOpenPortalLocal(id) {
+        const tgt = id || this.kernel.state.session.selectedId;
+        const node = this.kernel.state.nodes.find(n => n.id === tgt);
+        if (node && (node.type === 'portal' || node.type === 'smart-portal')) {
+            if (node.content) {
+                this.kernel.openPortal(tgt);
+                this.render();
+            } else {
+                this.actionSetPortalTarget(tgt);
+            }
+        }
+    }
+
     async actionSetPortalTarget(nodeId) {
         const node = this.kernel.state.nodes.find(n => n.id === nodeId);
         if (!node) return;
@@ -1206,8 +1312,14 @@ class SandboxController {
         const otherProjectPages = lib.filter(p => p.meta?.project_id && p.meta?.project_id !== activeProjId);
 
         let activeTab = 'existing'; // 'existing' or 'new'
-        let selectedPageId = null;
+        let selectedPageId = node.content || null;
         let selectedPageTitle = '-- Choose Target Page --';
+        if (selectedPageId) {
+            const targetMap = lib.find(m => m.map_id === selectedPageId);
+            if (targetMap) {
+                selectedPageTitle = targetMap.meta?.title || targetMap.map_id;
+            }
+        }
 
         const contentHtml = `
             <div class="flex flex-col gap-4 font-sans text-slate-300">
@@ -1222,7 +1334,7 @@ class SandboxController {
                     <label class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Select Existing Page</label>
                     <div class="relative w-full">
                         <button id="page-selector-btn" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-left text-slate-400 hover:border-slate-700 transition-colors flex justify-between items-center cursor-pointer">
-                            <span id="page-selector-label" class="truncate">${selectedPageTitle}</span>
+                            <span id="page-selector-label" class="truncate ${node.content ? 'text-slate-200' : 'text-slate-400'}">${selectedPageTitle}</span>
                             <span class="text-slate-500 text-[10px]">▼</span>
                         </button>
                     </div>
@@ -1271,15 +1383,21 @@ class SandboxController {
                 const selectType = backdrop.querySelector('#new-page-type');
 
                 const updateSubmitState = () => {
+                    const isAlreadyConfigured = !!node.content;
+                    const isMobile = window.innerWidth <= 768;
                     if (activeTab === 'existing') {
                         btnSubmit.disabled = !selectedPageId;
                         btnSubmit.style.opacity = selectedPageId ? '1' : '0.5';
-                        btnSubmit.textContent = 'Link Page';
+                        btnSubmit.textContent = isAlreadyConfigured ? 'Update' : 'Link Page';
                     } else {
                         const hasTitle = !!inputTitle.value.trim();
                         btnSubmit.disabled = !hasTitle;
                         btnSubmit.style.opacity = hasTitle ? '1' : '0.5';
-                        btnSubmit.textContent = 'Create & Link';
+                        if (isAlreadyConfigured) {
+                            btnSubmit.textContent = isMobile ? 'Create' : 'Create & Update';
+                        } else {
+                            btnSubmit.textContent = 'Create & Link';
+                        }
                     }
                 };
 
@@ -2662,7 +2780,17 @@ class SandboxController {
         this._focalDistances = distances;
         this._structuredCoords = structuredCoords;
 
-        this.dom.edgeSvg.innerHTML = '';
+        const isFlowchart = state.nodes.some(n => n.type === 'flow-root');
+        this.dom.edgeSvg.innerHTML = `
+            <defs>
+                <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="40" refY="3.5" orient="auto">
+                    <polygon points="0 0, 10 3.5, 0 7" fill="rgba(148, 163, 184, 0.6)"/>
+                </marker>
+            </defs>
+        `;
+        const edgeContainer = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        this.dom.edgeSvg.appendChild(edgeContainer);
+
         state.connections.forEach(c => {
             if (visibleNodes.has(c.from) && visibleNodes.has(c.to)) {
                 const s = state.nodes.find(n => n.id === c.from), t = state.nodes.find(n => n.id === c.to);
@@ -2674,6 +2802,10 @@ class SandboxController {
                     l.setAttribute("x2", tp.x); l.setAttribute("y2", tp.y);
                     l.setAttribute("class", "edge-vis");
                     if (c.type === 'association') l.style.strokeDasharray = "5,5";
+                    
+                    if (isFlowchart || c.label) {
+                        l.setAttribute("marker-end", "url(#arrowhead)");
+                    }
                     
                     const isLinking = this.kernel.linkingMode;
                     const distS = distances.has(s.id) ? distances.get(s.id) : -1;
@@ -2687,7 +2819,19 @@ class SandboxController {
                     } else if (!isLinking && (distS === -1 || distT === -1)) {
                         l.style.strokeOpacity = "0.48";
                     }
-                    this.dom.edgeSvg.appendChild(l);
+                    edgeContainer.appendChild(l);
+
+                    if (c.label) {
+                        const txt = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                        txt.setAttribute("x", (sp.x + tp.x) / 2);
+                        txt.setAttribute("y", (sp.y + tp.y) / 2 - 5);
+                        txt.setAttribute("fill", "#cbd5e1");
+                        txt.setAttribute("font-size", "11px");
+                        txt.setAttribute("font-weight", "600");
+                        txt.setAttribute("text-anchor", "middle");
+                        txt.textContent = c.label;
+                        edgeContainer.appendChild(txt);
+                    }
                 }
             }
         });
@@ -2709,6 +2853,7 @@ class SandboxController {
             }
             
             el.className = `node ${node.id === selId ? 'selected' : ''}`;
+            el.dataset.type = node.type;
             
             const isLinking = this.kernel.linkingMode;
             const dist = distances.has(node.id) ? distances.get(node.id) : -1;
@@ -2778,7 +2923,7 @@ class SandboxController {
             if (node.data.isCore && dist !== -1) el.style.borderColor = '#ea580c';
             if ((node.type === 'portal' || node.type === 'smart-portal') && dist !== -1) {
                 el.style.borderColor = '#a855f7';
-                if (this.aiImportMode && node.type === 'smart-portal') {
+                if (this.aiImportMode && (node.type === 'smart-portal' || node.type === 'portal')) {
                     el.style.boxShadow = "0 0 25px rgba(129,140,248, 0.8)";
                     el.classList.add('animate-pulse');
                 }
@@ -2982,16 +3127,31 @@ class SandboxController {
         if (selectedNode && this.viewMode === 'map') {
             const type = selectedNode.type;
             if (type === 'portal' || type === 'smart-portal') {
-                action = () => this.actionEnterPortal(selectedNode.id);
                 const hasTarget = !!selectedNode.content;
-                text = hasTarget ? 'Enter Portal' : 'Set Target';
-                themeClasses = hasTarget 
-                    ? 'bg-emerald-600 hover:bg-emerald-500 border-emerald-400 text-emerald-100 hover:text-white shadow-[0_0_15px_rgba(16,185,129,0.4)]'
-                    : 'bg-purple-650 hover:bg-purple-500 border-purple-400 text-purple-100 hover:text-white shadow-[0_0_15px_rgba(168,85,247,0.4)]';
-                options = [
-                    { text: hasTarget ? 'Enter Portal ➔' : 'Set Target 🎯', action: () => this.actionEnterPortal(selectedNode.id) },
-                    { text: 'Configure Portal ⚙️', action: () => this.actionSetPortalTarget(selectedNode.id) }
-                ];
+                const isSmart = type === 'smart-portal';
+                const rootMeta = selectedNode.content ? this.kernel.getRootMetadata(selectedNode.content) : null;
+                const isPromptPortal = rootMeta && (rootMeta.portal_behavior === 'execute_prompt' || this.kernel.isPromptMap(selectedNode.content));
+                
+                options = [];
+                if (isSmart || isPromptPortal) {
+                    options.push({ text: 'Trigger AI ✨', action: () => this.actionTriggerAI(selectedNode.id) });
+                }
+                options.push({ text: hasTarget ? 'Enter Portal ➔' : 'Set Target 🎯', action: () => this.actionEnterPortal(selectedNode.id) });
+                if (hasTarget) {
+                    options.push({ text: 'Configure Portal ⚙️', action: () => this.actionSetPortalTarget(selectedNode.id) });
+                }
+                
+                if (isSmart || isPromptPortal) {
+                    action = () => this.actionTriggerAI(selectedNode.id);
+                    text = 'Trigger AI';
+                    themeClasses = 'bg-indigo-600 hover:bg-indigo-500 border-indigo-400 text-indigo-100 hover:text-white shadow-[0_0_15px_rgba(79,70,229,0.4)]';
+                } else {
+                    action = () => this.actionEnterPortal(selectedNode.id);
+                    text = hasTarget ? 'Enter Portal' : 'Set Target';
+                    themeClasses = hasTarget 
+                        ? 'bg-emerald-600 hover:bg-emerald-500 border-emerald-400 text-emerald-100 hover:text-white shadow-[0_0_15px_rgba(16,185,129,0.4)]'
+                        : 'bg-purple-650 hover:bg-purple-500 border-purple-400 text-purple-100 hover:text-white shadow-[0_0_15px_rgba(168,85,247,0.4)]';
+                }
             } else if (type === 'person-root') {
                 action = () => this.setView('person');
                 text = 'View Profile';
@@ -3020,11 +3180,25 @@ class SandboxController {
             }
         }
 
-        // Fall back to general state/navigation actions
-        if (!action && canExit) {
-            action = () => this.actionExitPortal();
-            text = 'Exit Portal ❮';
-            themeClasses = 'bg-purple-600 hover:bg-purple-500 border-purple-400 text-purple-100 hover:text-white shadow-[0_0_15px_rgba(168,85,247,0.4)]';
+        // Scaffold default options if a single action is defined but options are null
+        if (action && !options) {
+            options = [
+                { text: `${text} ➔`, action: action }
+            ];
+        }
+
+        // Handle general state/navigation actions and merge them
+        if (canExit) {
+            if (!options) {
+                action = () => this.actionExitPortal();
+                text = 'Exit Portal ❮';
+                themeClasses = 'bg-purple-650 hover:bg-purple-500 border-purple-400 text-purple-100 hover:text-white shadow-[0_0_15px_rgba(168,85,247,0.4)]';
+                options = [
+                    { text: 'Exit Portal ❮', action: () => this.actionExitPortal() }
+                ];
+            } else {
+                options.push({ text: 'Exit Portal ❮', action: () => this.actionExitPortal() });
+            }
         }
 
         this.smartButtonOptions = options;
@@ -3051,6 +3225,20 @@ class SandboxController {
                         : 'text-slate-450 hover:bg-slate-900 hover:text-slate-200'
                 }`;
                 optBtn.innerHTML = opt.text;
+                
+                // Add hover update logic with coordinate filtering to handle static mouse placement
+                const handleHover = (e) => {
+                    if (this.lastMouseMovePos && e.clientX === this.lastMouseMovePos.x && e.clientY === this.lastMouseMovePos.y) {
+                        return; // Mouse is stationary, assume it just happens to be in that space (ignore static hover)
+                    }
+                    if (this.selectedSmartOptionIdx !== idx) {
+                        this.selectedSmartOptionIdx = idx;
+                        this.updateSmartActionButton();
+                    }
+                };
+                optBtn.onmouseenter = handleHover;
+                optBtn.onmousemove = handleHover;
+
                 optBtn.onclick = (e) => {
                     e.stopPropagation();
                     opt.action();
@@ -3063,15 +3251,39 @@ class SandboxController {
         }
 
         if (action && !tutorialActive) {
-            const displaySubtext = options && options.length > 0 ? ' <span class="text-[9px] opacity-75 ml-1.5">▼</span>' : '';
+            let buttonText = text;
+            if (this.isSmartOptionsOpen && this.smartButtonOptions && this.smartButtonOptions.length > 0) {
+                const currentOpt = this.smartButtonOptions[this.selectedSmartOptionIdx];
+                if (currentOpt) {
+                    buttonText = currentOpt.text.replace(/[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD00-\uDFFF]|[➔❮]/g, '').trim();
+                    
+                    // Map option text to respective theme classes dynamically!
+                    if (buttonText.includes('Trigger AI')) {
+                        themeClasses = 'bg-indigo-600 hover:bg-indigo-500 border-indigo-400 text-indigo-100 hover:text-white shadow-[0_0_15px_rgba(79,70,229,0.4)]';
+                    } else if (buttonText.includes('Enter Portal')) {
+                        themeClasses = 'bg-emerald-600 hover:bg-emerald-500 border-emerald-400 text-emerald-100 hover:text-white shadow-[0_0_15px_rgba(16,185,129,0.4)]';
+                    } else if (buttonText.includes('Set Target') || buttonText.includes('Configure Portal') || buttonText.includes('Exit Portal')) {
+                        themeClasses = 'bg-purple-650 hover:bg-purple-500 border-purple-400 text-purple-100 hover:text-white shadow-[0_0_15px_rgba(168,85,247,0.4)]';
+                    } else if (buttonText.includes('Visual Editor') || buttonText.includes('Preview Page') || buttonText.includes('Download Code')) {
+                        themeClasses = 'bg-sky-600 hover:bg-sky-500 border-sky-400 text-sky-100 hover:text-white shadow-[0_0_15px_rgba(14,165,233,0.4)]';
+                    } else if (buttonText.includes('Run Chain') || buttonText.includes('View Profile') || buttonText.includes('Export CV')) {
+                        themeClasses = 'bg-amber-600 hover:bg-amber-500 border-amber-400 text-amber-100 hover:text-white shadow-[0_0_15px_rgba(217,119,6,0.4)]';
+                    } else if (buttonText.includes('Configure Agent')) {
+                        themeClasses = 'bg-rose-600 hover:bg-rose-500 border-rose-400 text-rose-100 hover:text-white shadow-[0_0_15px_rgba(225,29,72,0.4)]';
+                    }
+                }
+            }
+            const displaySubtext = options && options.length > 1 ? ' <span class="text-[9px] opacity-75 ml-1.5">▼</span>' : '';
             btn.className = `text-xs font-bold uppercase tracking-widest px-6 py-3 rounded-full border shadow-lg transition-all flex items-center gap-2 cursor-pointer ${themeClasses}`;
-            btn.innerHTML = text + displaySubtext;
+            btn.innerHTML = buttonText + displaySubtext;
             btn.onclick = (e) => {
                 e.stopPropagation();
-                if (options && options.length > 0) {
+                if (options && options.length > 1) {
                     this.isSmartOptionsOpen = !this.isSmartOptionsOpen;
                     this.selectedSmartOptionIdx = 0;
                     this.updateSmartActionButton();
+                } else if (options && options.length === 1) {
+                    options[0].action();
                 } else {
                     action();
                 }

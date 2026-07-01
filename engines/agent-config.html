@@ -3,53 +3,216 @@
 <head>
     <meta charset="UTF-8">
     <title>Agent Config Engine</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
-        body { margin: 0; padding: 0; overflow: hidden; background: #0f172a; color: #cbd5e1; font-family: sans-serif; }
-        #container { padding: 20px; }
-        h1 { color: #818cf8; font-size: 1.5rem; margin-top: 0; }
-        .node-list { display: flex; flex-direction: column; gap: 10px; }
-        .node-card { background: #1e293b; padding: 10px; border-radius: 8px; border: 1px solid #334155; }
+        body { margin: 0; padding: 0; overflow-y: auto; background: #0f172a; color: #cbd5e1; font-family: sans-serif; }
+        #container { padding: 20px; max-width: 900px; margin: 0 auto; }
+        h1 { color: #818cf8; font-size: 1.5rem; margin-top: 0; display: flex; justify-content: space-between; align-items: center; }
+        .btn { background: #818cf8; color: #0f172a; border: none; padding: 8px 16px; border-radius: 4px; font-weight: bold; cursor: pointer; }
+        .btn:hover { background: #a5b4fc; }
+        .dashboard-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+        .card { background: #1e293b; padding: 16px; border-radius: 8px; border: 1px solid #334155; }
+        .card h2 { margin-top: 0; color: #94a3b8; font-size: 1.1rem; border-bottom: 1px solid #334155; padding-bottom: 4px; }
+        .skill-item { background: #0f172a; border: 1px solid #334155; padding: 10px; border-radius: 6px; margin-bottom: 10px; }
+        .skill-item h3 { margin: 0 0 4px 0; color: #f8fafc; font-size: 1rem; }
+        .tool-badge { display: inline-block; background: #475569; color: #f8fafc; font-size: 0.75rem; padding: 2px 6px; border-radius: 4px; margin-right: 4px; margin-top: 4px; }
+        .warning { color: #facc15; font-size: 0.85rem; margin-top: 4px; }
+        .dry-run-box { background: #1e293b; padding: 16px; border-radius: 8px; border: 1px solid #334155; }
+        .dry-run-box input { width: calc(100% - 100px); padding: 8px; background: #0f172a; border: 1px solid #334155; color: #fff; border-radius: 4px; }
+        .dry-run-box button { padding: 8px 16px; background: #334155; color: #f8fafc; border: none; border-radius: 4px; cursor: pointer; }
+        .dry-run-result { margin-top: 10px; padding: 10px; background: #0f172a; border-radius: 4px; font-family: monospace; font-size: 0.9rem; color: #818cf8; min-height: 40px; }
     </style>
 </head>
 <body>
     <div id="container">
-        <h1>Agent Config Engine</h1>
-        <p>This phase renders a dashboard for AI Agent architecture.</p>
-        <div id="content" class="node-list"></div>
+        <h1>
+            Agent Config Dashboard
+            <button id="exportBtn" class="btn">Export Agent Bundle (.zip)</button>
+        </h1>
+        <div class="dashboard-grid">
+            <div class="card">
+                <h2>Persona & Core</h2>
+                <div id="persona-content"></div>
+            </div>
+            <div class="card">
+                <h2>Capabilities (Skills & Tools)</h2>
+                <div id="skills-content"></div>
+            </div>
+        </div>
+        <div class="dry-run-box">
+            <h2>Router Dry-Run Simulation</h2>
+            <div style="display:flex; gap:10px;">
+                <input type="text" id="dryRunInput" placeholder="Test a prompt (e.g., 'Deploy my app to Firebase')">
+                <button id="dryRunBtn">Test Routing</button>
+            </div>
+            <div class="dry-run-result" id="dryRunResult">Waiting for input...</div>
+        </div>
     </div>
     <script>
+        let currentState = null;
+        let parsedData = null;
+
         window.addEventListener('message', (event) => {
             if (event.data && event.data.type === 'STATE_UPDATE') {
-                render(event.data.state);
+                currentState = event.data.state;
+                render();
             }
         });
 
-        function render(state) {
-            const container = document.getElementById('content');
-            container.innerHTML = '';
-            
-            const agentRoot = state.nodes.find(n => n.type === 'agent-root');
+        function render() {
+            if (!currentState) return;
+            const agentRoot = currentState.nodes.find(n => n.type === 'agent-root');
             if (!agentRoot) {
-                container.innerHTML = '<i>No agent-root found in this map.</i>';
+                document.getElementById('container').innerHTML = '<i>No agent-root found in this map.</i>';
                 return;
             }
-            
-            const renderTree = (id, depth = 0) => {
-                const node = state.nodes.find(n => n.id === id);
-                if (!node) return;
-                
-                const div = document.createElement('div');
-                div.className = 'node-card';
-                div.style.marginLeft = `${depth * 20}px`;
-                div.innerHTML = `<strong>${node.title}</strong><br><span style="font-size:0.8rem; color:#94a3b8;">${node.content}</span>`;
-                container.appendChild(div);
-                
-                const children = state.connections.filter(c => c.from === id).map(c => c.to);
-                children.forEach(cId => renderTree(cId, depth + 1));
+
+            // Gather descendants
+            const descendants = new Set();
+            const getChildren = (id) => currentState.connections.filter(c => c.from === id).map(c => currentState.nodes.find(n => n.id === c.to)).filter(n => n);
+            const gather = (node) => {
+                if (!node || descendants.has(node)) return;
+                descendants.add(node);
+                getChildren(node.id).forEach(gather);
             };
-            
-            renderTree(agentRoot.id);
+            getChildren(agentRoot.id).forEach(gather);
+
+            const nodesArr = Array.from(descendants);
+            const persona = nodesArr.find(n => n.type === 'agent-persona');
+            const skills = nodesArr.filter(n => n.type === 'agent-skill');
+            const routers = nodesArr.filter(n => n.type === 'agent-router');
+
+            parsedData = { root: agentRoot, persona, skills, getChildren, nodesArr };
+
+            // Render Persona
+            const personaEl = document.getElementById('persona-content');
+            if (persona) {
+                personaEl.innerHTML = `<strong>${persona.title}</strong><p style="font-size:0.9rem; color:#cbd5e1;">${persona.content}</p>`;
+            } else {
+                personaEl.innerHTML = `<span class="warning">⚠️ No agent-persona node detected.</span>`;
+            }
+
+            // Render Skills
+            const skillsEl = document.getElementById('skills-content');
+            skillsEl.innerHTML = '';
+            if (skills.length === 0) {
+                skillsEl.innerHTML = `<i>No skills defined.</i>`;
+            } else {
+                skills.forEach(s => {
+                    const skillChildren = new Set();
+                    const gatherSkillChildren = (node) => {
+                        if (!node || skillChildren.has(node)) return;
+                        skillChildren.add(node);
+                        getChildren(node.id).forEach(gatherSkillChildren);
+                    };
+                    getChildren(s.id).forEach(gatherSkillChildren);
+                    
+                    const tools = Array.from(skillChildren).filter(n => n.type === 'agent-tool');
+                    const toolHtml = tools.length > 0 
+                        ? tools.map(t => `<span class="tool-badge">${t.title}</span>`).join('') 
+                        : '<div class="warning">⚠️ No tools attached to this skill.</div>';
+
+                    skillsEl.innerHTML += `
+                        <div class="skill-item">
+                            <h3>${s.title}</h3>
+                            <div style="font-size:0.8rem; margin-bottom:8px;">${s.content}</div>
+                            <div>${toolHtml}</div>
+                        </div>
+                    `;
+                });
+            }
         }
+
+        document.getElementById('dryRunBtn').addEventListener('click', () => {
+            const val = document.getElementById('dryRunInput').value.toLowerCase();
+            const resEl = document.getElementById('dryRunResult');
+            if (!val || !parsedData) return;
+            
+            // Simple keyword-based simulation
+            let matchedSkill = null;
+            parsedData.skills.forEach(s => {
+                if (val.includes(s.title.toLowerCase()) || val.includes(s.content.toLowerCase().split(' ')[0])) {
+                    matchedSkill = s;
+                }
+            });
+
+            if (matchedSkill) {
+                resEl.innerHTML = `✅ <strong>Router selected skill:</strong> ${matchedSkill.title}<br>Tools invoked: ` + 
+                    parsedData.getChildren(matchedSkill.id).filter(n => n.type === 'agent-tool').map(t => t.title).join(', ');
+            } else {
+                resEl.innerHTML = `❌ No matching skills found. Agent would fallback to general persona reasoning.`;
+            }
+        });
+
+        document.getElementById('exportBtn').addEventListener('click', async () => {
+            if (!parsedData || typeof JSZip === 'undefined') {
+                alert("JSZip not loaded or map not ready.");
+                return;
+            }
+
+            const zip = new JSZip();
+            
+            // AGENTS.md
+            let agentsMd = "";
+            if (parsedData.persona) {
+                agentsMd += `# ${parsedData.persona.title}\n\n${parsedData.persona.content}\n\n`;
+            }
+            const globalGuardrails = parsedData.nodesArr.filter(n => n.type === 'agent-guardrail' && !parsedData.skills.some(s => {
+                const sc = new Set();
+                const gather = (node) => { if(!node || sc.has(node)) return; sc.add(node); parsedData.getChildren(node.id).forEach(gather); };
+                parsedData.getChildren(s.id).forEach(gather);
+                return sc.has(n);
+            }));
+            if (globalGuardrails.length > 0) {
+                agentsMd += "## Global Rules & Guardrails\n";
+                globalGuardrails.forEach(g => agentsMd += g.content + "\n\n");
+            }
+            
+            if (agentsMd) zip.file("AGENTS.md", agentsMd);
+
+            // Skills Directory
+            if (parsedData.skills.length > 0) {
+                const skillsFolder = zip.folder("skills");
+                parsedData.skills.forEach(s => {
+                    const safeName = s.title.replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
+                    const sFolder = skillsFolder.folder(safeName);
+
+                    const sc = new Set();
+                    const gather = (node) => { if(!node || sc.has(node)) return; sc.add(node); parsedData.getChildren(node.id).forEach(gather); };
+                    parsedData.getChildren(s.id).forEach(gather);
+                    const children = Array.from(sc);
+
+                    // SKILL.md
+                    let skillMd = `---\nname: ${s.title}\ndescription: ${s.content.split('\\n')[0].substring(0, 100)}\n---\n\n`;
+                    skillMd += s.content + "\n\n";
+
+                    const guardrails = children.filter(n => n.type === 'agent-guardrail');
+                    if (guardrails.length > 0) {
+                        skillMd += "## Rules & Guardrails\n";
+                        guardrails.forEach(g => skillMd += g.content + "\n\n");
+                    }
+                    sFolder.file("SKILL.md", skillMd);
+
+                    // tools.json
+                    const tools = children.filter(n => n.type === 'agent-tool');
+                    if (tools.length > 0) {
+                        const toolsJson = tools.map(t => {
+                            try { return JSON.parse(t.content); }
+                            catch(e) { return { name: t.title, description: t.content }; }
+                        });
+                        sFolder.file("tools.json", JSON.stringify(toolsJson, null, 2));
+                    }
+                });
+            }
+
+            const blob = await zip.generateAsync({type:"blob"});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'agent_bundle.zip';
+            a.click();
+            URL.revokeObjectURL(url);
+        });
     </script>
 </body>
 </html>

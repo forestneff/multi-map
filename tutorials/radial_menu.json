@@ -13,7 +13,7 @@
     },
     {
         "onEnter": "if(window._tutInt) clearInterval(window._tutInt); if(SC.dom && SC.dom.radialMenu && !SC.dom.radialMenu.classList.contains('active') && SC.kernel.state.nodes.length > 0) { SC.showRadialMenu(SC.kernel.state.nodes[0]); }",
-        "text": "Clicking a node brings up the Radial Menu. The buttons around the node let you Trigger special actions, Create Children, Link to other nodes, or Delete them.",
+        "text": "Clicking a node brings up the Radial Menu. Depending on the node type, the buttons let you Trigger special actions, Create Children, Link to other nodes, or Delete them.",
         "target": "#radial-menu",
         "shape": "circle",
         "requireClick": false,

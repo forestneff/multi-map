@@ -331,3 +331,30 @@ body {
         margin-left: 56px;
     }
 }
+
+/* --- FLOWCHART NODES --- */
+.node[data-type="flow-process"] {
+    border-radius: 8px;
+    width: 80px;
+    height: 60px;
+}
+.node[data-type="flow-terminal"] {
+    border-radius: 30px;
+    width: 100px;
+    height: 60px;
+}
+.node[data-type="flow-decision"] {
+    border-radius: 8px;
+    transform: translate(-50%, -50%) rotate(45deg);
+}
+.node[data-type="flow-decision"].selected {
+    transform: translate(-50%, -50%) rotate(45deg) scale(1.15);
+}
+.node[data-type="flow-decision"] > .node-icon {
+    transform: rotate(-45deg);
+}
+.node[data-type="flow-decision"] > .node-label {
+    transform: translateX(-50%) rotate(-45deg);
+    top: 130%;
+    left: 130%;
+}

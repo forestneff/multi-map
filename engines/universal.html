@@ -297,6 +297,30 @@
                     notifyUpdate(id, { content: JSON.stringify(pData) });
                 }
             };
+            window.updateRootMetadata = (id, field, val) => {
+                const n = currentState.nodes.find(x => x.id === id);
+                if(n) {
+                    const rMeta = n.root_metadata || { summary: "", tags: [], portal_behavior: "standard", custom_payload: {} };
+                    if (field === 'tags') {
+                        rMeta.tags = val.split(',').map(s => s.trim()).filter(s => s);
+                    } else if (field === 'custom_payload') {
+                        try {
+                            rMeta.custom_payload = JSON.parse(val);
+                            // Valid JSON, remove error style if we had one
+                            const ta = document.getElementById('rm-payload');
+                            if(ta) ta.classList.remove('ring-red-500', 'border-red-500');
+                        } catch(e) {
+                            // Invalid JSON, add error style
+                            const ta = document.getElementById('rm-payload');
+                            if(ta) ta.classList.add('ring-red-500', 'border-red-500');
+                            return; // Don't save invalid JSON
+                        }
+                    } else {
+                        rMeta[field] = val;
+                    }
+                    notifyUpdate(id, { root_metadata: rMeta });
+                }
+            };
 
             let contentAreaHtml = '';
             if (node.type === 'person-root') {
@@ -467,6 +491,37 @@
                         ${contentAreaHtml}
                     </div>
                     
+                    ${isNodeRoot ? `
+                    <div class="mt-4 pt-4 border-t border-slate-800 shrink-0 flex flex-col gap-3">
+                        <label class="text-[10px] font-bold text-sky-400 uppercase block">Root Metadata</label>
+                        
+                        <div class="flex flex-col gap-1">
+                            <label class="text-[9px] font-bold text-slate-500 uppercase">Summary</label>
+                            <textarea oninput="window.updateRootMetadata('${node.id}', 'summary', this.value)" class="w-full bg-slate-900 border border-slate-700 text-white p-2 rounded text-xs focus:border-sky-500 outline-none resize-none min-h-[40px]">${escapeHTML((node.root_metadata && node.root_metadata.summary) || '')}</textarea>
+                        </div>
+                        
+                        <div class="flex flex-col gap-1">
+                            <label class="text-[9px] font-bold text-slate-500 uppercase">Tags (comma separated)</label>
+                            <input oninput="window.updateRootMetadata('${node.id}', 'tags', this.value)" type="text" value="${escapeHTML((node.root_metadata && node.root_metadata.tags || []).join(', '))}" class="w-full bg-slate-900 border border-slate-700 text-white p-2 rounded text-xs focus:border-sky-500 outline-none">
+                        </div>
+                        
+                        <div class="flex flex-col gap-1">
+                            <label class="text-[9px] font-bold text-slate-500 uppercase">Portal Behavior</label>
+                            <select onchange="window.updateRootMetadata('${node.id}', 'portal_behavior', this.value)" class="w-full bg-slate-800 border border-slate-700 text-white p-2 rounded text-xs focus:border-sky-500 outline-none">
+                                <option value="standard" ${(node.root_metadata && node.root_metadata.portal_behavior === 'standard') ? 'selected' : ''}>Standard</option>
+                                <option value="dynamic_spawn" ${(node.root_metadata && node.root_metadata.portal_behavior === 'dynamic_spawn') ? 'selected' : ''}>Dynamic Spawn</option>
+                                <option value="read_only" ${(node.root_metadata && node.root_metadata.portal_behavior === 'read_only') ? 'selected' : ''}>Read Only</option>
+                                <option value="execute_prompt" ${(node.root_metadata && node.root_metadata.portal_behavior === 'execute_prompt') ? 'selected' : ''}>Execute Prompt</option>
+                            </select>
+                        </div>
+                        
+                        <div class="flex flex-col gap-1">
+                            <label class="text-[9px] font-bold text-slate-500 uppercase">Custom Payload (JSON)</label>
+                            <textarea id="rm-payload" oninput="window.updateRootMetadata('${node.id}', 'custom_payload', this.value)" class="w-full bg-slate-900 border border-slate-700 text-cyan-400 p-2 rounded text-xs font-mono focus:border-sky-500 outline-none resize-none min-h-[60px]">${escapeHTML(node.root_metadata && node.root_metadata.custom_payload ? JSON.stringify(node.root_metadata.custom_payload, null, 2) : '{}')}</textarea>
+                        </div>
+                    </div>
+                    ` : ''}
+
                     ${templateHtml}
 
                     <div class="pt-4 border-t border-slate-800 mt-auto shrink-0">

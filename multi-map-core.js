@@ -1331,6 +1331,73 @@ class MultiMapKernel {
         try { return JSON.parse(localStorage.getItem("mm_constellation_lib")) || []; } catch(e) { return []; }
     }
 
+    getRootMetadata(mapId) {
+        const lib = this.getLibrary();
+        const mapData = lib.find(m => m.map_id === mapId);
+        if (mapData && mapData.nodes) {
+            const rootNode = mapData.nodes.find(n => n.type === 'root' || n.type?.endsWith('-root') || n.data?.isCore);
+            if (rootNode) {
+                return rootNode.root_metadata || {
+                    summary: "",
+                    tags: [],
+                    portal_behavior: "standard",
+                    custom_payload: {}
+                };
+            }
+        }
+        return null;
+    }
+
+    isPromptMap(mapId) {
+        const lib = this.getLibrary();
+        const mapData = lib.find(m => m.map_id === mapId);
+        if (mapData && mapData.nodes) {
+            return mapData.nodes.some(n => n.type === 'prompt-root');
+        }
+        return false;
+    }
+
+    compilePromptMapState(mapState, varValues = {}) {
+        const promptRoot = mapState.nodes.find(n => n.type === 'prompt-root');
+        if (!promptRoot) return "";
+
+        const descendants = new Set();
+        const getChildren = (id) => mapState.connections.filter(c => c.from === id).map(c => mapState.nodes.find(n => n.id === c.to)).filter(n => n);
+        const gather = (node) => {
+            if (!node || descendants.has(node)) return;
+            descendants.add(node);
+            getChildren(node.id).forEach(gather);
+        };
+        getChildren(promptRoot.id).forEach(gather);
+
+        const order = ['prompt-role', 'prompt-context', 'prompt-goal', 'prompt-instruction', 'prompt-constraint', 'prompt-example', 'prompt-chain'];
+        const grouped = {};
+        order.forEach(o => grouped[o] = []);
+        descendants.forEach(n => {
+            if (grouped[n.type]) grouped[n.type].push(n);
+        });
+
+        const injectVars = (text) => {
+            let res = text || '';
+            Object.keys(varValues).forEach(k => {
+                res = res.split(`{{${k}}}`).join(varValues[k]);
+            });
+            return res;
+        };
+
+        let compiledMd = "";
+        order.forEach(type => {
+            if (grouped[type].length > 0) {
+                const sectionName = type.split('-')[1].toUpperCase();
+                compiledMd += `### ${sectionName}\n\n`;
+                grouped[type].forEach(n => {
+                    compiledMd += `${injectVars(n.content || n.title)}\n\n`;
+                });
+            }
+        });
+        return compiledMd.trim();
+    }
+
     async deleteFromLibrary(id) {
         if (this.isUsingCloudVault()) {
             const uid = window.FirebaseAuth.currentUser.uid;
@@ -1438,10 +1505,24 @@ class MultiMapKernel {
             }
         }
     }
+    syncPortalNodeTitles() {
+        if (!this.state || !this.state.nodes) return;
+        const lib = this.getLibrary() || [];
+        this.state.nodes.forEach(node => {
+            if ((node.type === 'portal' || node.type === 'smart-portal') && node.content) {
+                const targetMap = lib.find(m => m.map_id === node.content);
+                if (targetMap && targetMap.meta && targetMap.meta.title && targetMap.meta.title !== node.title) {
+                    node.title = targetMap.meta.title;
+                }
+            }
+        });
+    }
+
     loadMapState(data) {
         this.saveCurrentMapToLibrary();
         this.saveHistory();
         this.state = this.ensureSchema(data);
+        this.syncPortalNodeTitles();
         this.notify();
     }
     
@@ -1453,9 +1534,54 @@ class MultiMapKernel {
         this.state = this.ensureSchema(mapData);
         this.notify();
     }
+
+    openPortal(portalNodeId) {
+        const portalNode = this.state.nodes.find(n => n.id === portalNodeId);
+        if (!portalNode || !portalNode.content) return;
+        const targetMapId = portalNode.content;
+
+        const rootMeta = this.getRootMetadata(targetMapId);
+        if (!rootMeta) return;
+
+        portalNode.data = portalNode.data || {};
+        portalNode.data.dynamic_endpoint = rootMeta;
+
+        if (rootMeta.portal_behavior === 'dynamic_spawn' && !portalNode.data.has_spawned) {
+            portalNode.data.has_spawned = true;
+            
+            const payload = rootMeta.custom_payload || {};
+            const nodesToSpawn = payload.spawn_nodes || [];
+
+            if (Array.isArray(nodesToSpawn) && nodesToSpawn.length > 0) {
+                nodesToSpawn.forEach((nodeConfig, index) => {
+                    const childNode = this.addNode({
+                        type: nodeConfig.type || 'note',
+                        title: nodeConfig.title || 'Dynamic Node',
+                        content: nodeConfig.content || '',
+                        x: portalNode.data.x + 150,
+                        y: portalNode.data.y + (index * 80)
+                    });
+                    this.addConnection(portalNodeId, childNode.id, 'structural');
+                });
+            } else {
+                const childNode = this.addNode({
+                    type: 'note',
+                    title: 'Dynamic Endpoint',
+                    content: 'Auto-spawned from ' + (rootMeta.summary || 'Portal'),
+                    x: portalNode.data.x + 150,
+                    y: portalNode.data.y
+                });
+                this.addConnection(portalNodeId, childNode.id, 'structural');
+            }
+        }
+        
+        this.saveHistory();
+        this.notify();
+    }
     
     saveCurrentMapToLibrary() {
         if (!this.state || !this.state.map_id) return;
+        this.syncPortalNodeTitles();
         this.saveMapToLibrary(this.state);
     }
 
@@ -1463,6 +1589,7 @@ class MultiMapKernel {
         if (this.portalHistory.length > 0) {
             this.saveCurrentMapToLibrary(); // Persist submap edits before leaving
             this.state = this.ensureSchema(this.portalHistory.pop());
+            this.syncPortalNodeTitles();
             this.history = []; // Clear undo history
             this.notify();
             return true;

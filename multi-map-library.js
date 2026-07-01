@@ -117,6 +117,72 @@ const MultiMapLibrary = {
                 { id: "pc4", from: "p_root", to: "p_addr", type: "structural" }
             ],
             submaps: []
+        },
+        {
+            map_id: "tpl_prompt_expand",
+            meta: {
+                title: "Expand Prompt Map",
+                target_type: "portal",
+                created: "2026-03-01T12:00:00Z",
+                notes: "A prompt map to expand input data structurally.",
+                shared: true
+            },
+            nodes: [
+                { id: "pe_root", type: "prompt-root", title: "Expand Data", content: "", data: { x: 0, y: 0, isCore: true, collapsed: false }, root_metadata: { summary: "Expand data", tags: ["expand"], portal_behavior: "execute_prompt" } },
+                { id: "pe_role", type: "prompt-role", title: "Data Architect Persona", content: "You are a professional software architect. Your persona is structured, detailed, and precise.", data: { x: -150, y: 100, isCore: false, collapsed: false } },
+                { id: "pe_inst", type: "prompt-instruction", title: "Core Instructions", content: "Analyze the source data. Generate a highly detailed structural expansion of this data. If it represents a concept, build a mind-map showing its components and logic.", data: { x: 150, y: 100, isCore: false, collapsed: false } },
+                { id: "pe_var", type: "prompt-variable", title: "source_data", content: "", data: { x: 0, y: 200, isCore: false, collapsed: false } }
+            ],
+            connections: [
+                { id: "pec1", from: "pe_root", to: "pe_role", type: "structural" },
+                { id: "pec2", from: "pe_root", to: "pe_inst", type: "structural" },
+                { id: "pec3", from: "pe_inst", to: "pe_var", type: "structural" }
+            ],
+            submaps: []
+        },
+        {
+            map_id: "tpl_prompt_summarize",
+            meta: {
+                title: "Summarize Prompt Map",
+                target_type: "portal",
+                created: "2026-03-01T12:00:00Z",
+                notes: "A prompt map to summarize input data concisely.",
+                shared: true
+            },
+            nodes: [
+                { id: "ps_root", type: "prompt-root", title: "Summarize Data", content: "", data: { x: 0, y: 0, isCore: true, collapsed: false }, root_metadata: { summary: "Summarize data", tags: ["summarize"], portal_behavior: "execute_prompt" } },
+                { id: "ps_role", type: "prompt-role", title: "Concise Writer Persona", content: "You are an expert summarizer. Your voice is direct, simple, and brief.", data: { x: -150, y: 100, isCore: false, collapsed: false } },
+                { id: "ps_inst", type: "prompt-instruction", title: "Core Instructions", content: "Synthesize the source data into a single-sentence title and a 3-bullet points executive summary.", data: { x: 150, y: 100, isCore: false, collapsed: false } },
+                { id: "ps_var", type: "prompt-variable", title: "source_data", content: "", data: { x: 0, y: 200, isCore: false, collapsed: false } }
+            ],
+            connections: [
+                { id: "psc1", from: "ps_root", to: "ps_role", type: "structural" },
+                { id: "psc2", from: "ps_root", to: "ps_inst", type: "structural" },
+                { id: "psc3", from: "ps_inst", to: "ps_var", type: "structural" }
+            ],
+            submaps: []
+        },
+        {
+            map_id: "tpl_prompt_pass_prompt",
+            meta: {
+                title: "Pass Prompt Map",
+                target_type: "portal",
+                created: "2026-03-01T12:00:00Z",
+                notes: "A prompt map to execute source data as instructions directly.",
+                shared: true
+            },
+            nodes: [
+                { id: "pp_root", type: "prompt-root", title: "Execute Prompt", content: "", data: { x: 0, y: 0, isCore: true, collapsed: false }, root_metadata: { summary: "Execute source data", tags: ["execute"], portal_behavior: "execute_prompt" } },
+                { id: "pp_role", type: "prompt-role", title: "System Integrator Persona", content: "You are a direct execution engine. You obey user instructions exactly.", data: { x: -150, y: 100, isCore: false, collapsed: false } },
+                { id: "pp_inst", type: "prompt-instruction", title: "Core Instructions", content: "Execute the following instructions directly and output the generated map structure.", data: { x: 150, y: 100, isCore: false, collapsed: false } },
+                { id: "pp_var", type: "prompt-variable", title: "source_data", content: "", data: { x: 0, y: 200, isCore: false, collapsed: false } }
+            ],
+            connections: [
+                { id: "ppc1", from: "pp_root", to: "pp_role", type: "structural" },
+                { id: "ppc2", from: "pp_root", to: "pp_inst", type: "structural" },
+                { id: "ppc3", from: "pp_inst", to: "pp_var", type: "structural" }
+            ],
+            submaps: []
         }
     ],
 

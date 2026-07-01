@@ -60,7 +60,13 @@
             },
             "origin": {},
             "history": [],
-            "tags": []
+            "tags": [],
+            "root_metadata": {
+                "summary": "",
+                "tags": [],
+                "portal_behavior": "standard",
+                "custom_payload": {}
+            }
         }
     ],
     "connections": [
@@ -74,6 +80,15 @@
                 "created": "",
                 "creator": ""
             }
+        }
+    ],
+    "edges": [
+        {
+            "id": "",
+            "sourceId": "",
+            "targetId": "",
+            "label": "",
+            "meta": {}
         }
     ]
 }

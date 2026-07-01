@@ -874,10 +874,13 @@ class MultiMapAI {
                 const actionHtml = `
                     <div class="mt-3 flex flex-col gap-2 border-t border-indigo-500/30 pt-3">
                         <button onclick="window.AI.initiateTargetedImport()" class="w-full py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-bold shadow transition-colors flex justify-center items-center gap-2">
-                            🎯 Assign to Existing Smart-Portal
+                            🎯 Assign to Existing Node / Portal
+                        </button>
+                        <button onclick="window.AI.injectIntoNewPortal()" class="w-full py-1.5 bg-teal-600 hover:bg-teal-500 text-white rounded font-bold shadow transition-colors flex justify-center items-center gap-2">
+                            🌀 Assign to New Portal
                         </button>
                         <button onclick="window.AI.injectIntoNewSmartPortal()" class="w-full py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded font-bold shadow transition-colors flex justify-center items-center gap-2">
-                            🌟 Assign to New Smart-Portal
+                            🌟 Assign to New Smart Node
                         </button>
                         <button onclick="window.AI.actionExpandSelected()" class="w-full py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded font-bold shadow transition-colors flex justify-center items-center gap-2">
                             🌱 Expand Selected Node
@@ -1002,7 +1005,7 @@ class MultiMapAI {
             return;
         }
 
-        const child = this.kernel.addNode({ title: this.pendingMapData.meta.title || "AI Portal", type: "smart-portal" }, parentId);
+        const child = this.kernel.addNode({ title: this.pendingMapData.meta.title || "AI Smart Node", type: "smart-portal" }, parentId);
         this.kernel.addConnection(parentId, child.id);
 
         const saved = await this.kernel.saveConstellationToLibrary(this.pendingMapData);
@@ -1014,7 +1017,40 @@ class MultiMapAI {
         this.kernel.updateNode(child.id, { content: this.pendingMapData.map_id });
         this.kernel.importSubmap(child.id, this.pendingMapData);
 
-        alert(`AI Map injected into a new Smart Portal!`);
+        alert(`AI Map injected into a new Smart Node!`);
+
+        this.kernel.selectNode(child.id);
+        this.sandbox.render();
+        this.pendingMapData = null;
+        this.toggleChat();
+    }
+
+    async injectIntoNewPortal() {
+        if (!this.pendingMapData) return;
+
+        let parentId = this.kernel.state.session.selectedId;
+        if (!parentId && this.kernel.state.nodes.length > 0) {
+            parentId = this.kernel.state.nodes[0].id;
+        }
+
+        if (!parentId) {
+            alert("Please select a node first to attach the new portal.");
+            return;
+        }
+
+        const child = this.kernel.addNode({ title: this.pendingMapData.meta.title || "AI Portal", type: "portal" }, parentId);
+        this.kernel.addConnection(parentId, child.id);
+
+        const saved = await this.kernel.saveConstellationToLibrary(this.pendingMapData);
+        if (saved === false) {
+            alert("Guest map limit (25) exceeded.");
+            return;
+        }
+        
+        this.kernel.updateNode(child.id, { content: this.pendingMapData.map_id });
+        this.kernel.importSubmap(child.id, this.pendingMapData);
+
+        alert(`AI Map injected into a new Portal!`);
 
         this.kernel.selectNode(child.id);
         this.sandbox.render();

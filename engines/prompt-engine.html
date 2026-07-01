@@ -4,52 +4,139 @@
     <meta charset="UTF-8">
     <title>Prompt Chain Engine</title>
     <style>
-        body { margin: 0; padding: 0; overflow: hidden; background: #0f172a; color: #cbd5e1; font-family: sans-serif; }
-        #container { padding: 20px; }
-        h1 { color: #38bdf8; font-size: 1.5rem; margin-top: 0; }
-        .node-list { display: flex; flex-direction: column; gap: 10px; }
-        .node-card { background: #1e293b; padding: 10px; border-radius: 8px; border: 1px solid #334155; }
+        body { margin: 0; padding: 0; overflow-y: auto; background: #0f172a; color: #cbd5e1; font-family: sans-serif; }
+        #container { padding: 20px; max-width: 800px; margin: 0 auto; }
+        h1 { color: #38bdf8; font-size: 1.5rem; margin-top: 0; display: flex; justify-content: space-between; align-items: center; }
+        .btn { background: #38bdf8; color: #0f172a; border: none; padding: 8px 16px; border-radius: 4px; font-weight: bold; cursor: pointer; }
+        .btn:hover { background: #7dd3fc; }
+        .section { margin-bottom: 24px; }
+        .section h2 { color: #94a3b8; font-size: 1.1rem; border-bottom: 1px solid #334155; padding-bottom: 4px; margin-bottom: 12px; }
+        .node-card { background: #1e293b; padding: 12px; border-radius: 8px; border: 1px solid #334155; margin-bottom: 8px; }
+        .node-card strong { color: #f8fafc; display: block; margin-bottom: 6px; }
+        .node-card pre { white-space: pre-wrap; margin: 0; font-family: inherit; font-size: 0.95rem; }
+        .variables-panel { background: #1e293b; border: 1px solid #fbbf24; border-radius: 8px; padding: 12px; margin-bottom: 20px; }
+        .variables-panel h3 { margin-top: 0; color: #fbbf24; font-size: 1rem; margin-bottom: 10px; }
+        .var-input { display: flex; flex-direction: column; margin-bottom: 8px; }
+        .var-input label { font-size: 0.85rem; color: #94a3b8; margin-bottom: 4px; }
+        .var-input input { padding: 6px; background: #0f172a; border: 1px solid #334155; color: #fff; border-radius: 4px; }
     </style>
 </head>
 <body>
     <div id="container">
-        <h1>Prompt Engine</h1>
-        <p>This phase renders a linear prompt chain.</p>
-        <div id="content" class="node-list"></div>
+        <h1>
+            Prompt Engine
+            <button id="exportBtn" class="btn">Export Prompt (.md)</button>
+        </h1>
+        <div id="variables" style="display:none;"></div>
+        <div id="content"></div>
     </div>
     <script>
+        let currentState = null;
+        let varValues = {};
+
         window.addEventListener('message', (event) => {
             if (event.data && event.data.type === 'STATE_UPDATE') {
-                render(event.data.state);
+                currentState = event.data.state;
+                render();
             }
         });
 
-        function render(state) {
+        function handleVarChange(e) {
+            varValues[e.target.dataset.key] = e.target.value;
+            render();
+        }
+
+        function render() {
+            if (!currentState) return;
             const container = document.getElementById('content');
+            const varsContainer = document.getElementById('variables');
             container.innerHTML = '';
             
-            const promptRoot = state.nodes.find(n => n.type === 'prompt-root');
+            const promptRoot = currentState.nodes.find(n => n.type === 'prompt-root');
             if (!promptRoot) {
                 container.innerHTML = '<i>No prompt-root found in this map.</i>';
+                varsContainer.style.display = 'none';
                 return;
             }
             
-            const renderChain = (id, depth = 0) => {
-                const node = state.nodes.find(n => n.id === id);
-                if (!node) return;
-                
-                const div = document.createElement('div');
-                div.className = 'node-card';
-                div.style.marginLeft = `${depth * 20}px`;
-                div.innerHTML = `<strong>${node.title}</strong><br><span style="font-size:0.8rem; color:#94a3b8;">${node.content}</span>`;
-                container.appendChild(div);
-                
-                const children = state.connections.filter(c => c.from === id).map(c => c.to);
-                children.forEach(cId => renderChain(cId, depth + 1));
+            const descendants = new Set();
+            const gather = (id) => {
+                const node = currentState.nodes.find(n => n.id === id);
+                if (!node || descendants.has(node)) return;
+                descendants.add(node);
+                currentState.connections.filter(c => c.from === id).forEach(c => gather(c.to));
             };
+            currentState.connections.filter(c => c.from === promptRoot.id).forEach(c => gather(c.to));
             
-            renderChain(promptRoot.id);
+            const order = ['prompt-role', 'prompt-context', 'prompt-goal', 'prompt-instruction', 'prompt-constraint', 'prompt-example', 'prompt-image', 'prompt-data-analytic', 'prompt-text-to-text', 'prompt-code-gen', 'prompt-chain'];
+            const grouped = {};
+            order.forEach(o => grouped[o] = []);
+            const variables = [];
+            
+            descendants.forEach(n => {
+                if (grouped[n.type]) grouped[n.type].push(n);
+                if (n.type === 'prompt-variable') variables.push(n);
+            });
+            
+            if (variables.length > 0) {
+                varsContainer.style.display = 'block';
+                varsContainer.innerHTML = '<div class="variables-panel"><h3>Variables</h3><div id="var-list"></div></div>';
+                const varList = document.getElementById('var-list');
+                variables.forEach(v => {
+                    const key = v.title.replace(/[^a-zA-Z0-9_]/g, '');
+                    if (varValues[key] === undefined) varValues[key] = '';
+                    const div = document.createElement('div');
+                    div.className = 'var-input';
+                    div.innerHTML = `<label>{{${key}}}</label><input type="text" data-key="${key}" value="${varValues[key]}" placeholder="Enter value for ${key}...">`;
+                    varList.appendChild(div);
+                });
+                document.querySelectorAll('.var-input input').forEach(inp => inp.addEventListener('input', handleVarChange));
+            } else {
+                varsContainer.style.display = 'none';
+            }
+
+            const injectVars = (text) => {
+                let res = text || '';
+                Object.keys(varValues).forEach(k => {
+                    if (varValues[k]) {
+                        res = res.split(`{{${k}}}`).join(varValues[k]);
+                    }
+                });
+                return res;
+            };
+
+            let compiledMd = "";
+            let htmlPreview = "";
+
+            order.forEach(type => {
+                if (grouped[type].length > 0) {
+                    const sectionName = type.split('-')[1].toUpperCase();
+                    compiledMd += `### ${sectionName}\n\n`;
+                    htmlPreview += `<div class="section"><h2>${sectionName}</h2>`;
+                    
+                    grouped[type].forEach(n => {
+                        const content = injectVars(n.content || n.title);
+                        compiledMd += `${content}\n\n`;
+                        htmlPreview += `<div class="node-card"><strong>${n.title}</strong><pre>${content}</pre></div>`;
+                    });
+                    htmlPreview += `</div>`;
+                }
+            });
+
+            container.innerHTML = htmlPreview;
+            window.currentCompiledMd = compiledMd;
         }
+
+        document.getElementById('exportBtn').addEventListener('click', () => {
+            if (!window.currentCompiledMd) return;
+            const blob = new Blob([window.currentCompiledMd], { type: 'text/markdown' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'prompt.md';
+            a.click();
+            URL.revokeObjectURL(url);
+        });
     </script>
 </body>
 </html>

@@ -17,7 +17,7 @@ Output ONLY valid JSON matching this schema. Do NOT include markdown formatting 
 }
 ```
 
-Allowed types: root, hub, note, portal, smart-portal, logic-gate, web-root, web-nav, web-hero, web-section, web-card, web-link, web-button, web-text, web-image, web-video, web-form, web-input, web-grid, web-list, web-modal, web-carousel.
+Allowed types: root, hub, note, portal, smart-portal, logic-gate, web-root, web-nav, web-hero, web-section, web-card, web-link, web-button, web-text, web-image, web-video, web-form, web-input, web-grid, web-list, web-modal, web-carousel, flow-root, flow-process, flow-decision, flow-terminal, prompt-root, prompt-role, prompt-goal, prompt-context, prompt-instruction, prompt-constraint, prompt-example, prompt-variable, prompt-chain, prompt-image, prompt-data-analytic, prompt-text-to-text, prompt-code-gen, agent-root, agent-persona, agent-router, agent-skill, agent-tool, agent-memory, agent-guardrail.
 Ensure spatial x/y positioning prevents exact overlaps (space by 150px).
 
 If the user is requesting a website, dashboard, or web UI, you must adhere strictly to the rules in the `generate-web-mapstate` skill which will be dynamically provided to you.
