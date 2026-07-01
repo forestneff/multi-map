@@ -190,6 +190,18 @@ class MultiMapKernel {
         return this.getLibrary();
     }
 
+    hasRootType(mapId, targetType) {
+        const pages = this.getAllPages();
+        const map = pages.find(p => p.map_id === mapId);
+        if (!map || !map.nodes) return false;
+        const root = map.nodes.find(n => n.type && (n.type === 'web-root' || n.type === 'root' || n.type === 'person-root' || n.type === 'agent-root' || n.type === 'prompt-root'));
+        if (targetType === 'web-root') return root && root.type === 'web-root';
+        if (targetType === 'prompt-root') return root && root.type === 'prompt-root';
+        if (targetType === 'agent-root') return root && root.type === 'agent-root';
+        if (targetType === 'person-root') return root && root.type === 'person-root';
+        return root && root.type === targetType;
+    }
+
     getCurrentTier() {
         if (!this.isUsingCloudVault()) {
             return 'guest';
@@ -872,6 +884,15 @@ class MultiMapKernel {
             posX = pos.x; posY = pos.y;
         }
 
+        if (pid && typeof MultiMapSchema !== 'undefined') {
+            const parent = this.state.nodes.find(n => n.id === pid);
+            const childType = data.type || 'note';
+            if (parent && !MultiMapSchema.canConnect(parent.type, childType)) {
+                console.warn(`Kernel Blocked Node Creation: cannot connect child [${childType}] to parent [${parent.type}].`);
+                return null;
+            }
+        }
+
         const node = { 
             id: id, type: data.type || 'note', title: data.title || (data.type ? data.type.toUpperCase() : 'NODE'), 
             content: data.content || '', data: { x: posX || 0, y: posY || 0, isCore: data.isCore || false, collapsed: false }
@@ -1429,8 +1450,13 @@ class MultiMapKernel {
                 
                 if (this.state.map_id === id) {
                     const allPages = this.getLibrary();
-                    if (allPages.length > 0) {
-                        this.loadMapState(allPages[0]);
+                    const sorted = allPages.filter(x => x.map_id !== id).sort((a, b) => {
+                        const dateA = a.meta?.created_at ? new Date(a.meta.created_at) : new Date(0);
+                        const dateB = b.meta?.created_at ? new Date(b.meta.created_at) : new Date(0);
+                        return dateB - dateA;
+                    });
+                    if (sorted.length > 0) {
+                        this.loadMapState(sorted[0]);
                     } else {
                         this.state = this.getEmptyState();
                         this.notify();
@@ -1454,8 +1480,13 @@ class MultiMapKernel {
             // If we delete a page, we should remove the corresponding 'file-document' node from the project's Master Map (file-root).
             
             if (this.state.map_id === id) {
-                if (lib.length > 0) {
-                    this.loadMapState(lib[0]);
+                const sorted = lib.sort((a, b) => {
+                    const dateA = a.meta?.created_at ? new Date(a.meta.created_at) : new Date(0);
+                    const dateB = b.meta?.created_at ? new Date(b.meta.created_at) : new Date(0);
+                    return dateB - dateA;
+                });
+                if (sorted.length > 0) {
+                    this.loadMapState(sorted[0]);
                 } else {
                     this.state = this.getEmptyState();
                     this.notify();

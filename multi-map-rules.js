@@ -130,6 +130,7 @@ const MultiMapSchema = {
 
     canConnect(parentType, childType) {
         if (childType === 'root' || childType.endsWith('-root')) return false;
+        if (parentType === 'portal' || parentType === 'smart-portal') return false;
         if (childType === 'note') return true; // Universal exception: Any node can have a note attached.
         const rule = this.rules[parentType];
         if (!rule || !rule.strict) return true;

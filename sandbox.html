@@ -34,6 +34,16 @@
                 </svg>
             </button>
 
+            <!-- Data Manager Button -->
+            <button id="btn-data-manager"
+                class="p-1 md:p-1.5 text-slate-400 hover:text-white transition-colors rounded hover:bg-slate-800"
+                onclick="SC.toggleDataManager()" title="Toggle Data Manager">
+                <svg class="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2 1.5 3 3 3h10c1.5 0 3-1 3-3V7m-9 5h4m-4-4h4"></path>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7c0-2 1.5-3 3-3h10c1.5 0 3 1 3 3M4 7l8 3 8-3"></path>
+                </svg>
+            </button>
+
             <!-- M-M Home Link -->
             <a href="index.html"
                 class="w-7 h-7 md:w-8 md:h-8 bg-sky-600 rounded flex items-center justify-center text-white font-black shadow-lg shadow-sky-900/50 text-[10px] md:text-xs no-underline hover:bg-sky-500 transition-colors shrink-0">MM</a>
@@ -91,18 +101,6 @@
                 </svg>
             </button>
 
-            <!-- Mobile Menu Toggle -->
-            <!-- Data Manager Button (Replaces old Tools menu) -->
-            <button
-                id="btn-data-manager"
-                onclick="toggleDrawer('data-manager-drawer')"
-                class="p-2 text-slate-400 hover:text-white transition-colors rounded hover:bg-slate-800"
-                title="Data Manager">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2 1.5 3 3 3h10c1.5 0 3-1 3-3V7m-9 5h4m-4-4h4"></path>
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7c0-2 1.5-3 3-3h10c1.5 0 3 1 3 3M4 7l8 3 8-3"></path>
-                </svg>
-            </button>
     </nav>
 
     <div id="stage">
@@ -114,17 +112,6 @@
             </div>
             <div id="profile-content" class="flex-1 overflow-y-auto p-4 custom-scrollbar flex flex-col gap-6">
                 <!-- Injected via Auth manager -->
-            </div>
-        </div>
-
-        <!-- Data Manager Drawer -->
-        <div id="data-manager-drawer" class="absolute top-0 right-0 h-full w-full md:w-[650px] max-w-full bg-slate-900 border-l border-slate-700 shadow-2xl transform translate-x-full transition-transform duration-300 z-50 flex flex-col pointer-events-auto">
-            <div class="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-950/50">
-                <h2 class="text-white font-black flex items-center gap-2"><span>📚</span> Data Manager</h2>
-                <button onclick="document.getElementById('data-manager-drawer').classList.add('translate-x-full');" class="text-slate-500 hover:text-white transition-colors">✕</button>
-            </div>
-            <div id="data-manager-content" class="flex-1 overflow-y-auto p-4 custom-scrollbar flex flex-col gap-6">
-                <!-- Injected via Auth/Data manager -->
             </div>
         </div>
 
@@ -184,6 +171,18 @@
                 </div>
                 <div id="panel-properties" class="flex-1 overflow-auto custom-scrollbar"></div>
             </div>
+
+            <!-- Expandable Data Manager Panel -->
+            <div id="sidebar-data-manager" class="flex flex-col w-[calc(100vw-56px)] md:w-[450px] shrink-0 bg-slate-900/90 h-full border-l border-slate-800/60 hidden">
+                <div class="p-3 border-b border-slate-800 flex justify-between items-center bg-slate-950/50">
+                    <span class="font-bold text-xs uppercase tracking-widest text-slate-400">Data Manager</span>
+                    <button class="p-1 text-slate-400 hover:text-white" onclick="SC.toggleDataManager()"
+                        title="Close Data Manager">✕</button>
+                </div>
+                <div id="data-manager-content" class="flex-1 overflow-y-auto p-4 custom-scrollbar flex flex-col gap-6">
+                    <!-- Injected via Auth/Data manager -->
+                </div>
+            </div>
         </div>
 
         <!-- Main Viewport -->
@@ -229,13 +228,19 @@
                 drawer.classList.remove('translate-x-full');
                 if (window.SC) window.SC.pushUiStack(drawerId);
                 
-                if (drawerId === 'data-manager-drawer') {
-                    document.getElementById('profile-drawer').classList.add('translate-x-full');
-                    if (window.SC) window.SC.popUiStack('profile-drawer');
-                    if (window.Auth) window.Auth.renderDataManager(document.getElementById('data-manager-content'));
-                } else if (drawerId === 'profile-drawer') {
-                    document.getElementById('data-manager-drawer').classList.add('translate-x-full');
-                    if (window.SC) window.SC.popUiStack('data-manager-drawer');
+                if (drawerId === 'profile-drawer') {
+                    if (window.SC && window.SC.dom.sidebar) {
+                        window.SC.dom.sidebar.classList.remove('data-manager-open');
+                        window.SC.dom.sidebar.classList.remove('open');
+                        window.SC.popUiStack('data-manager-sidebar');
+                        window.SC.popUiStack('inspector-sidebar');
+                        
+                        // Hide panel content elements
+                        const dmPanel = document.getElementById('sidebar-data-manager');
+                        if (dmPanel) dmPanel.classList.add('hidden');
+                        const inspectorPanel = document.getElementById('sidebar-content');
+                        if (inspectorPanel) inspectorPanel.classList.add('hidden');
+                    }
                     if (window.Auth) window.Auth.renderProfile(document.getElementById('profile-content'));
                 }
                 
@@ -355,12 +360,11 @@
                         e.target.closest('#ai-overlay')) return;
 
                     const profileDrawer = document.getElementById('profile-drawer');
-                    const dataDrawer    = document.getElementById('data-manager-drawer');
                     if (profileDrawer && !profileDrawer.classList.contains('translate-x-full')) {
                         profileDrawer.classList.add('translate-x-full');
                     }
-                    if (dataDrawer && !dataDrawer.classList.contains('translate-x-full')) {
-                        dataDrawer.classList.add('translate-x-full');
+                    if (window.SC) {
+                        window.SC.actionCloseDataManager();
                     }
                 }, { capture: true });
             }

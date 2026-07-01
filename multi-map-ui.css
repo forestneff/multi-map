@@ -304,6 +304,11 @@ body {
     /* 56px rail + 256px panel */
 }
 
+#sidebar.data-manager-open {
+    width: 506px;
+    /* 56px rail + 450px panel */
+}
+
 .phase-btn.active {
     background: rgba(56, 189, 248, 0.15) !important;
     box-shadow: inset -4px 0 0 0 var(--glow-primary);
@@ -323,6 +328,11 @@ body {
 
     #sidebar.open {
         width: 312px;
+        max-width: 100vw;
+    }
+
+    #sidebar.data-manager-open {
+        width: 100vw;
         max-width: 100vw;
     }
 

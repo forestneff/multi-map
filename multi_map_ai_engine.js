@@ -737,8 +737,12 @@ class MultiMapAI {
                 type = type.toLowerCase();
             }
 
-            const pid = this.kernel.state.session.selectedId;
-            const parentNode = pid ? this.kernel.state.nodes.find(n => n.id === pid) : null;
+            let pid = this.kernel.state.session.selectedId;
+            let parentNode = pid ? this.kernel.state.nodes.find(n => n.id === pid) : null;
+            if (!parentNode && this.kernel.state.nodes.length > 0) {
+                parentNode = this.kernel.state.nodes.find(n => n.type === 'root' || n.type.endsWith('-root')) || this.kernel.state.nodes[0];
+                pid = parentNode.id;
+            }
 
             if (!type) {
                 type = pid ? this.kernel.getSmartChildType(pid) : 'note';
@@ -922,9 +926,16 @@ class MultiMapAI {
                         try {
                             if (edit.action === 'update' && edit.nodeId) {
                                 this.kernel.updateNode(edit.nodeId, edit.data);
-                            } else if (edit.action === 'add' && edit.parentId) {
-                                const newNode = this.kernel.addNode(edit.data, edit.parentId);
-                                this.kernel.addConnection(edit.parentId, newNode.id);
+                            } else if (edit.action === 'add') {
+                                let parentId = edit.parentId;
+                                if ((!parentId || !this.kernel.state.nodes.find(n => n.id === parentId)) && this.kernel.state.nodes.length > 0) {
+                                    const rootNode = this.kernel.state.nodes.find(n => n.type === 'root' || n.type.endsWith('-root')) || this.kernel.state.nodes[0];
+                                    parentId = rootNode.id;
+                                }
+                                const newNode = this.kernel.addNode(edit.data, parentId);
+                                if (parentId) {
+                                    this.kernel.addConnection(parentId, newNode.id);
+                                }
                             } else if (edit.action === 'delete' && edit.nodeId) {
                                 this.kernel.deleteNode(edit.nodeId);
                             } else if (edit.action === 'project-update' && edit.projectId) {
@@ -1060,7 +1071,11 @@ class MultiMapAI {
 
     async actionExpandSelected() {
         if (!this.pendingMapData) return;
-        const parentId = this.kernel.state.session.selectedId;
+        let parentId = this.kernel.state.session.selectedId;
+        if (!parentId && this.kernel.state.nodes.length > 0) {
+            const rootNode = this.kernel.state.nodes.find(n => n.type === 'root' || n.type.endsWith('-root')) || this.kernel.state.nodes[0];
+            parentId = rootNode.id;
+        }
         if (!parentId) {
             alert("No node selected to expand!");
             return;

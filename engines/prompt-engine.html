@@ -41,6 +41,40 @@
             }
         });
 
+        window.addEventListener('keydown', (e) => {
+            const target = e.target;
+            const isEditable = target.tagName === 'INPUT' || 
+                               target.tagName === 'TEXTAREA' || 
+                               target.isContentEditable || 
+                               target.closest('[contenteditable="true"]');
+            
+            if (e.key === 'Enter' && isEditable) {
+                if (target.tagName === 'INPUT') {
+                    target.blur();
+                    e.preventDefault();
+                    e.stopPropagation();
+                } else if (target.tagName === 'TEXTAREA') {
+                    e.stopPropagation();
+                }
+                return;
+            }
+
+            if (e.key === 'Escape' || !isEditable) {
+                if (['Escape', 'Tab', 'Enter', ' ', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Delete'].includes(e.key)) {
+                    if (e.key !== 'Escape') {
+                        e.preventDefault();
+                    }
+                    window.parent.postMessage({
+                        type: 'mm-keydown',
+                        key: e.key,
+                        shiftKey: e.shiftKey,
+                        ctrlKey: e.ctrlKey,
+                        metaKey: e.metaKey
+                    }, '*');
+                }
+            }
+        });
+
         function handleVarChange(e) {
             varValues[e.target.dataset.key] = e.target.value;
             render();

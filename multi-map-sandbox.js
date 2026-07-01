@@ -234,19 +234,63 @@ class SandboxController {
 
     toggleSidebar() {
         if (this.dom.sidebar) {
+            // Close Data Manager first
+            this.dom.sidebar.classList.remove('data-manager-open');
+            this.popUiStack('data-manager-sidebar');
+            const dmPanel = document.getElementById('sidebar-data-manager');
+            if (dmPanel) dmPanel.classList.add('hidden');
+
             this.dom.sidebar.classList.toggle('open');
             const isOpen = this.dom.sidebar.classList.contains('open');
+            
+            const inspectorPanel = document.getElementById('sidebar-content');
+            if (inspectorPanel) {
+                if (isOpen) inspectorPanel.classList.remove('hidden');
+                else inspectorPanel.classList.add('hidden');
+            }
+
             if (isOpen) {
                 this.pushUiStack('inspector-sidebar');
+                // Close right profile drawer
+                const p = document.getElementById('profile-drawer');
+                if (p) p.classList.add('translate-x-full');
+                this.popUiStack('profile-drawer');
             } else {
                 this.popUiStack('inspector-sidebar');
             }
-            // On mobile, opening the sidebar should close the right drawers
-            if (isOpen && window.innerWidth <= 768) {
+        }
+    }
+
+    toggleDataManager() {
+        if (this.dom.sidebar) {
+            // Close Inspector first
+            this.dom.sidebar.classList.remove('open');
+            this.popUiStack('inspector-sidebar');
+            const inspectorPanel = document.getElementById('sidebar-content');
+            if (inspectorPanel) inspectorPanel.classList.add('hidden');
+
+            this.dom.sidebar.classList.toggle('data-manager-open');
+            const isOpen = this.dom.sidebar.classList.contains('data-manager-open');
+            
+            const dmPanel = document.getElementById('sidebar-data-manager');
+            if (dmPanel) {
+                if (isOpen) dmPanel.classList.remove('hidden');
+                else dmPanel.classList.add('hidden');
+            }
+
+            if (isOpen) {
+                this.pushUiStack('data-manager-sidebar');
+                // Close right profile drawer
                 const p = document.getElementById('profile-drawer');
                 if (p) p.classList.add('translate-x-full');
-                const d = document.getElementById('data-manager-drawer');
-                if (d) d.classList.add('translate-x-full');
+                this.popUiStack('profile-drawer');
+                
+                // Render data manager content
+                if (window.Auth) {
+                    window.Auth.renderDataManager(document.getElementById('data-manager-content'));
+                }
+            } else {
+                this.popUiStack('data-manager-sidebar');
             }
         }
     }
@@ -607,7 +651,7 @@ class SandboxController {
             }
             if (node.type === 'portal') {
                 const rootMeta = node.content ? this.kernel.getRootMetadata(node.content) : null;
-                const isPromptPortal = rootMeta && (rootMeta.portal_behavior === 'execute_prompt' || this.kernel.isPromptMap(node.content));
+                const isPromptPortal = rootMeta && (rootMeta.portal_behavior === 'execute_prompt' || (this.kernel.hasRootType && this.kernel.hasRootType(node.content, 'prompt-root')) || (this.kernel.isPromptMap && this.kernel.isPromptMap(node.content)));
                 if (isPromptPortal) {
                     actions.push({ 
                         icon: '✨', 
@@ -615,6 +659,20 @@ class SandboxController {
                         title: 'Trigger AI' 
                     });
                 }
+                const isWebPortal = node.content && this.kernel.hasRootType && this.kernel.hasRootType(node.content, 'web-root');
+                const isAgentPortal = node.content && this.kernel.hasRootType && this.kernel.hasRootType(node.content, 'agent-root');
+                const isPersonPortal = node.content && this.kernel.hasRootType && this.kernel.hasRootType(node.content, 'person-root');
+
+                if (node.content) {
+                    if (isWebPortal) {
+                        actions.push({ icon: '🚀', action: 'LaunchWebPortal', title: 'Launch Web App' });
+                    } else if (isAgentPortal) {
+                        actions.push({ icon: '⚙️', action: 'ConfigureAgentPortal', title: 'Configure Agent' });
+                    } else if (isPersonPortal) {
+                        actions.push({ icon: '👤', action: 'ViewPersonPortal', title: 'View Profile' });
+                    }
+                }
+                
                 actions.push({ 
                     icon: node.content ? '🌀' : '🎯', 
                     action: 'EnterPortal', 
@@ -865,6 +923,15 @@ class SandboxController {
 
     async actionDelete(id) {
         const tgt = id || this.kernel.state.session.selectedId;
+        const node = this.kernel.state.nodes.find(n => n.id === tgt);
+        if (!node) return;
+        
+        const isRoot = node.type === 'root' || node.type.endsWith('-root') || (node.data && node.data.isCore);
+        if (isRoot) {
+            await this.actionDeleteFromLibrary(this.kernel.activePageId);
+            return;
+        }
+
         const ok = await this.actionConfirm({
             title: "Delete Node",
             message: "Are you sure you want to delete this node and cascade to all children? This action cannot be undone.",
@@ -877,11 +944,50 @@ class SandboxController {
     }
     actionToggleCollapse(id) { const tgt = id || this.kernel.state.session.selectedId; this.kernel.toggleCollapse(tgt); }
     
-    actionAddChild(id) {
-        const pid = id || this.kernel.state.session.selectedId;
-        const p = this.kernel.state.nodes.find(n => n.id === pid);
+    async actionAddChild(id, forcedType) {
+        let pid = id || this.kernel.state.session.selectedId;
+        let p = this.kernel.state.nodes.find(n => n.id === pid);
+        if (p && (p.type === 'portal' || p.type === 'smart-portal')) {
+            const parentConnection = this.kernel.state.connections.find(c => c.to === p.id && c.type === 'structural');
+            const portalParentId = parentConnection ? parentConnection.from : null;
+
+            const actions = [
+                `<button class="cancel-btn px-4 py-2 border border-slate-700 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg transition-colors font-bold text-[11px] uppercase tracking-wider">Cancel</button>`,
+                `<button class="root-btn px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg transition-colors font-bold text-[11px] uppercase tracking-wider">Add to Root</button>`
+            ];
+            if (portalParentId) {
+                actions.push(`<button class="parent-btn px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors font-bold text-[11px] uppercase tracking-wider">Add to Parent</button>`);
+            }
+
+            const choice = await this.showDialogModal({
+                title: "Portal Child Restricted",
+                contentHtml: `<p class="leading-relaxed text-slate-350">Portals are terminal nodes and cannot contain child elements. Where would you like to place this node instead?</p>`,
+                actionsHtml: actions.join(' '),
+                onRender: (el, close) => {
+                    el.querySelector('.cancel-btn').onclick = () => close(null);
+                    el.querySelector('.root-btn').onclick = () => close('root');
+                    if (portalParentId) {
+                        el.querySelector('.parent-btn').onclick = () => close('parent');
+                    }
+                }
+            });
+
+            if (choice === 'root') {
+                p = this.kernel.state.nodes.find(n => n.type === 'root' || n.type.endsWith('-root')) || this.kernel.state.nodes[0];
+                pid = p ? p.id : null;
+            } else if (choice === 'parent' && portalParentId) {
+                p = this.kernel.state.nodes.find(n => n.id === portalParentId);
+                pid = portalParentId;
+            } else {
+                return null;
+            }
+        }
+        if (!p && this.kernel.state.nodes.length > 0) {
+            p = this.kernel.state.nodes.find(n => n.type === 'root' || n.type.endsWith('-root')) || this.kernel.state.nodes[0];
+            pid = p.id;
+        }
         if (p) {
-            let type = this.kernel.getSmartChildType(pid);
+            let type = forcedType || this.kernel.getSmartChildType(pid);
             
             const mapType = this.kernel.state.meta && this.kernel.state.meta.type ? this.kernel.state.meta.type : 'generic';
             if (typeof MultiMapSchema !== 'undefined' && MultiMapSchema.mapTypes && MultiMapSchema.mapTypes[mapType]) {
@@ -895,13 +1001,15 @@ class SandboxController {
 
             if (typeof MultiMapSchema !== 'undefined' && !MultiMapSchema.canConnect(p.type, type)) {
                 alert(`Schema constraint: Cannot add a [${type}] child to a [${p.type}] node in this map.`);
-                return;
+                return null;
             }
             const child = this.kernel.addNode({ title: "New " + type, type: type }, pid);
             this.kernel.addConnection(pid, child.id);
             this.kernel.selectNode(child.id); 
             p.data.collapsed = false; 
+            return child;
         }
+        return null;
     }
 
     actionAddTrueBranch(id) {
@@ -941,13 +1049,15 @@ class SandboxController {
         }, 100);
     }
 
-    actionAddSibling() {
+    async actionAddSibling() {
         const selectedId = this.kernel.state.session.selectedId;
         if (!selectedId) return;
         const parentConnection = this.kernel.state.connections.find(c => c.to === selectedId && c.type === 'structural');
         const parentId = parentConnection ? parentConnection.from : null;
         if (parentId) {
-            this.actionAddChild(parentId);
+            const selectedNode = this.kernel.state.nodes.find(n => n.id === selectedId);
+            const forcedType = selectedNode ? selectedNode.type : null;
+            await this.actionAddChild(parentId, forcedType);
             this.focusInspectorTitle();
         }
     }
@@ -978,11 +1088,9 @@ class SandboxController {
                         this.popUiStack('profile-drawer');
                         return;
                     }
-                } else if (topId === 'data-manager-drawer') {
-                    const drawer = document.getElementById('data-manager-drawer');
-                    if (drawer && !drawer.classList.contains('translate-x-full')) {
-                        drawer.classList.add('translate-x-full');
-                        this.popUiStack('data-manager-drawer');
+                } else if (topId === 'data-manager-sidebar') {
+                    if (this.dom.sidebar && this.dom.sidebar.classList.contains('data-manager-open')) {
+                        this.toggleDataManager();
                         return;
                     }
                 } else if (topId === 'tutorial-modal') {
@@ -1017,9 +1125,8 @@ class SandboxController {
                 profileDrawer.classList.add('translate-x-full');
                 return;
             }
-            const dataDrawer = document.getElementById('data-manager-drawer');
-            if (dataDrawer && !dataDrawer.classList.contains('translate-x-full')) {
-                dataDrawer.classList.add('translate-x-full');
+            if (this.dom.sidebar && this.dom.sidebar.classList.contains('data-manager-open')) {
+                this.toggleDataManager();
                 return;
             }
             if (window.Tutorials && window.Tutorials.modalElement && !window.Tutorials.modalElement.classList.contains('hidden')) {
@@ -1067,8 +1174,10 @@ class SandboxController {
         if (e.key === 'Tab') {
             e.preventDefault();
             if (selectedId) {
-                this.actionAddChild();
-                this.focusInspectorTitle();
+                (async () => {
+                    const added = await this.actionAddChild();
+                    if (added) this.focusInspectorTitle();
+                })();
             }
         } else if (e.key === 'Enter') {
             e.preventDefault();
@@ -1088,7 +1197,7 @@ class SandboxController {
                 this.actionDelete(selectedId);
             }
         } else if (e.key === ' ' || e.key === 'Spacebar') {
-            if (selectedId && this.viewMode === 'map') {
+            if (selectedId) {
                 e.preventDefault();
                 if (this.smartButtonOptions && this.smartButtonOptions.length > 1) {
                     if (!this.isSmartOptionsOpen) {
@@ -1167,6 +1276,29 @@ class SandboxController {
         const parent = parentConnection ? this.kernel.state.nodes.find(n => n.id === parentConnection.from) : null;
 
         let targetNode = null;
+
+        // --- 0. WEB MODE STRUCTURAL TRAVERSAL ---
+        if (this.viewMode === 'web') {
+            if (direction === 'ArrowUp') {
+                targetNode = parent;
+            } else if (direction === 'ArrowDown') {
+                targetNode = children.length > 0 ? children[0] : null;
+            } else if ((direction === 'ArrowLeft' || direction === 'ArrowRight') && parent) {
+                const siblingConnections = this.kernel.state.connections.filter(c => c.from === parent.id && c.type === 'structural');
+                const siblings = siblingConnections.map(c => this.kernel.state.nodes.find(n => n.id === c.to)).filter(Boolean);
+                // We rely on connection insertion order for web DOM structure
+                const idx = siblings.findIndex(s => s.id === node.id);
+                if (idx !== -1) {
+                    targetNode = direction === 'ArrowLeft' ? siblings[idx - 1] : siblings[idx + 1];
+                }
+            }
+            
+            if (targetNode) {
+                this.kernel.selectNode(targetNode.id);
+                this.render();
+            }
+            return;
+        }
 
         // --- 1. TRY SEMANTIC TRAVERSAL ---
         if (direction === 'ArrowLeft') {
@@ -1273,8 +1405,7 @@ class SandboxController {
                 // Navigate directly to existing page
                 this.kernel.enterPortal(existingMap);
                 const mapType = this.kernel.state.meta && this.kernel.state.meta.type ? this.kernel.state.meta.type : 'generic';
-                if (mapType === 'web') this.setView('web');
-                else this.setView('map');
+                this.setView('map');
                 this.actionCloseDataManager();
                 this.render();
             } else {
@@ -1283,6 +1414,224 @@ class SandboxController {
             }
         }
     }
+
+    async actionLaunchWebPortal(id) {
+        await this.actionEnterPortal(id);
+        this.setView('web');
+    }
+
+    async actionConfigureAgentPortal(id) {
+        await this.actionEnterPortal(id);
+        this.setView('agent');
+    }
+
+    async actionViewPersonPortal(id) {
+        await this.actionEnterPortal(id);
+        this.setView('person');
+    }
+
+    compileWebNodeToHtml(nodeId, isRootNode) {
+        const state = this.kernel.state;
+        const targetNode = state.nodes.find(n => n.id === nodeId);
+        if (!targetNode) return '';
+
+        const getKids = (id) => state.connections.filter(c => c.from === id).map(c => state.nodes.find(n => n.id === c.to)).filter(n => n);
+        
+        const escapeHTML = (str) => {
+            if (str === null || str === undefined) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        };
+
+        const renderContent = (str) => {
+            if (str === null || str === undefined) return '';
+            if (/<[a-z][\s\S]*>/i.test(str)) {
+                return str;
+            }
+            return escapeHTML(str).replace(/\n/g, '<br>');
+        };
+
+        const renderNode = (node) => {
+            const kids = getKids(node.id).map(n => {
+                let childHtml = renderNode(n);
+                if (node.type === 'web-carousel') return `<div class="snap-center shrink-0">${childHtml}</div>`;
+                return childHtml;
+            }).join('');
+            
+            const title = escapeHTML(node.title || '');
+            let contentRaw = node.content ? node.content.trim() : '';
+            
+            let data = { text: contentRaw, classes: '', src: '', href: '' };
+            if (node.type.startsWith('web-') && node.type !== 'web-root') {
+                try {
+                    const pData = JSON.parse(contentRaw);
+                    if (typeof pData === 'object' && pData !== null) {
+                        data = { ...data, ...pData };
+                    }
+                } catch(e) {}
+            }
+            let content = data.text;
+            let classes = data.classes;
+            let src = data.src;
+            let href = data.href;
+            
+            const getAttrs = (defaultClasses) => {
+                const finalClasses = (classes || defaultClasses || '').trim();
+                return finalClasses ? `class="${escapeHTML(finalClasses)}"` : '';
+            };
+
+            switch(node.type) {
+                case 'web-root':
+                    let iframeHtml = '';
+                    let isUrl = false;
+                    let url = contentRaw;
+
+                    if (contentRaw && !/\n/.test(contentRaw)) { 
+                        const hasSpaces = /\s/.test(contentRaw);
+                        const hasProtocol = /^(https?:\/\/|file:\/\/)/i.test(contentRaw);
+                        const startsWithWww = /^www\./i.test(contentRaw);
+                        const isLocalPath = /^(\.\/|\.\.\/|\/)/.test(contentRaw) || /\.html?$/i.test(contentRaw);
+                        const looksLikeDomain = /^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?:\/?.*)?$/.test(contentRaw) && !hasSpaces;
+                        const isLocalHost = /^localhost(:\d+)?/i.test(contentRaw) || /^\d{1,3}(\.\d{1,3}){3}(:\d+)?/.test(contentRaw);
+
+                        if (hasProtocol || isLocalPath) {
+                            isUrl = true;
+                        } else if (startsWithWww || looksLikeDomain) {
+                            isUrl = true;
+                            url = 'https://' + contentRaw;
+                        } else if (isLocalHost && !hasSpaces) {
+                            isUrl = true;
+                            url = 'http://' + contentRaw;
+                        }
+                    }
+
+                    if (isUrl) {
+                        const iframeClass = kids ? 'w-full h-[85vh] border-none block' : 'w-full h-screen border-none block';
+                        iframeHtml = `<iframe src="${url}" class="${iframeClass}" title="Embedded Webpage"></iframe>`;
+                    }
+
+                    let textContent = (!isUrl && contentRaw) ? `<div class="py-12 px-8 max-w-5xl mx-auto prose text-slate-700">${renderContent(contentRaw)}</div>` : '';
+                    const kidsContainer = kids ? `<div class="${isUrl ? 'relative z-10 bg-slate-50 shadow-[0_-20px_50px_rgba(0,0,0,0.15)] pt-10' : ''}">${kids}</div>` : '';
+                    
+                    return `<main ${getAttrs('')}>${iframeHtml}${textContent}${kidsContainer}</main>`;
+
+                case 'web-nav':
+                    return `<nav ${getAttrs('flex flex-wrap items-center justify-between gap-4 md:gap-6 p-4 md:p-6 bg-white shadow-sm sticky top-0 z-50 border-b border-slate-100 w-full')}><div class="font-black text-xl tracking-tighter">MyBrand</div><div class="flex flex-wrap items-center gap-4 md:gap-6">${kids}</div></nav>`;
+
+                case 'web-hero':
+                    let bgStyle = src ? `style="background-image: url('${escapeHTML(src)}'); background-size: cover; background-position: center;"` : '';
+                    return `<header ${getAttrs('bg-gradient-to-br from-slate-900 to-indigo-950 text-white py-24 md:py-32 px-4 md:px-8 text-center w-full relative')} ${bgStyle}>
+                        ${src ? '<div class="absolute inset-0 bg-slate-900/70 z-0"></div>' : ''}
+                        <div class="relative z-10"><h1 class="text-5xl md:text-7xl font-black mb-6 tracking-tight">${title}</h1><div class="text-lg md:text-xl text-indigo-200 max-w-3xl mx-auto mb-10">${renderContent(content || '')}</div><div class="flex flex-wrap justify-center gap-4">${kids}</div></div>
+                    </header>`;
+
+                case 'web-section':
+                    return `<section ${getAttrs('py-16 md:py-20 px-4 md:px-8 max-w-6xl mx-auto w-full')}><h2 class="text-3xl md:text-4xl font-black mb-10 text-center">${title}</h2><div class="flex flex-col gap-8 w-full">${kids}</div></section>`;
+
+                case 'web-card':
+                    return `<div ${getAttrs('bg-white border border-slate-100 rounded-2xl p-6 shadow-sm hover:shadow-md hover:border-indigo-100 transition-all flex flex-col gap-3 h-full')}>${title ? `<h3 class="font-bold text-lg text-slate-900 mb-1 leading-snug">${title}</h3>` : ''}${content ? `<div class="text-slate-600 text-sm leading-relaxed">${renderContent(content)}</div>` : ''}${kids ? `<div class="mt-2 flex flex-col gap-2">${kids}</div>` : ''}</div>`;
+
+                case 'web-button':
+                    return `<button ${getAttrs('px-6 md:px-8 py-3 bg-indigo-600 text-white font-bold rounded-full shadow-lg shadow-indigo-500/30 hover:bg-indigo-500 hover:-translate-y-0.5 transition-all inline-block')}>${title || content}</button>`;
+
+                case 'web-link':
+                    let linkHref = href;
+                    if (!linkHref) {
+                        if (state.nodes.find(n => n.id === content)) linkHref = `#${content}`; 
+                        else if (content && !content.match(/^(https?:\/\/|file:\/\/|\/|\.\/|\.\.\/|#)/i)) linkHref = `https://${content}`; 
+                        else linkHref = content;
+                    }
+                    return `<a href="${escapeHTML(linkHref || '#')}" ${getAttrs('text-blue-600 hover:underline block py-1 font-semibold')}>${title}</a>`;
+
+                case 'web-image':
+                    return `<img src="${escapeHTML(src || content || '')}" alt="${title}" ${getAttrs('max-w-full h-auto rounded-lg shadow-sm mx-auto')} />`;
+
+                case 'web-video':
+                    return `<video src="${escapeHTML(src || content || '')}" controls ${getAttrs('w-full rounded-lg shadow-sm')}></video>`;
+
+                case 'web-form':
+                    return `<form ${getAttrs('flex flex-col gap-4 w-full max-w-md mx-auto')}><h3 class="font-bold text-lg mb-2 text-center">${title}</h3>${kids}</form>`;
+
+                case 'web-input':
+                    return `<input type="text" placeholder="${title || content}" ${getAttrs('border border-slate-300 rounded px-4 py-2 w-full focus:outline-none focus:border-indigo-500')} />`;
+
+                case 'web-grid':
+                    return `<div ${getAttrs('grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full')}>${kids}</div>`;
+
+                case 'web-list':
+                    return `<ul ${getAttrs('list-disc pl-5 space-y-2 text-slate-700 w-full')}>${kids}</ul>`;
+
+                case 'web-modal':
+                    return `<div><dialog id="${node.id}" class="${escapeHTML(classes || 'p-6 md:p-8 rounded-2xl shadow-2xl backdrop:bg-slate-900/50 backdrop:backdrop-blur-sm w-[90%] max-w-lg')}"><h3 class="font-bold text-2xl mb-4">${title}</h3>${kids}<form method="dialog" class="mt-6 flex justify-end"><button class="px-4 py-2 bg-slate-200 hover:bg-slate-300 rounded text-slate-800 font-bold transition-colors">Close</button></form></dialog><div class="w-full flex justify-center mt-4"><button onclick="document.getElementById('${node.id}').showModal()" class="px-6 py-3 bg-white border border-slate-200 shadow-sm rounded-lg text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors">Open ${title}</button></div></div>`;
+
+                case 'web-carousel':
+                    return `<div ${getAttrs('flex overflow-x-auto snap-x snap-mandatory gap-4 pb-4 w-full custom-scrollbar')}>${kids}</div>`;
+
+                case 'web-footer':
+                    return `<footer ${getAttrs('py-12 px-4 md:px-8 mt-12 border-t border-slate-200 text-center bg-slate-100 w-full')}>${kids || `<p class="text-slate-500 text-sm font-semibold">${escapeHTML(content || title)}</p>`}</footer>`;
+
+                case 'web-text':
+                    return `<div ${getAttrs('mb-4 w-full')}><h3 class="font-bold text-xl text-slate-800 mb-3">${title}</h3><div class="text-slate-600 leading-relaxed">${renderContent(content || '')}</div>${kids}</div>`;
+
+                default:
+                    return `<div ${getAttrs('mb-6')}><h3 class="font-bold text-lg text-slate-800 mb-2">${title}</h3><div class="prose text-slate-600 leading-relaxed">${renderContent(content)}</div>${kids}</div>`;
+            }
+        };
+
+        const innerHtml = renderNode(targetNode);
+        if (isRootNode) {
+            return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${escapeHTML(targetNode.title || 'Exported Page')}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { margin: 0; min-height: 100vh; background-color: #f8fafc; }
+    </style>
+</head>
+<body>
+${innerHtml}
+</body>
+</html>`;
+        }
+        return innerHtml;
+    }
+
+    actionPreviewWebPage(nodeId) {
+        const html = this.compileWebNodeToHtml(nodeId, true);
+        const win = window.open();
+        if (win) {
+            win.document.write(html);
+            win.document.close();
+        } else {
+            alert("Popup blocked! Please allow popups to preview the page.");
+        }
+    }
+
+    actionDownloadWebCode(nodeId) {
+        const node = this.kernel.state.nodes.find(n => n.id === nodeId);
+        if (!node) return;
+        const isRoot = node.type === 'web-root';
+        const html = this.compileWebNodeToHtml(nodeId, isRoot);
+        const filename = isRoot ? 'index.html' : `${node.title || 'element'}.html`;
+        
+        const blob = new Blob([html], { type: 'text/html' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+
 
     async actionOpenPortalLocal(id) {
         const tgt = id || this.kernel.state.session.selectedId;
@@ -1349,11 +1698,7 @@ class SandboxController {
                     <div class="flex flex-col gap-1.5">
                         <label class="text-slate-400 font-bold uppercase text-[9px] tracking-wider">Page Type</label>
                         <select id="new-page-type" class="bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 outline-none focus:border-indigo-500 transition-colors w-full">
-                            <option value="generic" selected>Generic Map</option>
-                            <option value="web">Web Architect</option>
-                            <option value="person">Person Profile</option>
-                            <option value="prompt">Prompt Engine</option>
-                            <option value="agent">Agent Config</option>
+                            ${this.getMapTypeOptionsHtml('generic')}
                         </select>
                     </div>
                 </div>
@@ -1545,9 +1890,7 @@ class SandboxController {
     actionExitPortal() {
         if (this.kernel.exitPortal()) {
             this.setView('map');
-            
-            const drawer = document.getElementById('data-manager-drawer');
-            if (drawer) drawer.classList.add('translate-x-full');
+            this.actionCloseDataManager();
         }
     }
 
@@ -1578,11 +1921,7 @@ class SandboxController {
                 <div class="flex flex-col gap-1.5">
                     <label class="text-slate-400 font-bold uppercase text-[9px] tracking-wider">Sub-Page Type</label>
                     <select id="clip-page-type" class="bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 outline-none focus:border-indigo-500 transition-colors w-full">
-                        <option value="generic" ${initialType === 'generic' ? 'selected' : ''}>Generic Map</option>
-                        <option value="web" ${initialType === 'web' ? 'selected' : ''}>Web Architect</option>
-                        <option value="person" ${initialType === 'person' ? 'selected' : ''}>Person Profile</option>
-                        <option value="prompt" ${initialType === 'prompt' ? 'selected' : ''}>Prompt Engine</option>
-                        <option value="agent" ${initialType === 'agent' ? 'selected' : ''}>Agent Config</option>
+                        ${this.getMapTypeOptionsHtml(initialType)}
                     </select>
                 </div>
             </div>
@@ -1880,8 +2219,7 @@ class SandboxController {
                 this.kernel.activeProjectId = projectId;
                 this.kernel.loadMapState(clonedMap);
                 this.setView('map');
-                const drawer = document.getElementById('data-manager-drawer');
-                if (drawer) drawer.classList.add('translate-x-full');
+                this.actionCloseDataManager();
             } else {
                 this.render();
             }
@@ -1911,8 +2249,7 @@ class SandboxController {
                 this.kernel.activeProjectId = newProjId;
                 this.kernel.loadMapState(clonedMap);
                 this.setView('map');
-                const drawer = document.getElementById('data-manager-drawer');
-                if (drawer) drawer.classList.add('translate-x-full');
+                this.actionCloseDataManager();
             } else {
                 this.render();
             }
@@ -2233,6 +2570,13 @@ class SandboxController {
         const lib = this.kernel.getLibrary();
         const map = lib.find(m => m.map_id === id);
         if (map) { 
+            // Check if this map is targeted by a portal in the current state
+            const portalNode = this.kernel.state.nodes.find(n => (n.type === 'portal' || n.type === 'smart-portal') && n.content === id);
+            if (portalNode) {
+                this.actionEnterPortal(portalNode.id);
+                return;
+            }
+
             this.kernel.activeProjectId = map.meta?.project_id || 'default_project';
             this.kernel.loadMapState(map); 
             this.setView('map');
@@ -2241,8 +2585,12 @@ class SandboxController {
     }
 
     actionCloseDataManager() {
-        const drawer = document.getElementById('data-manager-drawer');
-        if (drawer) drawer.classList.add('translate-x-full');
+        if (this.dom.sidebar) {
+            this.dom.sidebar.classList.remove('data-manager-open');
+            this.popUiStack('data-manager-sidebar');
+            const dmPanel = document.getElementById('sidebar-data-manager');
+            if (dmPanel) dmPanel.classList.add('hidden');
+        }
     }
 
     actionSetActiveProject(projId) {
@@ -2584,15 +2932,14 @@ class SandboxController {
             const proj = projects.find(p => p.project_id === activeProjId) || { meta: { title: "My Project" } };
             const projTitle = proj.meta?.title || "My Project";
             const pageTitle = this.kernel.state.meta?.title || "Untitled Space";
-            mapTitleEl.innerHTML = `<span class="opacity-65 hover:text-purple-400 cursor-pointer transition-colors" onclick="toggleDrawer('data-manager-drawer')">${this.escapeHTML(projTitle)}</span> <span class="mx-1 text-slate-500">›</span> <span class="text-white">${this.escapeHTML(pageTitle)}</span>`;
+            mapTitleEl.innerHTML = `<span class="opacity-65 hover:text-purple-400 cursor-pointer transition-colors" onclick="SC.toggleDataManager()">${this.escapeHTML(projTitle)}</span> <span class="mx-1 text-slate-500">›</span> <span class="text-white">${this.escapeHTML(pageTitle)}</span>`;
         }
 
         const inspector = this.registry.get('inspector');
         if (inspector && this.dom.panelProperties) inspector.render(this.dom.panelProperties, this.kernel.state);
 
-        // Auto-update Data Manager drawer if it is currently open
-        const dataDrawer = document.getElementById('data-manager-drawer');
-        if (dataDrawer && !dataDrawer.classList.contains('translate-x-full')) {
+        // Auto-update Data Manager sidebar if it is currently open
+        if (this.dom.sidebar && this.dom.sidebar.classList.contains('data-manager-open')) {
             const dmContent = document.getElementById('data-manager-content');
             if (dmContent && window.Auth) {
                 window.Auth.renderDataManager(dmContent);
@@ -3130,20 +3477,45 @@ class SandboxController {
                 const hasTarget = !!selectedNode.content;
                 const isSmart = type === 'smart-portal';
                 const rootMeta = selectedNode.content ? this.kernel.getRootMetadata(selectedNode.content) : null;
-                const isPromptPortal = rootMeta && (rootMeta.portal_behavior === 'execute_prompt' || this.kernel.isPromptMap(selectedNode.content));
+                const isPromptPortal = rootMeta && (rootMeta.portal_behavior === 'execute_prompt' || (this.kernel.hasRootType && this.kernel.hasRootType(selectedNode.content, 'prompt-root')) || (this.kernel.isPromptMap && this.kernel.isPromptMap(selectedNode.content)));
+                const isWebPortal = selectedNode.content && this.kernel.hasRootType && this.kernel.hasRootType(selectedNode.content, 'web-root');
+                const isAgentPortal = selectedNode.content && this.kernel.hasRootType && this.kernel.hasRootType(selectedNode.content, 'agent-root');
+                const isPersonPortal = selectedNode.content && this.kernel.hasRootType && this.kernel.hasRootType(selectedNode.content, 'person-root');
                 
                 options = [];
                 if (isSmart || isPromptPortal) {
                     options.push({ text: 'Trigger AI ✨', action: () => this.actionTriggerAI(selectedNode.id) });
                 }
-                options.push({ text: hasTarget ? 'Enter Portal ➔' : 'Set Target 🎯', action: () => this.actionEnterPortal(selectedNode.id) });
+                
                 if (hasTarget) {
+                    if (isWebPortal) {
+                        options.push({ text: 'Launch Web App 🚀', action: () => { this.actionEnterPortal(selectedNode.id); this.setView('web'); } });
+                    } else if (isAgentPortal) {
+                        options.push({ text: 'Configure Agent ⚙️', action: () => { this.actionEnterPortal(selectedNode.id); this.setView('agent'); } });
+                    } else if (isPersonPortal) {
+                        options.push({ text: 'View Profile 👤', action: () => { this.actionEnterPortal(selectedNode.id); this.setView('person'); } });
+                    }
+                    options.push({ text: 'Enter Portal ➔', action: () => this.actionEnterPortal(selectedNode.id) });
                     options.push({ text: 'Configure Portal ⚙️', action: () => this.actionSetPortalTarget(selectedNode.id) });
+                } else {
+                    options.push({ text: 'Set Target 🎯', action: () => this.actionEnterPortal(selectedNode.id) });
                 }
                 
                 if (isSmart || isPromptPortal) {
                     action = () => this.actionTriggerAI(selectedNode.id);
                     text = 'Trigger AI';
+                    themeClasses = 'bg-indigo-600 hover:bg-indigo-500 border-indigo-400 text-indigo-100 hover:text-white shadow-[0_0_15px_rgba(79,70,229,0.4)]';
+                } else if (hasTarget && isWebPortal) {
+                    action = () => { this.actionEnterPortal(selectedNode.id); this.setView('web'); };
+                    text = 'Launch Web App';
+                    themeClasses = 'bg-sky-600 hover:bg-sky-500 border-sky-400 text-sky-100 hover:text-white shadow-[0_0_15px_rgba(14,165,233,0.4)]';
+                } else if (hasTarget && isAgentPortal) {
+                    action = () => { this.actionEnterPortal(selectedNode.id); this.setView('agent'); };
+                    text = 'Configure Agent';
+                    themeClasses = 'bg-rose-600 hover:bg-rose-500 border-rose-400 text-rose-100 hover:text-white shadow-[0_0_15px_rgba(225,29,72,0.4)]';
+                } else if (hasTarget && isPersonPortal) {
+                    action = () => { this.actionEnterPortal(selectedNode.id); this.setView('person'); };
+                    text = 'View Profile';
                     themeClasses = 'bg-indigo-600 hover:bg-indigo-500 border-indigo-400 text-indigo-100 hover:text-white shadow-[0_0_15px_rgba(79,70,229,0.4)]';
                 } else {
                     action = () => this.actionEnterPortal(selectedNode.id);
@@ -3160,14 +3532,22 @@ class SandboxController {
                     { text: 'View Profile 👤', action: () => this.setView('person') },
                     { text: 'Export CV 📄', action: () => alert('Exporting profile CV...') }
                 ];
-            } else if (type === 'web-root' || type.startsWith('web-')) {
+            } else if (type === 'web-root') {
                 action = () => this.setView('web');
                 text = 'Visual Editor';
                 themeClasses = 'bg-sky-600 hover:bg-sky-500 border-sky-400 text-sky-100 hover:text-white shadow-[0_0_15px_rgba(14,165,233,0.4)]';
                 options = [
                     { text: 'Visual Editor 🌐', action: () => this.setView('web') },
-                    { text: 'Preview Page 👁️', action: () => alert('Previewing generated site...') },
-                    { text: 'Download Code 💾', action: () => alert('Downloading HTML/CSS package...') }
+                    { text: 'Preview Page 👁️', action: () => this.actionPreviewWebPage(selectedNode.id) },
+                    { text: 'Download Code 💾', action: () => this.actionDownloadWebCode(selectedNode.id) }
+                ];
+            } else if (type.startsWith('web-')) {
+                action = () => this.actionDownloadWebCode(selectedNode.id);
+                text = 'Download Code';
+                themeClasses = 'bg-sky-600 hover:bg-sky-500 border-sky-400 text-sky-100 hover:text-white shadow-[0_0_15px_rgba(14,165,233,0.4)]';
+                options = [
+                    { text: 'Download Code 💾', action: () => this.actionDownloadWebCode(selectedNode.id) },
+                    { text: 'Preview Element 👁️', action: () => this.actionPreviewWebPage(selectedNode.id) }
                 ];
             } else if (type === 'prompt-root') {
                 action = () => this.setView('prompt');
@@ -3370,6 +3750,24 @@ class SandboxController {
         }
     }
 
+    getMapTypeOptionsHtml(selectedType = '') {
+        if (typeof MultiMapSchema === 'undefined' || !MultiMapSchema.mapTypes) {
+            return `<option value="generic" selected>Generic Map</option>`;
+        }
+        let normalizedType = selectedType;
+        const matchedKey = Object.keys(MultiMapSchema.mapTypes).find(
+            k => MultiMapSchema.mapTypes[k].rootNode === selectedType
+        );
+        if (matchedKey) {
+            normalizedType = matchedKey;
+        }
+        return Object.keys(MultiMapSchema.mapTypes).map(typeKey => {
+            const def = MultiMapSchema.mapTypes[typeKey];
+            const isSelected = typeKey === normalizedType;
+            return `<option value="${typeKey}" ${isSelected ? 'selected' : ''}>${def.label}</option>`;
+        }).join('\n');
+    }
+
     // ─────────────────────────────────────────────
     // NATIVE-STYLED MODAL DIALOGS SYSTEM
     // ─────────────────────────────────────────────
@@ -3512,15 +3910,8 @@ class SandboxController {
                 </div>
                 
                 <div class="flex flex-col gap-1.5">
-                    <label class="text-slate-400 font-bold uppercase text-[9px] tracking-wider">Page Type</label>
                     <select id="settings-page-type" class="bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 outline-none focus:border-indigo-500 transition-colors w-full">
-                        <option value="generic" ${initialType === 'generic' ? 'selected' : ''}>Generic Map</option>
-                        <option value="web" ${initialType === 'web' ? 'selected' : ''}>Web Architect</option>
-                        <option value="person" ${initialType === 'person' ? 'selected' : ''}>Person Profile</option>
-                        <option value="prompt" ${initialType === 'prompt' ? 'selected' : ''}>Prompt Engine</option>
-                        <option value="agent" ${initialType === 'agent' ? 'selected' : ''}>Agent Config</option>
-                        <option value="file-root" ${initialType === 'file-root' ? 'selected' : ''}>File Root</option>
-                        <option value="file-document" ${initialType === 'file-document' ? 'selected' : ''}>File Document</option>
+                        ${this.getMapTypeOptionsHtml(initialType)}
                     </select>
                 </div>
 
@@ -3993,8 +4384,7 @@ class SandboxController {
                                 this.kernel.loadMapState(pages[0]);
                             }
                             this.setView('map');
-                            const drawer = document.getElementById('data-manager-drawer');
-                            if (drawer) drawer.classList.add('translate-x-full');
+                            this.actionCloseDataManager();
                         } else {
                             this.render();
                         }
@@ -4016,13 +4406,7 @@ class SandboxController {
                 <div class="flex flex-col gap-1.5">
                     <label class="text-slate-400 font-bold uppercase text-[9px] tracking-wider">Page Type</label>
                     <select id="create-page-type" class="bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 outline-none focus:border-indigo-500 transition-colors w-full">
-                        <option value="generic" selected>Generic Map</option>
-                        <option value="web">Web Architect</option>
-                        <option value="person">Person Profile</option>
-                        <option value="prompt">Prompt Engine</option>
-                        <option value="agent">Agent Config</option>
-                        <option value="file-root">File Root</option>
-                        <option value="file-document">File Document</option>
+                        ${this.getMapTypeOptionsHtml('generic')}
                     </select>
                 </div>
             </div>

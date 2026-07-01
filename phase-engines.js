@@ -266,7 +266,7 @@ class DataPhaseEngine extends PhaseEngineBase {
                                             const pagesCount = proj.page_ids ? proj.page_ids.length : 0;
                                             
                                             return `
-                                            <div class="group flex flex-col gap-1 p-2 rounded-lg border transition-all cursor-pointer shrink-0 ${isActive ? 'bg-purple-950/30 border-purple-800/80 shadow-md ring-1 ring-purple-500/25' : 'bg-slate-950/50 border-slate-800/60 hover:border-slate-700/80'}" 
+                                            <div id="proj-item-${proj.project_id}" class="group flex flex-col gap-1 p-2 rounded-lg border transition-all cursor-pointer shrink-0 ${isActive ? 'bg-purple-950/30 border-purple-800/80 shadow-md ring-1 ring-purple-500/25' : 'bg-slate-950/50 border-slate-800/60 hover:border-slate-700/80'}" 
                                                  onclick="SC.actionSetActiveProject('${proj.project_id}')"
                                                  ondragover="event.preventDefault(); this.classList.add('bg-purple-900/40')"
                                                  ondragleave="this.classList.remove('bg-purple-900/40')"
@@ -322,7 +322,7 @@ class DataPhaseEngine extends PhaseEngineBase {
                                                 : `<button onclick="SC.actionLoadFromLibrary('${page.map_id}')" class="flex-1 bg-slate-900 hover:bg-sky-600 text-white text-[9px] py-1 rounded font-bold transition-all border border-slate-800/80 shadow">Load</button>`;
 
                                             return `
-                                            <div class="bg-slate-950/70 border rounded-xl overflow-hidden group relative hover:border-sky-500/40 transition-all shrink-0 ${isCurrentPage ? 'bg-slate-900/50 border-sky-500 shadow-[0_0_15px_rgba(14,165,233,0.15)] ring-1 ring-sky-500/10' : 'border-slate-800/80'}" 
+                                            <div id="page-item-${page.map_id}" class="bg-slate-950/70 border rounded-xl overflow-hidden group relative hover:border-sky-500/40 transition-all shrink-0 ${isCurrentPage ? 'bg-slate-900/50 border-sky-500 shadow-[0_0_15px_rgba(14,165,233,0.15)] ring-1 ring-sky-500/10' : 'border-slate-800/80'}" 
                                                  draggable="true" 
                                                  ondragstart="event.dataTransfer.setData('text/plain', '${page.map_id}')">
                                                 <div class="absolute left-0 top-0 bottom-0 w-1 bg-sky-500 rounded-l-xl ${isCurrentPage ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} transition-opacity"></div>
@@ -497,6 +497,17 @@ class DataPhaseEngine extends PhaseEngineBase {
                     </div>
                 </div>
             `;
+
+            setTimeout(() => {
+                const activeProjEl = container.querySelector(`#proj-item-${activeProjId}`);
+                if (activeProjEl) {
+                    activeProjEl.scrollIntoView({ block: 'nearest', behavior: 'instant' });
+                }
+                const activePageEl = container.querySelector(`#page-item-${state.map_id}`);
+                if (activePageEl) {
+                    activePageEl.scrollIntoView({ block: 'nearest', behavior: 'instant' });
+                }
+            }, 100);
         } catch (err) {
             console.error("DataPhaseEngine render failed:", err);
             container.innerHTML = `<div class="p-4 bg-rose-950/50 border border-rose-900 rounded-lg flex flex-col gap-2">
