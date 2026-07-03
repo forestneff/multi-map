@@ -1672,7 +1672,7 @@ class MultiMapKernel {
                 
                 if (this.state.map_id === id) {
                     const allPages = this.getLibrary();
-                    const masterMap = allPages.find(p => p.map_id !== id && p.meta && (p.meta.isMaster === true || p.meta.title === "Project Directory" || p.meta.type === "file-root" || p.meta.type === "file"));
+                    const masterMap = allPages.find(p => p.map_id !== id && p.meta && p.meta.project_id === projId && (p.meta.isMaster === true || p.meta.title === "Project Directory" || p.meta.type === "file-root" || p.meta.type === "file"));
                     if (masterMap) {
                         this.loadMapState(masterMap);
                     } else {
@@ -1712,7 +1712,11 @@ class MultiMapKernel {
             await this.syncProjectMasterMap(projId);
             
             if (this.state.map_id === id) {
-                const masterMap = lib.find(p => p.meta && (p.meta.isMaster === true || p.meta.title === "Project Directory" || p.meta.type === "file-root" || p.meta.type === "file"));
+                const projectObj = this.projects.find(p => p.project_id === projId);
+                const masterMap = lib.find(p => {
+                    const isInProject = p.meta?.project_id === projId || (projectObj && projectObj.page_ids.includes(p.map_id));
+                    return isInProject && p.meta && (p.meta.isMaster === true || p.meta.title === "Project Directory" || p.meta.type === "file-root" || p.meta.type === "file");
+                });
                 if (masterMap) {
                     this.loadMapState(masterMap);
                 } else {
@@ -1825,6 +1829,8 @@ class MultiMapKernel {
         const projectId = (this.state && this.state.meta && this.state.meta.project_id) 
             ? this.state.meta.project_id 
             : (this.activeProjectId || 'default_project');
+        
+        this.activeProjectId = projectId;
             
         if (this.state && this.state.meta) {
             if (!this.state.meta.project_id) {
