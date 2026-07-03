@@ -1043,6 +1043,9 @@ class MultiMapAI {
             return;
         }
 
+        this.pendingMapData.meta = this.pendingMapData.meta || {};
+        this.pendingMapData.meta.project_id = this.kernel.activeProjectId || 'default_project';
+
         const child = this.kernel.addNode({ title: this.pendingMapData.meta.title || "AI Smart Node", type: "smart-portal" }, parentId);
         this.kernel.addConnection(parentId, child.id);
 
@@ -1054,6 +1057,8 @@ class MultiMapAI {
         
         this.kernel.updateNode(child.id, { content: this.pendingMapData.map_id });
         this.kernel.importSubmap(child.id, this.pendingMapData);
+
+        await this.kernel.syncProjectMasterMap(this.kernel.activeProjectId);
 
         alert(`AI Map injected into a new Smart Node!`);
 
@@ -1076,6 +1081,9 @@ class MultiMapAI {
             return;
         }
 
+        this.pendingMapData.meta = this.pendingMapData.meta || {};
+        this.pendingMapData.meta.project_id = this.kernel.activeProjectId || 'default_project';
+
         const child = this.kernel.addNode({ title: this.pendingMapData.meta.title || "AI Portal", type: "portal" }, parentId);
         this.kernel.addConnection(parentId, child.id);
 
@@ -1087,6 +1095,8 @@ class MultiMapAI {
         
         this.kernel.updateNode(child.id, { content: this.pendingMapData.map_id });
         this.kernel.importSubmap(child.id, this.pendingMapData);
+
+        await this.kernel.syncProjectMasterMap(this.kernel.activeProjectId);
 
         alert(`AI Map injected into a new Portal!`);
 
@@ -1108,6 +1118,9 @@ class MultiMapAI {
             return;
         }
 
+        this.pendingMapData.meta = this.pendingMapData.meta || {};
+        this.pendingMapData.meta.project_id = this.kernel.activeProjectId || 'default_project';
+
         const saved = await this.kernel.saveConstellationToLibrary(this.pendingMapData);
         if (saved === false) {
             alert("Guest map limit (25) exceeded.");
@@ -1116,6 +1129,8 @@ class MultiMapAI {
 
         // importSubmap links the imported roots to the parentId
         this.kernel.importSubmap(parentId, this.pendingMapData);
+
+        await this.kernel.syncProjectMasterMap(this.kernel.activeProjectId);
 
         alert(`AI Map expanded into selected node!`);
         this.sandbox.render();
@@ -1176,14 +1191,23 @@ class MultiMapAI {
         this.toggleChat();
     }
 
-    loadAsNewSession() {
+    async loadAsNewSession() {
         if (!this.pendingMapData) return;
 
         // Save current to library
         this.sandbox.actionSaveCurrentToLibrary();
 
+        this.pendingMapData.meta = this.pendingMapData.meta || {};
+        const projectId = this.kernel.activeProjectId || 'default_project';
+        this.pendingMapData.meta.project_id = projectId;
+
+        await this.kernel.saveMapToLibrary(this.pendingMapData);
+
         // Load new map
         this.kernel.loadMapState(this.pendingMapData);
+
+        await this.kernel.syncProjectMasterMap(projectId);
+
         alert(`Session Saved. AI Map "${this.pendingMapData.meta.title}" loaded successfully.`);
         this.pendingMapData = null;
     }

@@ -778,6 +778,9 @@ class SandboxController {
     async actionResolveAiImport(nodeId) {
         if (!this.aiPendingData) return;
         
+        this.aiPendingData.meta = this.aiPendingData.meta || {};
+        this.aiPendingData.meta.project_id = this.kernel.activeProjectId || 'default_project';
+        
         // Save the map to the library natively so the portal can reference it!
         const saved = await this.kernel.saveConstellationToLibrary(this.aiPendingData);
         if (saved === false) {
@@ -789,6 +792,8 @@ class SandboxController {
         
         // Actually import the physical nodes
         this.kernel.importSubmap(nodeId, this.aiPendingData);
+        
+        await this.kernel.syncProjectMasterMap(this.kernel.activeProjectId);
         
         alert(`AI Generated Map "${this.aiPendingData.meta.title}" injected successfully!`);
         
