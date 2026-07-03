@@ -1175,6 +1175,11 @@ class SandboxController {
                     return;
                 }
             }
+
+            if (this.kernel.portalHistory && this.kernel.portalHistory.length > 0) {
+                this.actionExitPortal();
+                return;
+            }
         }
 
         // Do not interfere with text inputs, textareas, contenteditable elements, or open modal dialogs
@@ -3770,7 +3775,8 @@ ${innerHtml}
                     }
                     options.push({ text: 'Enter Portal ➔', action: () => this.actionEnterPortal(selectedNode.id) });
                     const isSyncPortal = selectedNode.data && selectedNode.data.isSyncPortal === true;
-                    if (!isSyncPortal) {
+                    const isDirPortal = this.kernel.isDirectoryPortal && this.kernel.isDirectoryPortal(selectedNode);
+                    if (!isSyncPortal && !isDirPortal) {
                         options.push({ text: 'Configure Portal ⚙️', action: () => this.actionSetPortalTarget(selectedNode.id) });
                     }
                 } else {

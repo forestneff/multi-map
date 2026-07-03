@@ -1672,16 +1672,21 @@ class MultiMapKernel {
                 
                 if (this.state.map_id === id) {
                     const allPages = this.getLibrary();
-                    const sorted = allPages.filter(x => x.map_id !== id).sort((a, b) => {
-                        const dateA = a.meta?.created_at ? new Date(a.meta.created_at) : new Date(0);
-                        const dateB = b.meta?.created_at ? new Date(b.meta.created_at) : new Date(0);
-                        return dateB - dateA;
-                    });
-                    if (sorted.length > 0) {
-                        this.loadMapState(sorted[0]);
+                    const masterMap = allPages.find(p => p.map_id !== id && p.meta && (p.meta.isMaster === true || p.meta.title === "Project Directory" || p.meta.type === "file-root" || p.meta.type === "file"));
+                    if (masterMap) {
+                        this.loadMapState(masterMap);
                     } else {
-                        this.state = this.getEmptyState();
-                        this.notify();
+                        const sorted = allPages.filter(x => x.map_id !== id).sort((a, b) => {
+                            const dateA = a.meta?.created_at ? new Date(a.meta.created_at) : new Date(0);
+                            const dateB = b.meta?.created_at ? new Date(b.meta.created_at) : new Date(0);
+                            return dateB - dateA;
+                        });
+                        if (sorted.length > 0) {
+                            this.loadMapState(sorted[0]);
+                        } else {
+                            this.state = this.getEmptyState();
+                            this.notify();
+                        }
                     }
                 } else {
                     this.notify();
@@ -1707,16 +1712,21 @@ class MultiMapKernel {
             await this.syncProjectMasterMap(projId);
             
             if (this.state.map_id === id) {
-                const sorted = lib.sort((a, b) => {
-                    const dateA = a.meta?.created_at ? new Date(a.meta.created_at) : new Date(0);
-                    const dateB = b.meta?.created_at ? new Date(b.meta.created_at) : new Date(0);
-                    return dateB - dateA;
-                });
-                if (sorted.length > 0) {
-                    this.loadMapState(sorted[0]);
+                const masterMap = lib.find(p => p.meta && (p.meta.isMaster === true || p.meta.title === "Project Directory" || p.meta.type === "file-root" || p.meta.type === "file"));
+                if (masterMap) {
+                    this.loadMapState(masterMap);
                 } else {
-                    this.state = this.getEmptyState();
-                    this.notify();
+                    const sorted = lib.sort((a, b) => {
+                        const dateA = a.meta?.created_at ? new Date(a.meta.created_at) : new Date(0);
+                        const dateB = b.meta?.created_at ? new Date(b.meta.created_at) : new Date(0);
+                        return dateB - dateA;
+                    });
+                    if (sorted.length > 0) {
+                        this.loadMapState(sorted[0]);
+                    } else {
+                        this.state = this.getEmptyState();
+                        this.notify();
+                    }
                 }
             } else {
                 this.notify();
