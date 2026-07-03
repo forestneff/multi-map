@@ -1249,6 +1249,22 @@ class MultiMapAI {
                         message: "Mocked response. I have analyzed/edited the map as requested.",
                         edits: mode === 'edit' ? [] : undefined
                     }));
+                } else if (prompt.toLowerCase().includes('link') || prompt.toLowerCase().includes('url') || prompt.toLowerCase().includes('website') || prompt.toLowerCase().includes('resources') || prompt.toLowerCase().includes('tools') || prompt.toLowerCase().includes('bookmarks') || prompt.toLowerCase().includes('references') || prompt.toLowerCase().includes('documentation') || prompt.toLowerCase().includes('directory')) {
+                    const response = {
+                        "map_id": "ai_mock_links",
+                        "meta": { "title": "AI Link Hub", "type": "link", "created": new Date().toISOString(), "notes": "Generated from prompt: " + prompt, "shared": false },
+                        "nodes": [
+                            { "id": "m1", "type": "link-root", "title": "My Link Space", "content": "Useful References", "data": { "x": 0, "y": 0, "isCore": true, "collapsed": false }, "submaps": [] },
+                            { "id": "m2", "type": "web-link", "title": "Google", "content": '{"text":"Google","href":"https://google.com"}', "data": { "x": -150, "y": 150, "isCore": false, "collapsed": false }, "submaps": [] },
+                            { "id": "m3", "type": "web-link", "title": "GitHub", "content": '{"text":"GitHub","href":"https://github.com"}', "data": { "x": 150, "y": 150, "isCore": false, "collapsed": false }, "submaps": [] }
+                        ],
+                        "connections": [
+                            { "id": "mc1", "from": "m1", "to": "m2", "type": "structural" },
+                            { "id": "mc2", "from": "m1", "to": "m3", "type": "structural" }
+                        ],
+                        "submaps": []
+                    };
+                    resolve(JSON.stringify(response));
                 } else {
                     const response = {
                         "map_id": "ai_mock",

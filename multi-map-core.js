@@ -310,7 +310,8 @@ class MultiMapKernel {
                 type: "file-root", 
                 created: new Date().toISOString(),
                 shared: false,
-                project_id: projectId
+                project_id: projectId,
+                isMaster: true
             },
             nodes: [{ id: this.generateId(), type: "file-root", title: "Project Directory", data: { x: 0, y: 0, isCore: true } }],
             connections: [],
@@ -350,6 +351,182 @@ class MultiMapKernel {
         }
         this.notify();
         return projectId;
+    }
+
+    async getPagesForProject(projectId) {
+        if (this.isUsingCloudVault()) {
+            return this.firestorePagesByProject[projectId] || [];
+        } else {
+            const lib = this.getLibrary();
+            return lib.filter(p => p.meta && p.meta.project_id === projectId);
+        }
+    }
+
+    async savePage(projectId, pageId, pageData) {
+        if (this.isUsingCloudVault()) {
+            const uid = window.FirebaseAuth.currentUser.uid;
+            try {
+                const pageRef = window.Firestore.doc(window.FirebaseDb, "users", uid, "projects", projectId, "pages", pageId);
+                await window.Firestore.setDoc(pageRef, pageData);
+            } catch (err) {
+                console.error("Firestore savePage failed:", err);
+            }
+        } else {
+            let lib = this.getLibrary();
+            const idx = lib.findIndex(p => p.map_id === pageId);
+            if (idx !== -1) {
+                lib[idx] = pageData;
+            } else {
+                lib.push(pageData);
+            }
+            this.saveLibrary(lib);
+        }
+    }
+
+    async getOrCreateMasterMap(projectId) {
+        const pages = await this.getPagesForProject(projectId);
+        
+        let masterMap = pages.find(p => p.meta && p.meta.isMaster === true);
+        
+        if (!masterMap) {
+            masterMap = pages.find(p => p.meta && (p.meta.title === "Project Directory" || p.meta.type === "file"));
+            if (masterMap) {
+                masterMap.meta.isMaster = true;
+                await this.savePage(projectId, masterMap.map_id, masterMap);
+            }
+        }
+        
+        if (!masterMap) {
+            const masterMapId = this.generateId();
+            masterMap = {
+                map_id: masterMapId,
+                meta: {
+                    title: "Project Directory",
+                    type: "file",
+                    created: new Date().toISOString(),
+                    shared: false,
+                    project_id: projectId,
+                    isMaster: true
+                },
+                nodes: [{ id: this.generateId(), type: "file-root", title: "Project Directory", data: { x: 0, y: 0, isCore: true } }],
+                connections: [],
+                session: {
+                    viewport: { x: window.innerWidth / 2, y: window.innerHeight / 2, scale: 1 },
+                    selectedId: null,
+                    remoteTemplates: [],
+                    layoutMode: 'organic'
+                }
+            };
+            
+            const projects = this.getProjects();
+            const proj = projects.find(p => p.project_id === projectId);
+            if (proj) {
+                proj.page_ids.push(masterMapId);
+                proj.updated_at = new Date().toISOString();
+                
+                if (this.isUsingCloudVault()) {
+                    const uid = window.FirebaseAuth.currentUser.uid;
+                    try {
+                        const pageRef = window.Firestore.doc(window.FirebaseDb, "users", uid, "projects", projectId, "pages", masterMapId);
+                        await window.Firestore.setDoc(pageRef, masterMap);
+                        const projRef = window.Firestore.doc(window.FirebaseDb, "users", uid, "projects", projectId);
+                        await window.Firestore.setDoc(projRef, proj);
+                        if (!this.firestorePagesByProject[projectId]) this.firestorePagesByProject[projectId] = [];
+                        this.firestorePagesByProject[projectId].push(masterMap);
+                    } catch (err) {
+                        console.error("Firestore createMasterMap failed:", err);
+                    }
+                } else {
+                    let lib = this.getLibrary();
+                    lib.push(masterMap);
+                    this.saveLibrary(lib);
+                    localStorage.setItem("mm_projects", JSON.stringify(this.projects));
+                }
+            }
+        }
+        return masterMap;
+    }
+
+    async syncProjectMasterMap(projectId) {
+        if (!projectId) return;
+        const masterMap = await this.getOrCreateMasterMap(projectId);
+        if (!masterMap) return;
+
+        const pages = await this.getPagesForProject(projectId);
+        const nonMasterPages = pages.filter(p => p.map_id !== masterMap.map_id);
+
+        const rootNode = masterMap.nodes.find(n => n.type === 'file-root');
+        if (!rootNode) return;
+
+        let changed = false;
+
+        const validPageIds = new Set(nonMasterPages.map(p => p.map_id));
+        masterMap.nodes = masterMap.nodes.filter(n => {
+            if (n.type === 'portal' || n.type === 'smart-portal') {
+                if (n.content && !validPageIds.has(n.content)) {
+                    changed = true;
+                    masterMap.connections = masterMap.connections.filter(c => c.from !== n.id && c.to !== n.id);
+                    return false;
+                }
+            }
+            return true;
+        });
+
+        nonMasterPages.forEach((page, idx) => {
+            const exists = masterMap.nodes.some(n => (n.type === 'portal' || n.type === 'smart-portal') && n.content === page.map_id);
+            if (!exists) {
+                changed = true;
+                const portalId = this.generateId();
+                
+                const cols = 4;
+                const row = Math.floor(idx / cols);
+                const col = idx % cols;
+                const x = (col - (cols - 1) / 2) * 160;
+                const y = (row + 1) * 150;
+
+                masterMap.nodes.push({
+                    id: portalId,
+                    type: 'portal',
+                    title: page.meta.title || "Project Space",
+                    content: page.map_id,
+                    data: { x, y, isSyncPortal: true }
+                });
+
+                masterMap.connections.push({
+                    id: this.generateId(),
+                    from: rootNode.id,
+                    to: portalId,
+                    type: 'structural'
+                });
+            } else {
+                const node = masterMap.nodes.find(n => (n.type === 'portal' || n.type === 'smart-portal') && n.content === page.map_id);
+                if (node) {
+                    node.data = node.data || {};
+                    if (!node.data.isSyncPortal) {
+                        node.data.isSyncPortal = true;
+                        changed = true;
+                    }
+                    if (node.title !== page.meta.title) {
+                        node.title = page.meta.title;
+                        changed = true;
+                    }
+                }
+            }
+        });
+
+        if (changed) {
+            const origState = this.state;
+            this.state = masterMap;
+            this.resolveOverlaps(80);
+            this.state = origState;
+
+            await this.savePage(projectId, masterMap.map_id, masterMap);
+            if (this.state && this.state.map_id === masterMap.map_id) {
+                this.state.nodes = masterMap.nodes;
+                this.state.connections = masterMap.connections;
+            }
+            this.notify();
+        }
     }
 
     async deleteProject(projectId) {
@@ -472,10 +649,7 @@ class MultiMapKernel {
                 this.saveLibrary(lib);
                 localStorage.setItem("mm_projects", JSON.stringify(this.projects));
             }
-            // SCAFFOLD: Hook into file-root dynamic synchronization
-            // If we're creating a page that is NOT the project's default 'file-root',
-            // we should spawn a corresponding 'file-document' node on the Master Map.
-            // TODO (Phase 2): Find the file-root map of this project and add a node linking to this newPage.
+            await this.syncProjectMasterMap(projectId);
             
             this.notify();
         }
@@ -540,6 +714,9 @@ class MultiMapKernel {
             }
             localStorage.setItem("mm_projects", JSON.stringify(this.projects));
         }
+        
+        await this.syncProjectMasterMap(fromProjectId);
+        await this.syncProjectMasterMap(toProjectId);
         
         if (this.state.map_id === pageId) {
             this.activeProjectId = toProjectId;
@@ -650,6 +827,8 @@ class MultiMapKernel {
                 localStorage.setItem("mm_projects", JSON.stringify(this.projects));
             }
             
+            await this.syncProjectMasterMap(finalProjectId);
+            
             this.activeProjectId = finalProjectId;
             this.loadMapState(clonedPage);
             this.notify();
@@ -659,7 +838,13 @@ class MultiMapKernel {
 
 
     getBlueprint(type) { return typeof MultiMapSchema !== 'undefined' ? MultiMapSchema.getDefinition(type) : { label: type, icon: "⚪" }; }
-    getSmartChildType(pid) { const p = this.state.nodes.find(x => x.id === pid); return p && typeof MultiMapSchema !== 'undefined' ? MultiMapSchema.getDefaultChild(p.type) : 'note'; }
+    getSmartChildType(pid) {
+        const p = this.state.nodes.find(x => x.id === pid);
+        if (p && p.data && p.data.lastSpawnedChildType) {
+            return p.data.lastSpawnedChildType;
+        }
+        return p && typeof MultiMapSchema !== 'undefined' ? MultiMapSchema.getDefaultChild(p.type) : 'note';
+    }
 
     getEmptyState() {
         return {
@@ -829,6 +1014,10 @@ class MultiMapKernel {
             alert("The root node of a map cannot be deleted.");
             return;
         }
+        if (n && n.data && n.data.isSyncPortal) {
+            console.warn("Kernel Blocked Deletion: Synchronized project portal cannot be deleted.");
+            return;
+        }
         this.saveHistory();
         const toDelete = this.getDownstreamNodes(id);
         this.state.nodes = this.state.nodes.filter(n => !toDelete.has(n.id));
@@ -897,6 +1086,14 @@ class MultiMapKernel {
             id: id, type: data.type || 'note', title: data.title || (data.type ? data.type.toUpperCase() : 'NODE'), 
             content: data.content || '', data: { x: posX || 0, y: posY || 0, isCore: data.isCore || false, collapsed: false }
         };
+        
+        if (pid) {
+            const parent = this.state.nodes.find(n => n.id === pid);
+            if (parent) {
+                parent.data = parent.data || {};
+                parent.data.lastSpawnedChildType = node.type;
+            }
+        }
         
         this.state.nodes.push(node);
         setTimeout(() => this.resolveOverlaps(40), 10);
@@ -990,6 +1187,32 @@ class MultiMapKernel {
                     }
                 });
             } catch(e) {}
+        }
+
+        if (up.type && up.type !== n.type) {
+            const parentConnection = this.state.connections.find(c => c.to === id && c.type === 'structural');
+            if (parentConnection) {
+                const parentNode = this.state.nodes.find(x => x.id === parentConnection.from);
+                if (parentNode) {
+                    parentNode.data = parentNode.data || {};
+                    parentNode.data.lastSpawnedChildType = up.type;
+                }
+            }
+        }
+        
+        if (n.data && n.data.isSyncPortal) {
+            if (up.type && up.type !== n.type) {
+                console.warn("Blocked type modification on synchronized portal.");
+                delete up.type;
+            }
+            if (up.content && up.content !== n.content) {
+                console.warn("Blocked target/content modification on synchronized portal.");
+                delete up.content;
+            }
+            if (up.title && up.title !== n.title) {
+                console.warn("Blocked title modification on synchronized portal.");
+                delete up.title;
+            }
         }
 
         Object.keys(up).forEach(k => { if (k === 'x' || k === 'y') n.data[k] = up[k]; else n[k] = up[k]; }); 
@@ -1445,8 +1668,7 @@ class MultiMapKernel {
                     await window.Firestore.setDoc(projRef, proj);
                 }
                 
-                // SCAFFOLD: Hook into file-root dynamic synchronization
-                // If we delete a page, we should remove the corresponding 'file-document' node from the project's Master Map (file-root).
+                await this.syncProjectMasterMap(projId);
                 
                 if (this.state.map_id === id) {
                     const allPages = this.getLibrary();
@@ -1468,6 +1690,12 @@ class MultiMapKernel {
                 console.error("Firestore delete failed:", err);
             }
         } else {
+            let projId = this.activeProjectId;
+            const project = this.projects.find(p => p.page_ids.includes(id));
+            if (project) {
+                projId = project.project_id;
+            }
+
             let lib = this.getLibrary().filter(x => x.map_id !== id);
             this.saveLibrary(lib);
             
@@ -1476,8 +1704,7 @@ class MultiMapKernel {
             });
             localStorage.setItem("mm_projects", JSON.stringify(this.projects));
             
-            // SCAFFOLD: Hook into file-root dynamic synchronization (local)
-            // If we delete a page, we should remove the corresponding 'file-document' node from the project's Master Map (file-root).
+            await this.syncProjectMasterMap(projId);
             
             if (this.state.map_id === id) {
                 const sorted = lib.sort((a, b) => {
@@ -1549,11 +1776,98 @@ class MultiMapKernel {
         });
     }
 
+    findMasterMapIdSync(projectId) {
+        if (this.isUsingCloudVault()) {
+            const pages = this.firestorePagesByProject[projectId] || [];
+            const master = pages.find(p => p.meta && p.meta.isMaster === true) || pages.find(p => p.meta && (p.meta.title === "Project Directory" || p.meta.type === "file"));
+            return master ? master.map_id : null;
+        } else {
+            const lib = this.getLibrary();
+            const pages = lib.filter(p => p.meta && p.meta.project_id === projectId);
+            const master = pages.find(p => p.meta && p.meta.isMaster === true) || pages.find(p => p.meta && (p.meta.title === "Project Directory" || p.meta.type === "file"));
+            return master ? master.map_id : null;
+        }
+    }
+
+    isDirectoryPortal(node) {
+        if (!node) return false;
+        if (node.type !== 'portal' && node.type !== 'smart-portal') return false;
+        
+        // Check if title or content matches Project Directory
+        const titleMatch = node.title && (node.title.includes("Project Directory") || node.title === "Project Directory 📁");
+        if (titleMatch) return true;
+        
+        const projectId = this.state && this.state.meta && this.state.meta.project_id;
+        if (projectId) {
+            const masterMapId = this.findMasterMapIdSync(projectId);
+            if (masterMapId && node.content === masterMapId) return true;
+        }
+        return false;
+    }
+
     loadMapState(data) {
         this.saveCurrentMapToLibrary();
         this.saveHistory();
         this.state = this.ensureSchema(data);
         this.syncPortalNodeTitles();
+        
+        // Auto-inject return portal or sync master map dynamically
+        const projectId = (this.state && this.state.meta && this.state.meta.project_id) 
+            ? this.state.meta.project_id 
+            : (this.activeProjectId || 'default_project');
+            
+        if (this.state && this.state.meta) {
+            if (!this.state.meta.project_id) {
+                this.state.meta.project_id = projectId;
+                this.savePage(projectId, this.state.map_id, this.state);
+            }
+            
+            const isMaster = this.state.meta.isMaster === true || this.state.meta.title === "Project Directory" || this.state.meta.type === "file";
+            
+            this.getOrCreateMasterMap(projectId).then(masterMap => {
+                if (masterMap) {
+                    if (!isMaster) {
+                        let returnPortal = this.state.nodes.find(n => (n.type === 'portal' || n.type === 'smart-portal') && n.content === masterMap.map_id);
+                        const rootNode = this.state.nodes.find(n => n.data && n.data.isCore === true)
+                            || this.state.nodes.find(n => n.type === 'root' || n.type.endsWith('-root'))
+                            || this.state.nodes[0];
+                            
+                        if (!returnPortal) {
+                            if (rootNode) {
+                                const portalId = this.generateId();
+                                returnPortal = {
+                                    id: portalId,
+                                    type: 'portal',
+                                    title: "Project Directory 📁",
+                                    content: masterMap.map_id,
+                                    data: { x: 0, y: -180 }
+                                };
+                                this.state.nodes.push(returnPortal);
+                            }
+                        }
+                        
+                        if (returnPortal && rootNode) {
+                            const hasConnection = this.state.connections.some(c => c.from === rootNode.id && c.to === returnPortal.id && c.type === 'structural');
+                            if (!hasConnection) {
+                                this.state.connections.push({
+                                    id: this.generateId(),
+                                    from: rootNode.id,
+                                    to: returnPortal.id,
+                                    type: 'structural'
+                                });
+                            }
+                            this.savePage(projectId, this.state.map_id, this.state);
+                            this.notify();
+                        }
+                    } else {
+                        this.syncProjectMasterMap(projectId);
+                    }
+                }
+            }).catch(err => {
+                console.error("Error auto-syncing master map on load:", err);
+            });
+        }
+        
         this.notify();
     }
     

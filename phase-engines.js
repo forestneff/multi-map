@@ -46,6 +46,9 @@ class PhaseRegistrySystem {
                     else if (action === 'APPLY_TEMPLATE' && id && event.data.data) {
                         window.SC.actionApplyTemplateToNode(id, event.data.data);
                     }
+                    else if (action === 'TRIGGER_LINKTREE_IMPORT' && id) {
+                        window.SC.actionTriggerLinktreeImport(id);
+                    }
                     else if (action === 'CREATE_SUBMAP_AND_LINK' && id && event.data.data) {
                         const newId = window.SC.kernel.createSubmap(event.data.data, 'New ' + event.data.data + ' Map'); 
                         window.SC.kernel.updateNode(id, { content: newId }); 
@@ -170,6 +173,13 @@ class DataPhaseEngine extends PhaseEngineBase {
             const activeProjId = this.kernel.activeProjectId;
             const projects = this.kernel.getProjects();
             const pages = this.kernel.getPages(activeProjId);
+            const sortedPages = [...pages].sort((a, b) => {
+                const aIsMaster = a.meta && (a.meta.isMaster === true || a.meta.title === "Project Directory" || a.meta.type === "file-root" || a.meta.type === "file");
+                const bIsMaster = b.meta && (b.meta.isMaster === true || b.meta.title === "Project Directory" || b.meta.type === "file-root" || b.meta.type === "file");
+                if (aIsMaster && !bIsMaster) return -1;
+                if (!aIsMaster && bIsMaster) return 1;
+                return 0;
+            });
             
             const activeProj = projects.find(p => p.project_id === activeProjId) || projects[0] || { meta: { title: "My Project" } };
             const activeProjTitle = activeProj.meta?.title || "My Project";
@@ -303,38 +313,53 @@ class DataPhaseEngine extends PhaseEngineBase {
                                     </div>
                                     ${this.ui.pagesSub ? `
                                     <div class="flex flex-col gap-2 overflow-y-auto max-h-[250px] custom-scrollbar pr-1" id="pages-list-container">
-                                        ${(!pages || pages.length === 0) ? '<div class="text-center text-slate-600 text-xs py-10 italic border border-dashed border-slate-800 rounded-lg">No pages found in this project.</div>' : ''}
-                                        ${pages.map(page => {
+                                        ${(!sortedPages || sortedPages.length === 0) ? '<div class="text-center text-slate-600 text-xs py-10 italic border border-dashed border-slate-800 rounded-lg">No pages found in this project.</div>' : ''}
+                                        ${sortedPages.map(page => {
                                             const isCurrentPage = page.map_id === state.map_id;
                                             const meta = page.meta || {};
                                             const title = meta.title || "Untitled Page";
                                             const type = meta.type || "generic";
                                             const nodeCount = page.nodes ? page.nodes.length : 0;
+                                            const isMaster = meta.isMaster === true || title === "Project Directory" || type === "file-root" || type === "file";
                                             
                                             // Determine storage target icon
                                             let storageIcon = '☁️'; // Default firebase
                                             if (meta.storage_target === 'google_drive') storageIcon = '🔺';
                                             else if (meta.storage_target === 'local_os') storageIcon = '📁';
 
-                                            const activeBadge = isCurrentPage ? '<span class="text-[8px] bg-sky-950/60 border border-sky-600 text-sky-400 px-1.5 py-0.5 rounded-full shrink-0 uppercase tracking-widest font-extrabold">● Active</span>' : '';
+                                            // Determine accents/highlights (purple highlights for master, sky for current active map, normal borders otherwise)
+                                            const accentColor = isMaster ? 'purple' : 'sky';
+                                            const cardClasses = isMaster
+                                                ? 'bg-purple-950/20 border-purple-800/80 shadow-[0_0_15px_rgba(139,92,246,0.15)] ring-1 ring-purple-500/20 hover:border-purple-500'
+                                                : (isCurrentPage ? 'bg-slate-900/50 border-sky-500 shadow-[0_0_15px_rgba(14,165,233,0.15)] ring-1 ring-sky-500/10 hover:border-sky-500/80' : 'border-slate-800/80 hover:border-sky-500/40');
+                                                
+                                            const leftBarClasses = isMaster
+                                                ? 'bg-purple-500'
+                                                : 'bg-sky-500';
+                                                
+                                            const leftBarOpacity = (isMaster || isCurrentPage) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100';
+
+                                            const activeBadge = isCurrentPage ? `<span class="text-[8px] bg-${accentColor}-950/60 border border-${accentColor}-600 text-${accentColor}-400 px-1.5 py-0.5 rounded-full shrink-0 uppercase tracking-widest font-extrabold">● Active</span>` : '';
                                             const loadBtn = isCurrentPage 
-                                                ? `<button onclick="SC.actionCloseDataManager()" class="flex-1 bg-sky-950/40 hover:bg-sky-900/40 text-sky-450 hover:text-sky-350 text-[9px] py-1 rounded font-bold border border-sky-900/50 cursor-pointer transition-all shadow" title="Close Data Manager">Active Space</button>`
-                                                : `<button onclick="SC.actionLoadFromLibrary('${page.map_id}')" class="flex-1 bg-slate-900 hover:bg-sky-600 text-white text-[9px] py-1 rounded font-bold transition-all border border-slate-800/80 shadow">Load</button>`;
+                                                ? `<button onclick="SC.actionCloseDataManager()" class="flex-1 bg-${accentColor}-950/40 hover:bg-${accentColor}-900/40 text-${accentColor}-450 hover:text-${accentColor}-350 text-[9px] py-1 rounded font-bold border border-${accentColor}-900/50 cursor-pointer transition-all shadow" title="Close Data Manager">Active Space</button>`
+                                                : `<button onclick="SC.actionLoadFromLibrary('${page.map_id}')" class="flex-1 bg-slate-900 hover:bg-${accentColor}-600 text-white text-[9px] py-1 rounded font-bold transition-all border border-slate-800/80 shadow">Load</button>`;
+
+                                            const typeBadgeColor = isMaster ? 'bg-purple-950 border-purple-800/60 text-purple-300' : 'bg-slate-900 border border-slate-800 text-slate-400';
 
                                             return `
-                                            <div id="page-item-${page.map_id}" class="bg-slate-950/70 border rounded-xl overflow-hidden group relative hover:border-sky-500/40 transition-all shrink-0 ${isCurrentPage ? 'bg-slate-900/50 border-sky-500 shadow-[0_0_15px_rgba(14,165,233,0.15)] ring-1 ring-sky-500/10' : 'border-slate-800/80'}" 
+                                            <div id="page-item-${page.map_id}" class="bg-slate-950/70 border rounded-xl overflow-hidden group relative transition-all shrink-0 ${cardClasses}" 
                                                  draggable="true" 
                                                  ondragstart="event.dataTransfer.setData('text/plain', '${page.map_id}')">
-                                                <div class="absolute left-0 top-0 bottom-0 w-1 bg-sky-500 rounded-l-xl ${isCurrentPage ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} transition-opacity"></div>
+                                                <div class="absolute left-0 top-0 bottom-0 w-1 ${leftBarClasses} rounded-l-xl ${leftBarOpacity} transition-opacity"></div>
                                                 
                                                 <div class="p-3 flex flex-col gap-2">
                                                     <!-- Title row -->
                                                     <div class="flex justify-between items-start gap-2">
                                                         <div class="font-bold text-xs text-slate-200 truncate flex-1 flex items-center gap-1.5 min-w-0 cursor-grab active:cursor-grabbing">
                                                             <span title="Storage Target" class="shrink-0">${storageIcon}</span>
-                                                            <span class="truncate">${title}</span>
+                                                            <span class="truncate ${isMaster ? 'text-purple-300 font-extrabold' : ''}">${title}</span>
                                                             ${activeBadge}
-                                                            <span class="text-[8px] bg-slate-900 border border-slate-800 text-slate-400 px-1.5 py-0.5 rounded-full shrink-0 uppercase tracking-widest">${type}</span>
+                                                            <span class="text-[8px] border px-1.5 py-0.5 rounded-full shrink-0 uppercase tracking-widest ${typeBadgeColor}">${type}</span>
                                                             ${meta.shared ? '<span class="text-[8px] bg-teal-900/50 border border-teal-700/50 text-teal-400 px-1.5 py-0.5 rounded-full shrink-0 uppercase tracking-widest">🔗 shared</span>' : ''}
                                                         </div>
                                                         <span class="text-[9px] text-slate-500 bg-slate-900/60 px-1.5 py-0.5 rounded border border-slate-800/60 shrink-0">${nodeCount} nodes</span>

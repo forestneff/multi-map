@@ -10,6 +10,7 @@ const MultiMapSchema = {
         'file-root': { label: "File Directory", icon: "📁", priority: 0.2, description: "File System Root" },
         'prompt-root': { label: "Prompt Chain", icon: "💬", priority: 0.3, description: "AI Prompt Sequence" },
         'agent-root': { label: "Agent Config", icon: "🤖", priority: 0.4, description: "AI Agent Identity" },
+        'link-root': { label: "Link Space", icon: "🌳", priority: 0.6, description: "Linktree Root" },
         'person-root': { label: "Person", icon: "👤", priority: 1, description: "Person Identity Root" },
         'hub': { label: "Central Hub", icon: "💠", priority: 2, description: "Router" },
         'portal': { label: "Portal", icon: "🌀", priority: 3, description: "Gateway" },
@@ -58,9 +59,10 @@ const MultiMapSchema = {
     },
 
     rules: {
-        'root': { allowed: ['hub', 'person-root', 'web-root', 'data-root', 'file-root', 'prompt-root', 'agent-root', 'portal', 'smart-portal', 'note', 'logic-gate'], default: 'hub', strict: true },
+        'root': { allowed: ['hub', 'person-root', 'web-root', 'data-root', 'file-root', 'prompt-root', 'agent-root', 'link-root', 'portal', 'smart-portal', 'note', 'logic-gate'], default: 'hub', strict: true },
+        'link-root': { allowed: ['hub', 'portal', 'smart-portal', 'note', 'logic-gate', 'web-link'], default: 'web-link', strict: false },
         'data-root': { allowed: ['note', 'portal', 'smart-portal', 'hub', 'logic-gate'], default: 'note', strict: false },
-        'file-root': { allowed: ['note', 'portal', 'smart-portal', 'hub', 'logic-gate'], default: 'note', strict: false },
+        'file-root': { allowed: ['note', 'portal', 'smart-portal', 'hub', 'logic-gate'], default: 'portal', strict: false },
         'prompt-root': { allowed: ['prompt-role', 'prompt-goal', 'prompt-context', 'prompt-instruction', 'prompt-constraint', 'prompt-example', 'prompt-variable', 'prompt-chain', 'prompt-image', 'prompt-data-analytic', 'prompt-text-to-text', 'prompt-code-gen', 'note', 'portal', 'smart-portal', 'hub', 'logic-gate'], default: 'prompt-goal', strict: true },
         'prompt-role': { allowed: ['prompt-context', 'prompt-goal', 'note'], default: 'prompt-goal', strict: false },
         'prompt-goal': { allowed: ['prompt-instruction', 'prompt-constraint', 'prompt-example', 'note'], default: 'prompt-instruction', strict: false },
@@ -110,14 +112,15 @@ const MultiMapSchema = {
     },
 
     mapTypes: {
-        'generic': { label: 'Generic Space', rootNode: 'root', allowedNodes: ['root', 'data-root', 'file-root', 'prompt-root', 'agent-root', 'flow-root', 'web-root', 'hub', 'person-root', 'portal', 'smart-portal', 'note', 'logic-gate'] },
-        'data': { label: 'Data Architecture', rootNode: 'data-root', allowedNodes: ['data-root', 'hub', 'portal', 'smart-portal', 'note', 'logic-gate'] },
-        'file': { label: 'File System', rootNode: 'file-root', allowedNodes: ['file-root', 'hub', 'portal', 'smart-portal', 'note', 'logic-gate'] },
-        'prompt': { label: 'Prompt Engine', rootNode: 'prompt-root', allowedNodes: ['prompt-root', 'prompt-role', 'prompt-goal', 'prompt-context', 'prompt-instruction', 'prompt-constraint', 'prompt-example', 'prompt-variable', 'prompt-chain', 'prompt-image', 'prompt-data-analytic', 'prompt-text-to-text', 'prompt-code-gen', 'hub', 'portal', 'smart-portal', 'note', 'logic-gate'] },
-        'agent': { label: 'Agent Config', rootNode: 'agent-root', allowedNodes: ['agent-root', 'agent-persona', 'agent-router', 'agent-skill', 'agent-tool', 'agent-memory', 'agent-guardrail', 'hub', 'portal', 'smart-portal', 'note', 'logic-gate'] },
-        'flow': { label: 'Flowchart', rootNode: 'flow-root', allowedNodes: ['flow-root', 'flow-process', 'flow-decision', 'flow-terminal', 'note', 'portal', 'smart-portal', 'hub', 'logic-gate'] },
+        'generic': { label: 'Generic Space', rootNode: 'root', allowedNodes: ['root', 'data-root', 'file-root', 'prompt-root', 'agent-root', 'flow-root', 'web-root', 'link-root', 'hub', 'person-root', 'portal', 'smart-portal', 'note', 'logic-gate', 'web-link'] },
+        'data': { label: 'Data Architecture', rootNode: 'data-root', allowedNodes: ['data-root', 'hub', 'portal', 'smart-portal', 'note', 'logic-gate', 'web-link'] },
+        'file': { label: 'File System', rootNode: 'file-root', allowedNodes: ['file-root', 'hub', 'portal', 'smart-portal', 'note', 'logic-gate', 'web-link'] },
+        'prompt': { label: 'Prompt Engine', rootNode: 'prompt-root', allowedNodes: ['prompt-root', 'prompt-role', 'prompt-goal', 'prompt-context', 'prompt-instruction', 'prompt-constraint', 'prompt-example', 'prompt-variable', 'prompt-chain', 'prompt-image', 'prompt-data-analytic', 'prompt-text-to-text', 'prompt-code-gen', 'hub', 'portal', 'smart-portal', 'note', 'logic-gate', 'web-link'] },
+        'agent': { label: 'Agent Config', rootNode: 'agent-root', allowedNodes: ['agent-root', 'agent-persona', 'agent-router', 'agent-skill', 'agent-tool', 'agent-memory', 'agent-guardrail', 'hub', 'portal', 'smart-portal', 'note', 'logic-gate', 'web-link'] },
+        'flow': { label: 'Flowchart', rootNode: 'flow-root', allowedNodes: ['flow-root', 'flow-process', 'flow-decision', 'flow-terminal', 'note', 'portal', 'smart-portal', 'hub', 'logic-gate', 'web-link'] },
         'web': { label: 'Web Architecture', rootNode: 'web-root', allowedNodes: ['web-root', 'web-nav', 'web-hero', 'web-section', 'web-footer', 'web-card', 'web-link', 'web-button', 'web-text', 'web-image', 'web-video', 'web-form', 'web-input', 'web-grid', 'web-list', 'web-modal', 'web-carousel', 'note', 'logic-gate', 'portal', 'smart-portal', 'hub'] },
-        'person': { label: 'Person Profile', rootNode: 'person-root', allowedNodes: ['person-root', 'hub', 'portal', 'smart-portal', 'note', 'logic-gate'] }
+        'person': { label: 'Person Profile', rootNode: 'person-root', allowedNodes: ['person-root', 'hub', 'portal', 'smart-portal', 'note', 'logic-gate', 'web-link'] },
+        'link': { label: 'Link Hub', rootNode: 'link-root', allowedNodes: ['link-root', 'hub', 'portal', 'smart-portal', 'note', 'logic-gate', 'web-link'] }
     },
 
     getDefinition: function(type) {
@@ -131,7 +134,7 @@ const MultiMapSchema = {
     canConnect(parentType, childType) {
         if (childType === 'root' || childType.endsWith('-root')) return false;
         if (parentType === 'portal' || parentType === 'smart-portal') return false;
-        if (childType === 'note') return true; // Universal exception: Any node can have a note attached.
+        if (childType === 'note' || childType === 'web-link') return true; // Universal exception: Any node can have a note or link attached.
         const rule = this.rules[parentType];
         if (!rule || !rule.strict) return true;
         return rule.allowed.includes(childType);
