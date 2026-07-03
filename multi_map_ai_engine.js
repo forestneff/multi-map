@@ -875,33 +875,60 @@ class MultiMapAI {
                 aiData.map_id = "ai_" + this.kernel.generateId();
                 this.pendingMapData = aiData;
 
-                const actionHtml = `
-                    <div class="mt-3 flex flex-col gap-2 border-t border-indigo-500/30 pt-3">
-                        <button onclick="window.AI.initiateTargetedImport()" class="w-full py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-bold shadow transition-colors flex justify-center items-center gap-2">
-                            🎯 Assign to Existing Node / Portal
-                        </button>
-                        <button onclick="window.AI.injectIntoNewPortal()" class="w-full py-1.5 bg-teal-600 hover:bg-teal-500 text-white rounded font-bold shadow transition-colors flex justify-center items-center gap-2">
-                            🌀 Assign to New Portal
-                        </button>
-                        <button onclick="window.AI.injectIntoNewSmartPortal()" class="w-full py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded font-bold shadow transition-colors flex justify-center items-center gap-2">
-                            🌟 Assign to New Smart Node
-                        </button>
-                        <button onclick="window.AI.actionExpandSelected()" class="w-full py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded font-bold shadow transition-colors flex justify-center items-center gap-2">
-                            🌱 Expand Selected Node
-                        </button>
-                        <button onclick="window.AI.actionUpdateSelected()" class="w-full py-1.5 bg-orange-600 hover:bg-orange-500 text-white rounded font-bold shadow transition-colors flex justify-center items-center gap-2">
-                            ✏️ Update Selected Node
-                        </button>
-                        <button onclick="window.AI.loadAsNewSession()" class="w-full py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded font-bold shadow transition-colors flex justify-center items-center gap-2">
-                            🌌 Load as New Session
-                        </button>
-                    </div>
-                `;
+                const textLower = text.toLowerCase();
+                const targetsSpecificContext = textLower.includes('portal') || 
+                                               textLower.includes('selected') || 
+                                               textLower.includes('inject') || 
+                                               textLower.includes('assign') || 
+                                               textLower.includes('into node') || 
+                                               textLower.includes('this node') ||
+                                               textLower.includes('current node') ||
+                                               textLower.includes('expand') ||
+                                               textLower.includes('update') ||
+                                               textLower.includes('edit') ||
+                                               textLower.includes('change') ||
+                                               textLower.includes('modify');
 
-                if (document.getElementById('ai-loading')) {
-                    document.getElementById('ai-loading').remove();
+                if (!targetsSpecificContext) {
+                    if (document.getElementById('ai-loading')) {
+                        document.getElementById('ai-loading').remove();
+                    }
+                    aiData.meta = aiData.meta || {};
+                    aiData.meta.project_id = this.kernel.activeProjectId || 'default_project';
+                    await this.kernel.saveMapToLibrary(aiData);
+                    this.kernel.loadMapState(aiData);
+                    await this.kernel.syncProjectMasterMap(aiData.meta.project_id);
+                    this.addMessage('system', `Successfully generated and opened new page: **${aiData.meta?.title || 'Map'}** (${aiData.nodes.length} nodes).`);
+                    this.pendingMapData = null;
+                } else {
+                    const actionHtml = `
+                        <div class="mt-3 flex flex-col gap-2 border-t border-indigo-500/30 pt-3">
+                            <button onclick="window.AI.initiateTargetedImport()" class="w-full py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-bold shadow transition-colors flex justify-center items-center gap-2">
+                                🎯 Assign to Existing Node / Portal
+                            </button>
+                            <button onclick="window.AI.injectIntoNewPortal()" class="w-full py-1.5 bg-teal-600 hover:bg-teal-500 text-white rounded font-bold shadow transition-colors flex justify-center items-center gap-2">
+                                🌀 Assign to New Portal
+                            </button>
+                            <button onclick="window.AI.injectIntoNewSmartPortal()" class="w-full py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded font-bold shadow transition-colors flex justify-center items-center gap-2">
+                                🌟 Assign to New Smart Node
+                            </button>
+                            <button onclick="window.AI.actionExpandSelected()" class="w-full py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded font-bold shadow transition-colors flex justify-center items-center gap-2">
+                                🌱 Expand Selected Node
+                            </button>
+                            <button onclick="window.AI.actionUpdateSelected()" class="w-full py-1.5 bg-orange-600 hover:bg-orange-500 text-white rounded font-bold shadow transition-colors flex justify-center items-center gap-2">
+                                ✏️ Update Selected Node
+                            </button>
+                            <button onclick="window.AI.loadAsNewSession()" class="w-full py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded font-bold shadow transition-colors flex justify-center items-center gap-2">
+                                🌌 Load as New Session
+                            </button>
+                        </div>
+                    `;
+
+                    if (document.getElementById('ai-loading')) {
+                        document.getElementById('ai-loading').remove();
+                    }
+                    this.addMessage('system', `Map generated: **${aiData.meta?.title || 'Map'}** (${aiData.nodes.length} nodes). How would you like to deploy it?`, actionHtml);
                 }
-                this.addMessage('system', `Map generated: **${aiData.meta?.title || 'Map'}** (${aiData.nodes.length} nodes). How would you like to deploy it?`, actionHtml);
             } else if (aiData.message) {
                 if (document.getElementById('ai-loading')) {
                     document.getElementById('ai-loading').remove();
