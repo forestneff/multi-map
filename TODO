@@ -103,7 +103,7 @@
 
 ---
 
-### [ ] 9. Expand Prompt-Root and Agent-Root Ecosystems
+### [x] 9. Expand Prompt-Root and Agent-Root Ecosystems
 - Intent: Utilize the map-native interface to design and build structured, complex, high-quality prompts and agent architectures that can then be exported for use with external LLMs/Agentic Systems (like Antigravity).
 - Specification: feature-specs/prompt-root-spec.md & feature-specs/agent-root-spec.md
 - Details:
@@ -266,6 +266,20 @@ Got: single node w/ content/payload: """To optimize map generation, provide clea
 
 14. we need to pre-pack the set-portal-target modal for the create new-page branch with the selected type if the user selects a type through the inspector before launching it or if a default type for the current map exists. 
 
-15. Explore change parent ui options w/ keyboard integration (shift + click). Expand existing set parrent interface (dynamic radial button) we have for orphanned nodes, make universal. Integrate w/ copy/paste logic for simplicity?
+15. Explore change parent ui options w/ keyboard integration (alt + click). Expand existing set parrent interface (dynamic radial button) we have for orphanned nodes, make universal. Integrate w/ copy/paste logic for simplicity?
 
 16. [x] Delete page radial button/keyboard action. Delete action triggeres verification pop up but page persists. Should delete page and corresponding portal on master map if allowed. Go to previos map (if portal history exists) or root directory after page deletion.
+
+17. If a portal's payload triggers a phase engine render and that portal is the active/selected node, when that phase engine is selected from the sidebar, show the payload's phase-specific rendering as if that page's root were the selected node. Only show that phase engine as accessible if that portal is selected, unless the hosting page map can also be rendered in that phase's view.  
+
+18. A project should only have one directory (it's own), let's clean legacy projects if they have multiple directories or point to other porject's directories. Selecting a project in the project's section of the data-manager should make it's directory the active map.
+
+19. Make text selectable/copyable in the chat interface. Should be able to select and copy individual words/segments of old prompts, responses, error messages, etc. w/ cursor like normal text (not just copy the whole message block).
+
+20. Flowchart upgrades.
+20.1 - All flow-type nodes as portals. (This is a special case in which flow-portals will be able to have flow-portal-type children.) The payload page will contain the logic or content that outlines that node's corresponding logic/content in the flowchart using existing or dedicated types as follows and dynamic portal functionality (meta-data passing).
+* Process = generic (link any payload)
+* Descision = logic-root page/map with metadata that returns t/f or a value from a set based on internal logic (accepts input or chooses w/in map's local logic)
+* Terminal = UI in/out or data/metadata pass (eg. text entry, file download, select option, yes/no, pass update map's metadata according after completion for passing to whatever calls the flowchart, etc. <- dynamic based on payload map/metadata>). Calls a corresponding modal for user interaction (in/out), returns to flow after if children, passing user input as needed.
+
+20.2 - Generate a Flow-Phase-Engine for flow-type maps, it should have similar functionality to the universal map view (maybe build on top?), but allow for a "play/pause/stop/skip/back" button interface to walk through the flowchart from the root or the selected node w/ progress animation along node connections and call each node's map's logic/payload as it does. Eg: descision will choose which branch, open new tab for web pages/sub maps/etc., use target root's metadata as payload to next node?, etc. Let's brainstorm this one and dail it in. Allow recursion as necessary but prevent infinite loops.

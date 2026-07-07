@@ -683,7 +683,7 @@ class SandboxController {
                     actions.push({ icon: '➕', action: 'AddChild', title: 'Add Child' });
                 }
             }
-            const isMaster = this.kernel.state.meta && (this.kernel.state.meta.isMaster === true || this.kernel.state.meta.title === "Project Directory" || this.kernel.state.meta.type === "file-root" || this.kernel.state.meta.type === "file");
+            const isMaster = this.kernel.state.meta && (this.kernel.state.meta.isMaster === true || this.kernel.state.meta.title === "Project Directory");
             const isSyncPortal = node.data && node.data.isSyncPortal === true;
             if (isSyncPortal) {
                 actions.push({ icon: '🗑️', action: 'Delete', title: 'Delete Page' });
@@ -985,7 +985,10 @@ class SandboxController {
             const isParentPortal = parentNode && (parentNode.type === 'portal' || parentNode.type === 'smart-portal');
             const childNode = this.kernel.state.nodes.find(n => n.id === this.parentSelectSourceId);
 
-            if (isParentPortal) {
+            const downstreamOfChild = this.kernel.getDownstreamNodes(this.parentSelectSourceId);
+            if (downstreamOfChild.has(parentId)) {
+                this.showToast("Cannot set a descendant as the parent.", "error");
+            } else if (isParentPortal) {
                 this.showToast("Portal nodes cannot have child connections.", "error");
             } else {
                 // Find and remove any existing structural parent connection for this.parentSelectSourceId
@@ -1023,9 +1026,31 @@ class SandboxController {
             return;
         }
         
-        if (node.data && node.data.isSyncPortal) {
-            if (node.content) {
-                await this.actionDeleteFromLibrary(node.content);
+        const isMaster = this.kernel.state.meta && (this.kernel.state.meta.isMaster === true || this.kernel.state.meta.title === "Project Directory");
+        const isDirectoryPortal = isMaster && (node.type === 'portal' || node.type === 'smart-portal');
+
+        if (isDirectoryPortal || (node.data && node.data.isSyncPortal)) {
+            const pageExists = node.content ? this.kernel.getLibrary().some(p => p.map_id === node.content) : false;
+            if (node.content && pageExists) {
+                // deleteFromLibrary handles portal cleanup via syncProjectMasterMap
+                const deleted = await this.actionDeleteFromLibrary(node.content);
+                if (deleted) {
+                    // Portal node is already removed from this.state by syncProjectMasterMap.
+                    // Just persist the current master map state.
+                    this.kernel.saveCurrentMapToLibrary();
+                    this.render();
+                }
+            } else {
+                const ok = await this.actionConfirm({
+                    title: "Delete Portal",
+                    message: "Are you sure you want to delete this unlinked or broken portal node?",
+                    confirmText: "Delete",
+                    isDestructive: true
+                });
+                if (ok) {
+                    this.kernel.deleteNode(tgt);
+                    this.kernel.saveCurrentMapToLibrary();
+                }
             }
             return;
         }
@@ -1998,7 +2023,7 @@ ${innerHtml}
         }
     }
 
-    async actionSetPortalTarget(nodeId) {
+    async actionSetPortalTarget(nodeId, forceTab = null) {
         const node = this.kernel.state.nodes.find(n => n.id === nodeId);
         if (!node) return;
 
@@ -2012,8 +2037,8 @@ ${innerHtml}
         const sameProjectPages = lib.filter(p => p.meta?.project_id === activeProjId || (!p.meta?.project_id && activeProjId === 'default_project'));
         const otherProjectPages = lib.filter(p => p.meta?.project_id && p.meta?.project_id !== activeProjId);
 
-        let activeTab = 'existing'; // 'existing' or 'new'
         let selectedPageId = node.content || null;
+        let activeTab = forceTab || (selectedPageId ? 'existing' : 'new'); // Default to 'new' if unlinked
         let selectedPageTitle = '-- Choose Target Page --';
         if (selectedPageId) {
             const targetMap = lib.find(m => m.map_id === selectedPageId);
@@ -2022,16 +2047,39 @@ ${innerHtml}
             }
         }
 
+        // Determine default type to pre-pack for the Create New Page section
+        let defaultNewType = 'generic';
+        let preSelectedFromInspector = false;
+
+        const universalEngine = this.registry.get('inspector');
+        if (universalEngine && universalEngine.iframe && universalEngine.iframe.contentDocument) {
+            const selectEl = universalEngine.iframe.contentDocument.getElementById('portal-new-type');
+            if (selectEl && selectEl.value) {
+                defaultNewType = selectEl.value;
+                preSelectedFromInspector = true;
+            }
+        }
+
+        if (!preSelectedFromInspector) {
+            const currentMapType = this.kernel.state.meta?.type;
+            if (currentMapType && currentMapType !== 'generic') {
+                const schema = typeof MultiMapSchema !== 'undefined' ? MultiMapSchema : null;
+                if (schema && schema.mapTypes && schema.mapTypes[currentMapType]) {
+                    defaultNewType = currentMapType;
+                }
+            }
+        }
+
         const contentHtml = `
             <div class="flex flex-col gap-4 font-sans text-slate-300">
                 <!-- Tabs Header -->
                 <div class="flex border-b border-slate-800/80">
-                    <button id="tab-existing" class="flex-1 py-2 text-center text-xs font-bold border-b-2 border-indigo-500 text-indigo-400 focus:outline-none transition-all cursor-pointer bg-transparent">Link Existing Page</button>
-                    <button id="tab-new" class="flex-1 py-2 text-center text-xs font-bold border-b-2 border-transparent text-slate-400 hover:text-slate-200 focus:outline-none transition-all cursor-pointer bg-transparent">Create New Page</button>
+                    <button id="tab-existing" class="flex-1 py-2 text-center text-xs font-bold border-b-2 ${activeTab === 'existing' ? 'border-indigo-500 text-indigo-400' : 'border-transparent text-slate-400 hover:text-slate-200'} focus:outline-none transition-all cursor-pointer bg-transparent">Link Existing Page</button>
+                    <button id="tab-new" class="flex-1 py-2 text-center text-xs font-bold border-b-2 ${activeTab === 'new' ? 'border-indigo-500 text-indigo-400' : 'border-transparent text-slate-400 hover:text-slate-200'} focus:outline-none transition-all cursor-pointer bg-transparent">Create New Page</button>
                 </div>
 
                 <!-- Existing Page Section -->
-                <div id="section-existing" class="flex flex-col gap-2">
+                <div id="section-existing" class="flex flex-col gap-2 ${activeTab === 'existing' ? '' : 'hidden'}">
                     <label class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Select Existing Page</label>
                     <div class="relative w-full">
                         <button id="page-selector-btn" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-left text-slate-400 hover:border-slate-700 transition-colors flex justify-between items-center cursor-pointer">
@@ -2042,7 +2090,7 @@ ${innerHtml}
                 </div>
 
                 <!-- Create New Section -->
-                <div id="section-new" class="flex flex-col gap-3 hidden">
+                <div id="section-new" class="flex flex-col gap-3 ${activeTab === 'new' ? '' : 'hidden'}">
                     <div class="flex flex-col gap-1.5">
                         <label class="text-slate-400 font-bold uppercase text-[9px] tracking-wider">Page Name</label>
                         <input type="text" id="new-page-title" value="${node.title || 'Sub Map'}" class="bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 outline-none focus:border-indigo-500 transition-colors w-full">
@@ -2050,7 +2098,7 @@ ${innerHtml}
                     <div class="flex flex-col gap-1.5">
                         <label class="text-slate-400 font-bold uppercase text-[9px] tracking-wider">Page Type</label>
                         <select id="new-page-type" class="bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 outline-none focus:border-indigo-500 transition-colors w-full">
-                            ${this.getMapTypeOptionsHtml('generic')}
+                            ${this.getMapTypeOptionsHtml(defaultNewType)}
                         </select>
                     </div>
                 </div>
@@ -2229,7 +2277,7 @@ ${innerHtml}
                             this.actionCloseDataManager();
                             this.render();
                             
-                            this.actionOpenPageSettings(newPage.map_id);
+                            setTimeout(() => this.actionOpenPageSettings(newPage.map_id), 50);
                         } else {
                             alert("Failed to create page.");
                         }
@@ -2326,7 +2374,7 @@ ${innerHtml}
                     const newMapId = await this.kernel.clipBranch(tgt, title, type);
                     if (newMapId) {
                         this.kernel.selectNode(tgt);
-                        this.actionOpenPageSettings(newMapId);
+                        setTimeout(() => this.actionOpenPageSettings(newMapId), 50);
                     } else {
                         alert('Clip failed. The node may not be clippable.');
                     }
@@ -2363,7 +2411,7 @@ ${innerHtml}
     }
 
     async actionCopyBranch(id) {
-        if (this.kernel.state.meta && (this.kernel.state.meta.isMaster === true || this.kernel.state.meta.title === "Project Directory" || this.kernel.state.meta.type === "file-root" || this.kernel.state.meta.type === "file")) {
+        if (this.kernel.state.meta && (this.kernel.state.meta.isMaster === true || this.kernel.state.meta.title === "Project Directory")) {
             this.showToast("Copy/paste actions are disabled in the Project Directory.", "error");
             return;
         }
@@ -2398,7 +2446,7 @@ ${innerHtml}
     }
 
     async actionPasteBranch(id) {
-        if (this.kernel.state.meta && (this.kernel.state.meta.isMaster === true || this.kernel.state.meta.title === "Project Directory" || this.kernel.state.meta.type === "file-root" || this.kernel.state.meta.type === "file")) {
+        if (this.kernel.state.meta && (this.kernel.state.meta.isMaster === true || this.kernel.state.meta.title === "Project Directory")) {
             this.showToast("Copy/paste actions are disabled in the Project Directory.", "error");
             return;
         }
@@ -2567,6 +2615,24 @@ ${innerHtml}
                 if (node.type === 'portal' || node.type === 'smart-portal') {
                     tier2Result = 'replace';
                 } else {
+                    const sourceRootNode = parsed.original_root ? this.kernel.state.nodes.find(n => n.id === parsed.original_root) : null;
+                    const isSourceRootNodeMain = sourceRootNode && (sourceRootNode.type === 'root' || sourceRootNode.type.endsWith('-root') || (sourceRootNode.data && sourceRootNode.data.isCore));
+                    const downstreamOfSource = parsed.original_root ? this.kernel.getDownstreamNodes(parsed.original_root) : new Set();
+                    const isCircular = downstreamOfSource.has(node.id);
+                    const isParentPortal = node.type === 'portal' || node.type === 'smart-portal';
+                    
+                    const canMove = sourceRootNode && !isSourceRootNodeMain && !isCircular && !isParentPortal && (parsed.sourceMapId === this.kernel.state.map_id);
+
+                    let moveBtnHtml = '';
+                    if (canMove) {
+                        moveBtnHtml = `
+                            <button id="btn-attach-move" class="flex flex-col items-start gap-1 p-3 border border-slate-700 hover:border-cyan-500 hover:bg-cyan-950/20 text-left rounded-xl transition-all cursor-pointer w-full group">
+                                <span class="text-slate-200 font-bold text-xs group-hover:text-cyan-400 transition-colors">🚚 Move Branch Here</span>
+                                <span class="text-slate-400 text-[10px] leading-relaxed">Moves the existing branch of <strong>"${sourceRootNode.title || 'copied node'}"</strong> to be a child of <strong>"${node.title || 'selected node'}"</strong> instead of cloning it.</span>
+                            </button>
+                        `;
+                    }
+
                     tier2Result = await this.showDialogModal({
                         title: isRootCopied ? "Paste Page/Root Node - Step 2" : "Paste Branch",
                         contentHtml: `
@@ -2576,6 +2642,7 @@ ${innerHtml}
                                     <span class="text-slate-200 font-bold text-xs group-hover:text-indigo-400 transition-colors">➕ Add as Child</span>
                                     <span class="text-slate-400 text-[10px] leading-relaxed">Connects the pasted content as a structural child under the selected node <strong>"${node.title || 'selected node'}"</strong>.</span>
                                 </button>
+                                ${moveBtnHtml}
                                 <button id="btn-attach-replace" class="flex flex-col items-start gap-1 p-3 border border-slate-700 hover:border-rose-500 hover:bg-rose-950/20 text-left rounded-xl transition-all cursor-pointer w-full group">
                                     <span class="text-slate-200 font-bold text-xs group-hover:text-rose-400 transition-colors">🔄 Replace Target Node</span>
                                     <span class="text-slate-400 text-[10px] leading-relaxed">Deletes the selected node <strong>"${node.title || 'selected node'}"</strong> and its downstream branch, replacing it with the pasted content.</span>
@@ -2587,11 +2654,45 @@ ${innerHtml}
                         `,
                         onRender: (el, close) => {
                             el.querySelector('#btn-attach-child').onclick = () => close('child');
+                            if (canMove) {
+                                el.querySelector('#btn-attach-move').onclick = () => close('move');
+                            }
                             el.querySelector('#btn-attach-replace').onclick = () => close('replace');
                             el.querySelector('.cancel-btn').onclick = () => close(null);
                         }
                     });
                     if (!tier2Result) return;
+                }
+
+                if (tier2Result === 'move') {
+                    const sourceId = parsed.original_root;
+                    const sourceRootNode = this.kernel.state.nodes.find(n => n.id === sourceId);
+                    
+                    // 1. Delete old parent connection
+                    const oldParentConnIndex = this.kernel.state.connections.findIndex(c => c.to === sourceId && c.type === 'structural');
+                    if (oldParentConnIndex !== -1) {
+                        this.kernel.state.connections.splice(oldParentConnIndex, 1);
+                    }
+                    
+                    // 2. Add new connection
+                    const res = this.kernel.addConnection(node.id, sourceId, 'structural');
+                    if (res && res.success === false) {
+                        this.showToast(`Schema constraint: Cannot make [${node.type}] a parent of [${sourceRootNode?.type || 'unknown'}].`, "error");
+                    } else {
+                        // 3. Resolve layout
+                        const rootNode = this.kernel.state.nodes.find(n => n.type === 'root' || n.type.endsWith('-root') || (n.data && n.data.isCore));
+                        const isStatic = rootNode && rootNode.root_metadata && rootNode.root_metadata.static_layout === true;
+                        if (!isStatic) {
+                            this.kernel.autoLayoutOrganic();
+                        } else {
+                            this.kernel.resolveOverlaps(40);
+                        }
+                        
+                        this.kernel.saveHistory();
+                        this.kernel.notify();
+                        this.showToast(`Moved "${sourceRootNode?.title || 'untitled'}" under "${node.title || 'untitled'}".`, "success");
+                    }
+                    return;
                 }
 
                 if (tier2Result === 'replace') {
@@ -3027,7 +3128,7 @@ ${innerHtml}
             this.setView('map');
             this.kernel.selectNode(portalNode.id);
             this.actionCloseDataManager();
-            this.actionOpenPageSettings(clonedMap.map_id);
+            setTimeout(() => this.actionOpenPageSettings(clonedMap.map_id), 50);
         } catch (e) {
             console.error(e);
             alert("Failed to spawn asset as portal: " + e.message);
@@ -3688,7 +3789,9 @@ ${innerHtml}
         if (ok) {
             await this.kernel.deleteFromLibrary(id);
             this.render();
+            return true;
         }
+        return false;
     }
 
     actionDownloadLibrary() {
@@ -4234,39 +4337,17 @@ ${innerHtml}
                 if(e.target.closest('.radial-btn') || e.target.closest('.moon-btn')) return; 
                 e.stopPropagation();
 
-                // Shift+Click integration for changing parent
-                if (e.shiftKey) {
-                    const childId = selId;
-                    const childNode = childId ? this.kernel.state.nodes.find(n => n.id === childId) : null;
-                    const isChildRoot = childNode && (childNode.type === 'root' || childNode.type.endsWith('-root') || (childNode.data && childNode.data.isCore));
-
-                    if (childId && childId !== node.id && !isChildRoot) {
-                        const isParentPortal = node.type === 'portal' || node.type === 'smart-portal';
-                        if (isParentPortal) {
-                            this.showToast("Portal nodes cannot have child connections.", "error");
-                            return;
-                        }
-
-                        // Fast path: Set node.id as parent of childId
-                        const oldParentConnIndex = this.kernel.state.connections.findIndex(c => c.to === childId && c.type === 'structural');
-                        let oldConn = null;
-                        if (oldParentConnIndex !== -1) {
-                            oldConn = this.kernel.state.connections[oldParentConnIndex];
-                            this.kernel.state.connections.splice(oldParentConnIndex, 1);
-                        }
-                        
-                        const res = this.kernel.addConnection(node.id, childId, 'structural');
-                        if (res && res.success === false) {
-                            if (oldConn) this.kernel.state.connections.push(oldConn);
-                            this.showToast(`Schema constraint: Cannot make [${node.type}] a parent of [${childNode.type}].`, "error");
+                // Alt+Click integration for changing parent
+                if (e.altKey) {
+                    if (this.parentSelectMode) {
+                        if (node.id === this.parentSelectSourceId) {
+                            this.actionCancelSelectParent();
                         } else {
-                            this.showToast(`Parent changed to "${node.title || 'untitled'}"`, "success");
-                            this.kernel.saveHistory();
-                            this.render();
+                            this.actionConfirmParent(node.id);
                         }
                         return;
                     } else {
-                        // Slow path: Start parent select mode for node.id (as child)
+                        // Start parent select mode for node.id (as child)
                         const isNodeRoot = node.type === 'root' || node.type.endsWith('-root') || (node.data && node.data.isCore);
                         if (isNodeRoot) {
                             this.showToast("Root nodes cannot have a parent.", "error");
@@ -4520,12 +4601,7 @@ ${innerHtml}
         if (selectedNode && this.viewMode === 'map') {
             const nodeType = selectedNode.type;
             const isRoot = nodeType === 'root' || nodeType.endsWith('-root') || (selectedNode.data && selectedNode.data.isCore);
-            const isMasterPage = this.kernel.state.meta && (
-                this.kernel.state.meta.isMaster === true ||
-                this.kernel.state.meta.title === 'Project Directory' ||
-                this.kernel.state.meta.type === 'file' ||
-                this.kernel.state.meta.type === 'file-root'
-            );
+            const isMasterPage = this.kernel.state.meta && (this.kernel.state.meta.isMaster === true || this.kernel.state.meta.title === "Project Directory");
             if (isRoot && !isMasterPage) {
                 if (!options) options = [];
                 options.push({ text: 'Go to Directory 🏠', action: () => this.actionGoToDirectory(selectedNode.id) });
@@ -4860,10 +4936,10 @@ ${innerHtml}
      */
     actionOpenPageSettings(pageId) {
         const lib = this.kernel.getLibrary();
-        const page = lib.find(p => p.map_id === pageId);
+        const page = lib.find(p => p.map_id === pageId) || (this.kernel.state && this.kernel.state.map_id === pageId ? this.kernel.state : null);
         if (!page) return alert('Page not found in library.');
 
-        const isMaster = page.meta && (page.meta.isMaster === true || page.meta.title === "Project Directory" || page.meta.type === "file-root" || page.meta.type === "file");
+        const isMaster = page.meta && (page.meta.isMaster === true || page.meta.title === "Project Directory");
         const initialTitle = page.meta?.title || "Untitled Page";
         const initialType = page.meta?.type || "generic";
         const storageText = page.meta?.storage_target === 'google_drive' ? '🔺 Google Drive' : (page.meta?.storage_target === 'local_os' ? '📁 Local OS' : '☁️ Cloud Vault / Local Database');
@@ -5439,7 +5515,11 @@ ${innerHtml}
                     
                     const page = await this.kernel.createPage(this.kernel.activeProjectId, title, type);
                     if (page) {
-                        this.actionOpenPageSettings(page.map_id);
+                        // Navigate to the new page
+                        this.kernel.loadMapState(page);
+                        this.actionCloseDataManager();
+                        this.render();
+                        setTimeout(() => this.actionOpenPageSettings(page.map_id), 50);
                     }
                 };
             }
@@ -5740,7 +5820,7 @@ ${innerHtml}
                         const clonedPageObj = updatedLib.find(p => p.map_id === clonedPageId);
                         if (clonedPageObj) {
                             this.actionCloseDataManager();
-                            this.actionOpenPageSettings(clonedPageObj.map_id);
+                            setTimeout(() => this.actionOpenPageSettings(clonedPageObj.map_id), 50);
                         }
                     }
                 };

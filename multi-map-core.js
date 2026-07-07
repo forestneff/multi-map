@@ -395,7 +395,7 @@ class MultiMapKernel {
         let masterMap = pages.find(p => p.meta && p.meta.isMaster === true);
         
         if (!masterMap) {
-            masterMap = pages.find(p => p.meta && (p.meta.title === "Project Directory" || p.meta.type === "file"));
+            masterMap = pages.find(p => p.meta && p.meta.title === "Project Directory");
             if (masterMap) {
                 masterMap.meta.isMaster = true;
                 await this.savePage(projectId, masterMap.map_id, masterMap);
@@ -522,15 +522,22 @@ class MultiMapKernel {
 
         if (changed) {
             const origState = this.state;
-            this.state = masterMap;
+            this.state = this.ensureSchema(masterMap);
             this.resolveOverlaps(80);
             this.state = origState;
 
             await this.savePage(projectId, masterMap.map_id, masterMap);
-            if (this.state && this.state.map_id === masterMap.map_id) {
-                this.state.nodes = masterMap.nodes;
-                this.state.connections = masterMap.connections;
-            }
+        }
+
+        // Always sync the live state from the (potentially mutated) masterMap
+        // when the user is currently viewing the master map. This covers cases
+        // where deleteFromLibrary already cleaned portals on disk but the
+        // in-memory state still has stale portal nodes.
+        if (this.state && this.state.map_id === masterMap.map_id) {
+            this.state.nodes = masterMap.nodes;
+            this.state.connections = masterMap.connections;
+            this.notify();
+        } else if (changed) {
             this.notify();
         }
     }
@@ -963,10 +970,12 @@ class MultiMapKernel {
         }
 
         // Prune stale portals pointing to maps that no longer exist (for master maps)
-        const isMaster = state.meta && (state.meta.isMaster === true
-            || state.meta.title === 'Project Directory'
-            || state.meta.type === 'file'
-            || state.meta.type === 'file-root');
+        const isMaster = state.meta && (
+            state.meta.isMaster === true ||
+            state.meta.title === "Project Directory" ||
+            state.meta.type === "file" ||
+            state.meta.type === "file-root"
+        );
         
         if (isMaster) {
             const lib = this.getLibrary();
@@ -1052,10 +1061,6 @@ class MultiMapKernel {
         const n = this.state.nodes.find(x => x.id === id);
         if (n && (n.type === 'root' || n.type.endsWith('-root') || (n.data && n.data.isCore))) {
             alert("The root node of a map cannot be deleted.");
-            return;
-        }
-        if (n && n.data && n.data.isSyncPortal) {
-            console.warn("Kernel Blocked Deletion: Synchronized project portal cannot be deleted.");
             return;
         }
         this.saveHistory();
@@ -1703,6 +1708,47 @@ class MultiMapKernel {
                         break;
                     }
                 }
+
+                // Clean up references: delete directory portals, clear other portals
+                const allPages = this.getLibrary();
+                for (const page of allPages) {
+                    if (page.map_id !== id && page.nodes) {
+                        const isMasterPage = page.meta && (page.meta.isMaster === true || page.meta.title === "Project Directory" || page.meta.type === "file-root" || page.meta.type === "file");
+                        let changed = false;
+                        
+                        if (isMasterPage) {
+                            const portalNodes = page.nodes.filter(n => (n.type === 'portal' || n.type === 'smart-portal') && n.content === id);
+                            const portalNodeIds = new Set(portalNodes.map(n => n.id));
+                            if (portalNodeIds.size > 0) {
+                                page.nodes = page.nodes.filter(n => !portalNodeIds.has(n.id));
+                                page.connections = page.connections.filter(c => !portalNodeIds.has(c.from) && !portalNodeIds.has(c.to));
+                                changed = true;
+                            }
+                        } else {
+                            page.nodes.forEach(n => {
+                                if ((n.type === 'portal' || n.type === 'smart-portal') && n.content === id) {
+                                    n.content = '';
+                                    changed = true;
+                                }
+                            });
+                        }
+                        
+                        if (changed) {
+                            await this.savePage(projId, page.map_id, page);
+                        }
+                    }
+                }
+
+                // Clean up portal history
+                this.portalHistory.forEach(state => {
+                    if (state && Array.isArray(state.nodes)) {
+                        state.nodes.forEach(n => {
+                            if ((n.type === 'portal' || n.type === 'smart-portal') && n.content === id) {
+                                n.content = '';
+                            }
+                        });
+                    }
+                });
                 
                 const mapRef = window.Firestore.doc(window.FirebaseDb, "users", uid, "projects", projId, "pages", id);
                 await window.Firestore.deleteDoc(mapRef);
@@ -1721,21 +1767,25 @@ class MultiMapKernel {
                 await this.syncProjectMasterMap(projId);
                 
                 if (this.state.map_id === id) {
-                    const allPages = this.getLibrary();
-                    const masterMap = allPages.find(p => p.map_id !== id && p.meta && p.meta.project_id === projId && (p.meta.isMaster === true || p.meta.title === "Project Directory" || p.meta.type === "file-root" || p.meta.type === "file"));
-                    if (masterMap) {
-                        this.loadMapState(masterMap, false);
+                    if (this.portalHistory.length > 0) {
+                        this.exitPortal();
                     } else {
-                        const sorted = allPages.filter(x => x.map_id !== id).sort((a, b) => {
-                            const dateA = a.meta?.created_at ? new Date(a.meta.created_at) : new Date(0);
-                            const dateB = b.meta?.created_at ? new Date(b.meta.created_at) : new Date(0);
-                            return dateB - dateA;
-                        });
-                        if (sorted.length > 0) {
-                            this.loadMapState(sorted[0], false);
+                        const updatedPages = this.getLibrary();
+                        const masterMap = updatedPages.find(p => p.map_id !== id && p.meta && p.meta.project_id === projId && p.meta.isMaster === true);
+                        if (masterMap) {
+                            this.loadMapState(masterMap, false);
                         } else {
-                            this.state = this.getEmptyState();
-                            this.notify();
+                            const sorted = updatedPages.filter(x => x.map_id !== id).sort((a, b) => {
+                                const dateA = a.meta?.created_at ? new Date(a.meta.created_at) : new Date(0);
+                                const dateB = b.meta?.created_at ? new Date(b.meta.created_at) : new Date(0);
+                                return dateB - dateA;
+                            });
+                            if (sorted.length > 0) {
+                                this.loadMapState(sorted[0], false);
+                            } else {
+                                this.state = this.getEmptyState();
+                                this.notify();
+                            }
                         }
                     }
                 } else {
@@ -1751,6 +1801,46 @@ class MultiMapKernel {
                 projId = project.project_id;
             }
 
+            // Clean up references: delete directory portals, clear other portals
+            const allPages = this.getLibrary();
+            for (const page of allPages) {
+                if (page.map_id !== id && page.nodes) {
+                    const isMasterPage = page.meta && (page.meta.isMaster === true || page.meta.title === "Project Directory" || page.meta.type === "file-root" || page.meta.type === "file");
+                    let changed = false;
+                    
+                    if (isMasterPage) {
+                        const portalNodes = page.nodes.filter(n => (n.type === 'portal' || n.type === 'smart-portal') && n.content === id);
+                        const portalNodeIds = new Set(portalNodes.map(n => n.id));
+                        if (portalNodeIds.size > 0) {
+                            page.nodes = page.nodes.filter(n => !portalNodeIds.has(n.id));
+                            page.connections = page.connections.filter(c => !portalNodeIds.has(c.from) && !portalNodeIds.has(c.to));
+                            changed = true;
+                        }
+                    } else {
+                        page.nodes.forEach(n => {
+                            if ((n.type === 'portal' || n.type === 'smart-portal') && n.content === id) {
+                                n.content = '';
+                                changed = true;
+                            }
+                        });
+                    }
+                    if (changed) {
+                        await this.savePage(projId, page.map_id, page);
+                    }
+                }
+            }
+
+            // Clean up portal history
+            this.portalHistory.forEach(state => {
+                if (state && Array.isArray(state.nodes)) {
+                    state.nodes.forEach(n => {
+                        if ((n.type === 'portal' || n.type === 'smart-portal') && n.content === id) {
+                            n.content = '';
+                        }
+                    });
+                }
+            });
+
             let lib = this.getLibrary().filter(x => x.map_id !== id);
             this.saveLibrary(lib);
             
@@ -1762,24 +1852,28 @@ class MultiMapKernel {
             await this.syncProjectMasterMap(projId);
             
             if (this.state.map_id === id) {
-                const projectObj = this.projects.find(p => p.project_id === projId);
-                const masterMap = lib.find(p => {
-                    const isInProject = p.meta?.project_id === projId || (projectObj && projectObj.page_ids.includes(p.map_id));
-                    return isInProject && p.meta && (p.meta.isMaster === true || p.meta.title === "Project Directory" || p.meta.type === "file-root" || p.meta.type === "file");
-                });
-                if (masterMap) {
-                    this.loadMapState(masterMap, false);
+                if (this.portalHistory.length > 0) {
+                    this.exitPortal();
                 } else {
-                    const sorted = lib.sort((a, b) => {
-                        const dateA = a.meta?.created_at ? new Date(a.meta.created_at) : new Date(0);
-                        const dateB = b.meta?.created_at ? new Date(b.meta.created_at) : new Date(0);
-                        return dateB - dateA;
+                    const projectObj = this.projects.find(p => p.project_id === projId);
+                    const masterMap = lib.find(p => {
+                        const isInProject = p.meta?.project_id === projId || (projectObj && projectObj.page_ids.includes(p.map_id));
+                        return isInProject && p.meta && p.meta.isMaster === true;
                     });
-                    if (sorted.length > 0) {
-                        this.loadMapState(sorted[0], false);
+                    if (masterMap) {
+                        this.loadMapState(masterMap, false);
                     } else {
-                        this.state = this.getEmptyState();
-                        this.notify();
+                        const sorted = lib.sort((a, b) => {
+                            const dateA = a.meta?.created_at ? new Date(a.meta.created_at) : new Date(0);
+                            const dateB = b.meta?.created_at ? new Date(b.meta.created_at) : new Date(0);
+                            return dateB - dateA;
+                        });
+                        if (sorted.length > 0) {
+                            this.loadMapState(sorted[0], false);
+                        } else {
+                            this.state = this.getEmptyState();
+                            this.notify();
+                        }
                     }
                 }
             } else {

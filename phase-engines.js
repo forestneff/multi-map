@@ -50,9 +50,7 @@ class PhaseRegistrySystem {
                         window.SC.actionTriggerLinktreeImport(id);
                     }
                     else if (action === 'CREATE_SUBMAP_AND_LINK' && id && event.data.data) {
-                        const newId = window.SC.kernel.createSubmap(event.data.data, 'New ' + event.data.data + ' Map'); 
-                        window.SC.kernel.updateNode(id, { content: newId }); 
-                        window.SC.actionEnterPortal(id);
+                        window.SC.actionSetPortalTarget(id, 'new');
                     }
                 }
             }
@@ -174,8 +172,8 @@ class DataPhaseEngine extends PhaseEngineBase {
             const projects = this.kernel.getProjects();
             const pages = this.kernel.getPages(activeProjId);
             const sortedPages = [...pages].sort((a, b) => {
-                const aIsMaster = a.meta && (a.meta.isMaster === true || a.meta.title === "Project Directory" || a.meta.type === "file-root" || a.meta.type === "file");
-                const bIsMaster = b.meta && (b.meta.isMaster === true || b.meta.title === "Project Directory" || b.meta.type === "file-root" || b.meta.type === "file");
+                const aIsMaster = a.meta && a.meta.isMaster === true;
+                const bIsMaster = b.meta && b.meta.isMaster === true;
                 if (aIsMaster && !bIsMaster) return -1;
                 if (!aIsMaster && bIsMaster) return 1;
                 return 0;
@@ -320,7 +318,7 @@ class DataPhaseEngine extends PhaseEngineBase {
                                             const title = meta.title || "Untitled Page";
                                             const type = meta.type || "generic";
                                             const nodeCount = page.nodes ? page.nodes.length : 0;
-                                            const isMaster = meta.isMaster === true || title === "Project Directory" || type === "file-root" || type === "file";
+                                            const isMaster = meta.isMaster === true;
                                             
                                             // Determine storage target icon
                                             let storageIcon = '☁️'; // Default firebase
