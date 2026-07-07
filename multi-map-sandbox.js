@@ -664,6 +664,10 @@ class SandboxController {
             if (isOrphan) {
                 actions.push({ icon: '👆', action: 'SelectParent', title: 'Select Parent' });
             }
+            // Add "Go to Directory" action for root nodes on non-master pages
+            if (isNodeRoot && !isMaster) {
+                actions.push({ icon: '🏠', action: 'GoToDirectory', title: 'Project Directory' });
+            }
             if (node.type === 'portal') {
                 const rootMeta = node.content ? this.kernel.getRootMetadata(node.content) : null;
                 const isPromptPortal = rootMeta && (rootMeta.portal_behavior === 'execute_prompt' || (this.kernel.hasRootType && this.kernel.hasRootType(node.content, 'prompt-root')) || (this.kernel.isPromptMap && this.kernel.isPromptMap(node.content)));
@@ -2159,6 +2163,24 @@ ${innerHtml}
             this.setView('map');
             this.actionCloseDataManager();
         }
+    }
+
+    async actionGoToDirectory(nodeId) {
+        const projectId = this.kernel.activeProjectId;
+        if (!projectId) return;
+        // Ensure master map exists then navigate to it via portal history (Esc returns)
+        const masterMap = await this.kernel.getOrCreateMasterMap(projectId);
+        if (!masterMap) {
+            alert('No project directory found.');
+            return;
+        }
+        // Retrieve full saved state for the master map
+        const lib = this.kernel.getLibrary();
+        const masterState = lib.find(m => m.map_id === masterMap.map_id) || masterMap;
+        this.kernel.enterPortal(masterState);
+        this.setView('map');
+        this.actionCloseDataManager();
+        this.render();
     }
 
     async actionClipBranch(id) {
@@ -3780,8 +3802,7 @@ ${innerHtml}
                     }
                     options.push({ text: 'Enter Portal ➔', action: () => this.actionEnterPortal(selectedNode.id) });
                     const isSyncPortal = selectedNode.data && selectedNode.data.isSyncPortal === true;
-                    const isDirPortal = this.kernel.isDirectoryPortal && this.kernel.isDirectoryPortal(selectedNode);
-                    if (!isSyncPortal && !isDirPortal) {
+                    if (!isSyncPortal) {
                         options.push({ text: 'Configure Portal ⚙️', action: () => this.actionSetPortalTarget(selectedNode.id) });
                     }
                 } else {
@@ -3866,6 +3887,22 @@ ${innerHtml}
             options = [
                 { text: `${text} ➔`, action: action }
             ];
+        }
+
+        // For root nodes on non-master pages: inject "Go to Directory" into options cascade
+        if (selectedNode && this.viewMode === 'map') {
+            const nodeType = selectedNode.type;
+            const isRoot = nodeType === 'root' || nodeType.endsWith('-root') || (selectedNode.data && selectedNode.data.isCore);
+            const isMasterPage = this.kernel.state.meta && (
+                this.kernel.state.meta.isMaster === true ||
+                this.kernel.state.meta.title === 'Project Directory' ||
+                this.kernel.state.meta.type === 'file' ||
+                this.kernel.state.meta.type === 'file-root'
+            );
+            if (isRoot && !isMasterPage) {
+                if (!options) options = [];
+                options.push({ text: 'Go to Directory 🏠', action: () => this.actionGoToDirectory(selectedNode.id) });
+            }
         }
 
         // Handle general state/navigation actions and merge them

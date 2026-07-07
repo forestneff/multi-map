@@ -358,7 +358,13 @@ class MultiMapKernel {
             return this.firestorePagesByProject[projectId] || [];
         } else {
             const lib = this.getLibrary();
-            return lib.filter(p => p.meta && p.meta.project_id === projectId);
+            const project = this.projects.find(p => p.project_id === projectId);
+            const pageIds = project ? new Set(project.page_ids) : new Set();
+            return lib.filter(p => {
+                const hasProjId = p.meta && p.meta.project_id === projectId;
+                const isInProjectList = p.map_id && pageIds.has(p.map_id);
+                return hasProjId || isInProjectList;
+            });
         }
     }
 
@@ -942,6 +948,18 @@ class MultiMapKernel {
                     }
                 });
             }
+        }
+
+        // Prune legacy auto-injected "Project Directory 📁" return portals.
+        // These are no longer needed — navigation to the directory is via the smart button/radial action.
+        const legacyReturnPortalIds = new Set(
+            state.nodes
+                .filter(n => (n.type === 'portal' || n.type === 'smart-portal') && n.title === 'Project Directory 📁')
+                .map(n => n.id)
+        );
+        if (legacyReturnPortalIds.size > 0) {
+            state.nodes = state.nodes.filter(n => !legacyReturnPortalIds.has(n.id));
+            state.connections = state.connections.filter(c => !legacyReturnPortalIds.has(c.from) && !legacyReturnPortalIds.has(c.to));
         }
 
         return state;
@@ -1533,6 +1551,10 @@ class MultiMapKernel {
                     }
                 }
                 
+                if (!exists) {
+                    await this.syncProjectMasterMap(destProjectId);
+                }
+                
                 this.notify();
             } catch (err) {
                 console.error("Firestore saveMapToLibrary failed:", err);
@@ -1560,6 +1582,11 @@ class MultiMapKernel {
             });
             
             localStorage.setItem("mm_projects", JSON.stringify(this.projects));
+            
+            if (!exists) {
+                await this.syncProjectMasterMap(destProjectId);
+            }
+            
             this.notify();
         }
     }
@@ -1758,6 +1785,7 @@ class MultiMapKernel {
                         if (this.state.map_id === id) {
                             this.state.meta = { ...this.state.meta, ...metaUpdates };
                         }
+                        await this.syncProjectMasterMap(projId);
                         this.notify();
                     }
                 }
@@ -1773,6 +1801,13 @@ class MultiMapKernel {
                 if (this.state.map_id === id) {
                     this.state.meta = { ...this.state.meta, ...metaUpdates };
                 }
+                
+                let projId = this.activeProjectId;
+                const project = this.projects.find(p => p.page_ids.includes(id));
+                if (project) {
+                    projId = project.project_id;
+                }
+                await this.syncProjectMasterMap(projId);
                 this.notify();
             }
         }
@@ -1825,63 +1860,29 @@ class MultiMapKernel {
         this.state = this.ensureSchema(data);
         this.syncPortalNodeTitles();
         
-        // Auto-inject return portal or sync master map dynamically
-        const projectId = (this.state && this.state.meta && this.state.meta.project_id) 
-            ? this.state.meta.project_id 
+        // Track active project and stamp project_id on map if missing
+        const projectId = (this.state && this.state.meta && this.state.meta.project_id)
+            ? this.state.meta.project_id
             : (this.activeProjectId || 'default_project');
-        
+
         this.activeProjectId = projectId;
-            
+
         if (this.state && this.state.meta) {
             if (!this.state.meta.project_id) {
                 this.state.meta.project_id = projectId;
                 this.savePage(projectId, this.state.map_id, this.state);
             }
-            
-            const isMaster = this.state.meta.isMaster === true || this.state.meta.title === "Project Directory" || this.state.meta.type === "file";
-            
-            this.getOrCreateMasterMap(projectId).then(masterMap => {
-                if (masterMap) {
-                    if (!isMaster) {
-                        let returnPortal = this.state.nodes.find(n => (n.type === 'portal' || n.type === 'smart-portal') && n.content === masterMap.map_id);
-                        const rootNode = this.state.nodes.find(n => n.data && n.data.isCore === true)
-                            || this.state.nodes.find(n => n.type === 'root' || n.type.endsWith('-root'))
-                            || this.state.nodes[0];
-                            
-                        if (!returnPortal) {
-                            if (rootNode) {
-                                const portalId = this.generateId();
-                                returnPortal = {
-                                    id: portalId,
-                                    type: 'portal',
-                                    title: "Project Directory 📁",
-                                    content: masterMap.map_id,
-                                    data: { x: 0, y: -180 }
-                                };
-                                this.state.nodes.push(returnPortal);
-                            }
-                        }
-                        
-                        if (returnPortal && rootNode) {
-                            const hasConnection = this.state.connections.some(c => c.from === rootNode.id && c.to === returnPortal.id && c.type === 'structural');
-                            if (!hasConnection) {
-                                this.state.connections.push({
-                                    id: this.generateId(),
-                                    from: rootNode.id,
-                                    to: returnPortal.id,
-                                    type: 'structural'
-                                });
-                            }
-                            this.savePage(projectId, this.state.map_id, this.state);
-                            this.notify();
-                        }
-                    } else {
-                        this.syncProjectMasterMap(projectId);
-                    }
-                }
-            }).catch(err => {
-                console.error("Error auto-syncing master map on load:", err);
-            });
+
+            // If this IS the master map, re-sync it on load to ensure all portals are current
+            const isMaster = this.state.meta.isMaster === true
+                || this.state.meta.title === 'Project Directory'
+                || this.state.meta.type === 'file'
+                || this.state.meta.type === 'file-root';
+            if (isMaster) {
+                this.syncProjectMasterMap(projectId).catch(err =>
+                    console.error('Error syncing master map on load:', err)
+                );
+            }
         }
         
         this.notify();
