@@ -11,7 +11,7 @@ Output ONLY valid JSON matching this schema. Do NOT include markdown formatting 
 {
   "map_id": "unique_string",
   "meta": { "title": "Map Title", "created": "2026-03-01T00:00:00Z" },
-  "nodes": [ { "id": "n1", "type": "root", "title": "Root", "content": "", "data": { "x": 0, "y": 0, "isCore": true, "collapsed": false } } ],
+  "nodes": [ { "id": "n1", "type": "root", "title": "Root", "content": "", "data": { "x": 0, "y": 0, "isCore": true, "collapsed": false }, "root_metadata": { "summary": "Example map", "tags": [], "portal_behavior": "standard", "static_layout": false } } ],
   "connections": [ { "id": "c1", "from": "n1", "to": "n2", "type": "structural" } ],
   "submaps": []
 }
@@ -21,6 +21,11 @@ Allowed types: root, link-root, hub, note, portal, smart-portal, logic-gate, web
 Ensure spatial x/y positioning prevents exact overlaps (space by 150px).
 
 If the user is requesting a website, dashboard, or web UI, you must adhere strictly to the rules in the `generate-web-mapstate` skill which will be dynamically provided to you.
+
+STATIC / MEANINGFUL LAYOUT GUIDELINES:
+- Every root node (e.g. 'root', 'web-root', 'prompt-root', 'agent-root', 'link-root') contains a `root_metadata` object.
+- You MUST set `"static_layout": true` in `root_metadata` if you arranged the generated nodes in a deliberate, meaningful, or structured layout (e.g., custom flowchart processes, grid-aligned web components, UI layouts, or prompt-chain steps).
+- You MUST set `"static_layout": false` (or omit it) if the map contains a general brainstorming session or organic cloud of ideas designed to be auto-arranged dynamically.
 
 GUIDELINES FOR WEB-LINK NODES:
 - Use "web-link" nodes for all external links, documentation, APIs, and online resource references.

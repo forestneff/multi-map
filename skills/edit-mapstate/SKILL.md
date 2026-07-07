@@ -44,6 +44,7 @@ Constraints:
   - You MUST NEVER add another root node to the map.
   - You MUST NEVER convert a regular node to a root type, or convert the root node to a regular node type.
   - If a new submap is needed, create a portal node (type 'portal' or 'smart-portal') rather than adding root nodes to the current map.
+  - Preserve the `"static_layout"` boolean property in the `root_metadata` of the root node unless specifically asked to change the layout behavior of the map.
   - When editing to add external links, resources, or document references, create a new "web-link" node. Populate its title with the label, and its content or href field with the target URL.
   - For link hub pages (which use a 'link-root' root node), you should default to adding 'web-link' nodes for references.
   - When the user asks to add multiple resources, external links, tools, or references to an existing map, group them under a common "hub" node (e.g., titled "Resources", "Tools", or "Reference Library") and attach the new "web-link" child nodes to it.

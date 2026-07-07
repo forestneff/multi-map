@@ -19,13 +19,18 @@
         .var-input { display: flex; flex-direction: column; margin-bottom: 8px; }
         .var-input label { font-size: 0.85rem; color: #94a3b8; margin-bottom: 4px; }
         .var-input input { padding: 6px; background: #0f172a; border: 1px solid #334155; color: #fff; border-radius: 4px; }
+        .btn-copy { background: #10b981; color: #0f172a; }
+        .btn-copy:hover { background: #34d399; }
     </style>
 </head>
 <body>
     <div id="container">
         <h1>
             Prompt Engine
-            <button id="exportBtn" class="btn">Export Prompt (.md)</button>
+            <div style="display: flex; gap: 8px;">
+                <button id="copyBtn" class="btn btn-copy">Copy as Text</button>
+                <button id="exportBtn" class="btn">Export Prompt (.md)</button>
+            </div>
         </h1>
         <div id="variables" style="display:none;"></div>
         <div id="content"></div>
@@ -160,6 +165,25 @@
             container.innerHTML = htmlPreview;
             window.currentCompiledMd = compiledMd;
         }
+
+        document.getElementById('copyBtn').addEventListener('click', () => {
+            if (!window.currentCompiledMd) return;
+            
+            // Post message to parent so it copies text and displays toast notification
+            window.parent.postMessage({
+                type: 'mm-copy-text',
+                text: window.currentCompiledMd
+            }, '*');
+
+            const copyBtn = document.getElementById('copyBtn');
+            const originalText = copyBtn.textContent;
+            copyBtn.textContent = "Copied!";
+            copyBtn.style.background = "#059669";
+            setTimeout(() => {
+                copyBtn.textContent = originalText;
+                copyBtn.style.background = "#10b981";
+            }, 2000);
+        });
 
         document.getElementById('exportBtn').addEventListener('click', () => {
             if (!window.currentCompiledMd) return;

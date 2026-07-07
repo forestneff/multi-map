@@ -962,6 +962,28 @@ class MultiMapKernel {
             state.connections = state.connections.filter(c => !legacyReturnPortalIds.has(c.from) && !legacyReturnPortalIds.has(c.to));
         }
 
+        // Prune stale portals pointing to maps that no longer exist (for master maps)
+        const isMaster = state.meta && (state.meta.isMaster === true
+            || state.meta.title === 'Project Directory'
+            || state.meta.type === 'file'
+            || state.meta.type === 'file-root');
+        
+        if (isMaster) {
+            const lib = this.getLibrary();
+            if (lib && lib.length > 0) {
+                const libraryMapIds = new Set(lib.map(m => m.map_id));
+                const stalePortalIds = new Set(
+                    state.nodes
+                        .filter(n => (n.type === 'portal' || n.type === 'smart-portal') && n.content && !libraryMapIds.has(n.content))
+                        .map(n => n.id)
+                );
+                if (stalePortalIds.size > 0) {
+                    state.nodes = state.nodes.filter(n => !stalePortalIds.has(n.id));
+                    state.connections = state.connections.filter(c => !stalePortalIds.has(c.from) && !stalePortalIds.has(c.to));
+                }
+            }
+        }
+
         return state;
     }
 
@@ -1612,6 +1634,7 @@ class MultiMapKernel {
                     summary: "",
                     tags: [],
                     portal_behavior: "standard",
+                    static_layout: false,
                     custom_payload: {}
                 };
             }
@@ -1701,7 +1724,7 @@ class MultiMapKernel {
                     const allPages = this.getLibrary();
                     const masterMap = allPages.find(p => p.map_id !== id && p.meta && p.meta.project_id === projId && (p.meta.isMaster === true || p.meta.title === "Project Directory" || p.meta.type === "file-root" || p.meta.type === "file"));
                     if (masterMap) {
-                        this.loadMapState(masterMap);
+                        this.loadMapState(masterMap, false);
                     } else {
                         const sorted = allPages.filter(x => x.map_id !== id).sort((a, b) => {
                             const dateA = a.meta?.created_at ? new Date(a.meta.created_at) : new Date(0);
@@ -1709,7 +1732,7 @@ class MultiMapKernel {
                             return dateB - dateA;
                         });
                         if (sorted.length > 0) {
-                            this.loadMapState(sorted[0]);
+                            this.loadMapState(sorted[0], false);
                         } else {
                             this.state = this.getEmptyState();
                             this.notify();
@@ -1745,7 +1768,7 @@ class MultiMapKernel {
                     return isInProject && p.meta && (p.meta.isMaster === true || p.meta.title === "Project Directory" || p.meta.type === "file-root" || p.meta.type === "file");
                 });
                 if (masterMap) {
-                    this.loadMapState(masterMap);
+                    this.loadMapState(masterMap, false);
                 } else {
                     const sorted = lib.sort((a, b) => {
                         const dateA = a.meta?.created_at ? new Date(a.meta.created_at) : new Date(0);
@@ -1753,7 +1776,7 @@ class MultiMapKernel {
                         return dateB - dateA;
                     });
                     if (sorted.length > 0) {
-                        this.loadMapState(sorted[0]);
+                        this.loadMapState(sorted[0], false);
                     } else {
                         this.state = this.getEmptyState();
                         this.notify();
@@ -1854,8 +1877,10 @@ class MultiMapKernel {
         return false;
     }
 
-    loadMapState(data) {
-        this.saveCurrentMapToLibrary();
+    loadMapState(data, saveCurrent = true) {
+        if (saveCurrent) {
+            this.saveCurrentMapToLibrary();
+        }
         this.saveHistory();
         this.state = this.ensureSchema(data);
         this.syncPortalNodeTitles();

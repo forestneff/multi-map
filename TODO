@@ -227,13 +227,13 @@
 
 1. Add to TODO workflow: Add "Cloud Sync" button to projects and pages (projects syncing applies to all project pages) for projects/pages from local vaults. When a project or page is marked for cloud sync, add it to the cloud vault (firestore for now, BYO-storage later). Respect user quota. Add an "All Vaults" option to Data Vault dropdown that shows all available projects sorted by category (local only, local cloud synced, cloud only). (Skip for now or scaffold only, will evolve naturally out of related features and cloud tasks)
 
-2. All project pages should auto-spawn a portal at their root linking back to the project directory master map that we are now spawning w/ project creation, might need to auto-inject into maps that don't have it (for whatever reason, legacy, injection from template or link, whatever, just add it if its not there). The master map should consist entirely of portals to those pages (+ hubs for sorting), also auto-create the master map if it doesn't exist in a project. This is meant for map-native navigation. Set the default child type for these special file-root-master maps to portal. Maybe we need something similar for linking back to calling portals? Perhaps this primary nav portal should link to the master map *and* any portal that calls it, offering selection through the smart button interface. Perhaps, instead of trying to route multiple targets through one portal, the master/home portal dynamically spawns a portal child for each calling portal's map, as instructed by that unique map-type's root metadata? (consider in the context of recent dynamic portal updates, maybe scaffole and/or save for file-root expansion task)
+2. [x] The master map should consist entirely of portals to project pages (+ hubs for sorting), also auto-create the master map if it doesn't exist in a project. This is meant for map-native navigation. Set the default child type for these special file-root-master maps to portal. Instead of auto spawning a portal to the master map (make sure to clean out they systems and logic for the current spawn-portal system we will replace as follows), let's simply use a radial/smart button option on root nodes that acts as a link directly back to the project's root/master map. Make sure each project has only one (it's own) project directory map. Make sure that the direcorty spawns a portal for all pages, regardless of how a page is created (via settings modal, clip injection, portal create target, *any*, etc.).
 
-3. Keyboard updates:
-3.1. When using keyboard map editing, inspector text entry box (title) should eat one "enter" to commit title text before allowing the creation of another sibling. (Text-entry boxes should commit on enter in general unless multiline entry is explicitly allowed for that text-field)
-3.2. Let's gracefully add detele back to root nodes. Deleting the root should allow page deletion/clean-up w/ correspondng "are you sure"
-3.3. Tab (or inject/import through assets, copy/paste, etc.) should not work on portals, option to add as a child of root or select different node.
-3.4. Enter to create sibling should create a sibling of the same type as the selected node.
+3. [x] Keyboard updates:
+3.1. [x] When using keyboard map editing, inspector text entry box (title) should eat one "enter" to commit title text before allowing the creation of another sibling. (Text-entry boxes should commit on enter in general and use tab to navigate between interactive elements/fields unless multiline entry is explicitly allowed for that text-field)
+3.2. [x] Let's gracefully add detele back to root nodes. Deleting the root should allow page deletion/clean-up w/ correspondng "are you sure"
+3.3. [x] Tab (or inject/import through assets, copy/paste, etc.) should not work on portals, option to add as a child of root or select different node.
+3.4. [x] Enter to create sibling should create a sibling of the same type as the selected node.
 
 4. [x] All phase engines may need access to keyboard smart button behaviors. Some may adopt differnt arrow key, tab, and enter behaviors. eg. web may use a different spatial/semantic arrow selection logic for element navigation than a universe map would. 
 
@@ -243,15 +243,15 @@
 
 7. [x] Current active project/page should auto-focus in the data-manager project/page lists when dm opens. (Instead of refreshing to top of list)
 
-8. When a portal node is focused, tab should not create a new child. Neither should a new child be allowed injected by other means, eg. asset via portal injection, AI inject children, etc. (Possible exception?: May allow portals to have children in flowcharts to allow multi-step prompt chaining for agents through dynamic portal payloads and other unique cases, only specific children allowed - eg. other portals, logic gates, etc - in such cases.)
+8. [x] When a portal node is focused, tab should not create a new child. Neither should a new child be allowed injected by other means, eg. asset via portal injection, AI inject children, etc. (Possible exception?: May allow portals to have children in flowcharts to allow multi-step prompt chaining for agents through dynamic portal payloads and other unique cases, only specific children allowed - eg. other portals, logic gates, etc - in such cases.)
 
 9. [x] it looks like we need to syncronize the page type lists in the inspector, portal config modal, and page-setting modal. Those lists (and similar) should all have the same options and allow the creation of any available type of map.
 
-10. ctrl+c/ctrl+v to copy paste nodes (w/ children) within and between pages or even to/from text documents if text structured hiearchically (refuse jarbled/unformatted pastes or put them in the details of a simple note). Use simple text format for copy, parse for map integration if pasted locally (eg. paste as child branch of selected, or child of root if none selected), paste as formatted text into any external document otherwise (or even local text input field - eg. chatbox - if selected/active). Add s "copy" button to radial w/ same functionality and a "paste" button to recieve. <- Maybe the copy/paste/clip buttons should all be variatns of the clip button or at least grouped together w/ it (neighbors in radial)? This should work across projects and maps and use standard copy/paste tools/controls for off platform copying/pasting.
+10. [x] ctrl+c/ctrl+v to copy paste nodes (w/ children) within and between pages or even to/from text documents if text structured hiearchically (refuse jarbled/unformatted pastes or put them in the details of a simple note). Use simple text format for copy, parse for map integration if pasted locally (eg. paste as child branch of selected, or child of root if none selected), paste as formatted text into any external document otherwise (or even local text input field - eg. chatbox - if selected/active). Add s "copy" button to radial w/ same functionality and a "paste" button to recieve. <- Maybe the copy/paste/clip buttons should all be variatns of the clip button or at least grouped together w/ it (neighbors in radial)? This should work across projects and maps and use standard copy/paste tools/controls for off platform copying/pasting. We may be able to use/modify/expand existing clip and/or map passing/injection tools we have in place to integrate key-board native copy/paste functionality, as long as we do so w/o breaking the existing functionality.
 
-11. "web-link" nodes should be added to the univerally accessible node types in any map, they should be available as the child of any node that allows children. They will act as our map-native url objects accross platform. Keep the default link icon but dynamically update the web-link node icon to the target's favicon as appropriate (refresh if target changed, handle errors gracefully, fallback to default icon on failure). Teach the AI to use these nodes in all generative and editing tasks to provide links to refferences, relevant resources, tools, or anything else it may want to offer a link for (eg. might be useful in prompt or file maps to point to external websites/data/tools/resources/apis/etc. or as children of a "refferences" hub for a overview/analysis/advice map).
+11. [x] Teach the AI to use web-link nodes in all generative and editing tasks to provide links to refferences, relevant resources, tools, or anything else it may want to offer a link for (eg. might be useful in prompt or file maps to point to external websites/data/tools/resources/apis/etc. or as children of a "refferences" hub for a overview/analysis/advice map).
 
-12. AI generate-prompt skill may not be engaging. Maybe update parse intent? Maybe generate-prompt skill or node ontology? 
+12. [x] AI generate-prompt skill may not be engaging. Maybe update parse intent? Maybe generate-prompt skill or node ontology? Check that this also works for agent-gen skill.
 
 Tried: "Generate a new prompt map architecture in this project to optimize prompting on this platform" 
 Got: single node w/ content/payload: """To optimize map generation, provide clear, specific instructions:
@@ -264,8 +264,8 @@ Got: single node w/ content/payload: """To optimize map generation, provide clea
 
 13. Light mode. 
 
-14. we need to pre-pack the set-portal-target modal for the create new-page branch with the selected type. 
+14. we need to pre-pack the set-portal-target modal for the create new-page branch with the selected type if the user selects a type through the inspector before launching it or if a default type for the current map exists. 
 
-15. Explore change parent ui options w/ keyboard integration (shift + click). Integrate w/ copy/paste logic for simplicity.
+15. Explore change parent ui options w/ keyboard integration (shift + click). Expand existing set parrent interface (dynamic radial button) we have for orphanned nodes, make universal. Integrate w/ copy/paste logic for simplicity?
 
-16. Delete page radial button. Using keyboard, verification pops up but page persists. Plan to go to prior map or root directory after page deletion.
+16. [x] Delete page radial button/keyboard action. Delete action triggeres verification pop up but page persists. Should delete page and corresponding portal on master map if allowed. Go to previos map (if portal history exists) or root directory after page deletion.

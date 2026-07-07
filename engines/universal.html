@@ -49,12 +49,22 @@
                                target.closest('[contenteditable="true"]');
             
             if (e.key === 'Enter' && isEditable) {
-                if (target.tagName === 'INPUT') {
-                    target.blur();
-                    e.preventDefault();
-                    e.stopPropagation();
-                } else if (target.tagName === 'TEXTAREA') {
-                    e.stopPropagation();
+                if (target.id === 'edit-title') {
+                    if (!e.shiftKey) {
+                        target.blur();
+                        e.preventDefault();
+                        e.stopPropagation();
+                    } else {
+                        e.stopPropagation();
+                    }
+                } else {
+                    if (target.tagName === 'INPUT') {
+                        target.blur();
+                        e.preventDefault();
+                        e.stopPropagation();
+                    } else if (target.tagName === 'TEXTAREA') {
+                        e.stopPropagation();
+                    }
                 }
                 return;
             }
@@ -307,7 +317,7 @@
             window.updateRootMetadata = (id, field, val) => {
                 const n = currentState.nodes.find(x => x.id === id);
                 if(n) {
-                    const rMeta = n.root_metadata || { summary: "", tags: [], portal_behavior: "standard", custom_payload: {} };
+                    const rMeta = n.root_metadata || { summary: "", tags: [], portal_behavior: "standard", static_layout: false, custom_payload: {} };
                     if (field === 'tags') {
                         rMeta.tags = val.split(',').map(s => s.trim()).filter(s => s);
                     } else if (field === 'custom_payload') {
@@ -503,7 +513,7 @@
                 <div class="p-4 flex flex-col min-h-full gap-4 relative">
                     <div class="shrink-0">
                         <label class="text-[10px] font-bold text-slate-500 uppercase block mb-1">Title</label>
-                        <input id="edit-title" value="${escapeHTML(node.title)}" class="${titleClass}" oninput="notifyUpdate('${node.id}', { title: this.value })">
+                        <textarea id="edit-title" class="${titleClass} resize-none h-[38px] min-h-[38px]" oninput="notifyUpdate('${node.id}', { title: this.value })">${escapeHTML(node.title)}</textarea>
                     </div>
                     <div class="shrink-0">
                         <label class="text-[10px] font-bold text-slate-500 uppercase block mb-1">Type</label>
@@ -537,6 +547,11 @@
                                 <option value="read_only" ${(node.root_metadata && node.root_metadata.portal_behavior === 'read_only') ? 'selected' : ''}>Read Only</option>
                                 <option value="execute_prompt" ${(node.root_metadata && node.root_metadata.portal_behavior === 'execute_prompt') ? 'selected' : ''}>Execute Prompt</option>
                             </select>
+                        </div>
+                        
+                        <div class="flex items-center gap-2 pt-1">
+                            <input onchange="window.updateRootMetadata('${node.id}', 'static_layout', this.checked)" type="checkbox" id="rm-static" ${(node.root_metadata && node.root_metadata.static_layout) ? 'checked' : ''} class="w-3.5 h-3.5 bg-slate-900 border border-slate-700 text-sky-500 rounded focus:ring-sky-500 outline-none">
+                            <label for="rm-static" class="text-[9px] font-bold text-slate-400 uppercase cursor-pointer">Static / Meaningful Layout</label>
                         </div>
                         
                         <div class="flex flex-col gap-1">

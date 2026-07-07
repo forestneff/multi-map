@@ -106,6 +106,32 @@ class SandboxController {
         window.addEventListener('beforeunload', logNavAway);
         window.addEventListener('pagehide', logNavAway);
 
+        window.addEventListener('copy', (e) => {
+            const target = e.target;
+            const isEditable = target.tagName === 'INPUT' || 
+                               target.tagName === 'TEXTAREA' || 
+                               target.isContentEditable || 
+                               target.closest('[contenteditable="true"]');
+            if (isEditable) return;
+            const selectedId = this.kernel.state.session.selectedId;
+            if (selectedId) {
+                e.preventDefault();
+                this.actionCopyBranch(selectedId);
+            }
+        });
+
+        window.addEventListener('paste', (e) => {
+            const target = e.target;
+            const isEditable = target.tagName === 'INPUT' || 
+                               target.tagName === 'TEXTAREA' || 
+                               target.isContentEditable || 
+                               target.closest('[contenteditable="true"]');
+            if (isEditable) return;
+            const selectedId = this.kernel.state.session.selectedId;
+            e.preventDefault();
+            this.actionPasteBranch(selectedId);
+        });
+
         // --- GLOBAL KEYBOARD SHORTCUTS & ESCAPE HANDLER ---
         window.addEventListener('keydown', (e) => this.handleGlobalKeydown(e));
         window.addEventListener('mousemove', (e) => {
@@ -129,6 +155,16 @@ class SandboxController {
                     preventDefault: () => {}
                 };
                 this.handleGlobalKeydown(simulatedEvent);
+            }
+            if (e.data && e.data.type === 'mm-copy-text' && e.data.text) {
+                navigator.clipboard.writeText(e.data.text)
+                    .then(() => {
+                        this.showToast("Prompt copied to clipboard.", "success");
+                    })
+                    .catch((err) => {
+                        console.error("Failed to copy prompt text:", err);
+                        this.showToast("Failed to copy to clipboard.", "error");
+                    });
             }
         });
 
@@ -660,9 +696,9 @@ class SandboxController {
             }
             actions.push({ icon: (isCollapsed ? '🌞' : '🌚'), action: 'ToggleCollapse', title: (isCollapsed ? 'Expand' : 'Collapse') });
             
-            // Add orphan-specific action
-            if (isOrphan) {
-                actions.push({ icon: '👆', action: 'SelectParent', title: 'Select Parent' });
+            // Add parent-select action (universal for non-root nodes)
+            if (!isNodeRoot) {
+                actions.push({ icon: '👆', action: 'SelectParent', title: hasParent ? 'Change Parent' : 'Select Parent' });
             }
             // Add "Go to Directory" action for root nodes on non-master pages
             if (isNodeRoot && !isMaster) {
@@ -709,6 +745,17 @@ class SandboxController {
                 const canClip = !isNodeRoot && !node.type.startsWith('web-');
                 if (canClip) {
                     actions.push({ icon: '✂️', action: 'ClipBranch', title: 'Clip' });
+                }
+            }
+
+            if (!isMaster) {
+                // Copy branch action (universal)
+                actions.push({ icon: '📋', action: 'CopyBranch', title: 'Copy' });
+
+                // Paste branch action (only if content exists to be pasted)
+                const hasPasteData = !!(this.kernel.clipboardData || localStorage.getItem('mm_clipboard_data'));
+                if (hasPasteData) {
+                    actions.push({ icon: '📥', action: 'PasteBranch', title: 'Paste' });
                 }
             }
         }
@@ -934,9 +981,29 @@ class SandboxController {
     actionConfirmParent(id) {
         const parentId = id || this.kernel.state.session.selectedId;
         if (this.parentSelectSourceId && parentId !== this.parentSelectSourceId) {
-            const res = this.kernel.addConnection(parentId, this.parentSelectSourceId, 'structural');
-            if (res && res.success === false) {
-                alert(`Schema constraint: Cannot make [${this.kernel.state.nodes.find(n => n.id === parentId)?.type}] a parent of [${this.kernel.state.nodes.find(n => n.id === this.parentSelectSourceId)?.type}].`);
+            const parentNode = this.kernel.state.nodes.find(n => n.id === parentId);
+            const isParentPortal = parentNode && (parentNode.type === 'portal' || parentNode.type === 'smart-portal');
+            const childNode = this.kernel.state.nodes.find(n => n.id === this.parentSelectSourceId);
+
+            if (isParentPortal) {
+                this.showToast("Portal nodes cannot have child connections.", "error");
+            } else {
+                // Find and remove any existing structural parent connection for this.parentSelectSourceId
+                const oldParentConnIndex = this.kernel.state.connections.findIndex(c => c.to === this.parentSelectSourceId && c.type === 'structural');
+                let oldConn = null;
+                if (oldParentConnIndex !== -1) {
+                    oldConn = this.kernel.state.connections[oldParentConnIndex];
+                    this.kernel.state.connections.splice(oldParentConnIndex, 1);
+                }
+
+                const res = this.kernel.addConnection(parentId, this.parentSelectSourceId, 'structural');
+                if (res && res.success === false) {
+                    if (oldConn) this.kernel.state.connections.push(oldConn);
+                    this.showToast(`Schema constraint: Cannot make [${parentNode?.type || 'unknown'}] a parent of [${childNode?.type || 'unknown'}].`, "error");
+                } else {
+                    this.showToast(`Parent changed successfully.`, "success");
+                    this.kernel.saveHistory();
+                }
             }
         }
         this.parentSelectMode = false;
@@ -1206,6 +1273,20 @@ class SandboxController {
         if (window.AI && window.AI.isOpen) return;
 
         const selectedId = this.kernel.state.session.selectedId;
+
+        const isCmdOrCtrl = e.ctrlKey || e.metaKey;
+        if (isCmdOrCtrl && e.key.toLowerCase() === 'c') {
+            if (selectedId) {
+                e.preventDefault();
+                this.actionCopyBranch(selectedId);
+                return;
+            }
+        }
+        if (isCmdOrCtrl && e.key.toLowerCase() === 'v') {
+            e.preventDefault();
+            this.actionPasteBranch(selectedId);
+            return;
+        }
 
         if (e.key === 'Tab') {
             e.preventDefault();
@@ -2254,13 +2335,515 @@ ${innerHtml}
         });
     }
 
+    showToast(message, type = 'info') {
+        const toast = document.createElement('div');
+        toast.className = `fixed bottom-4 left-1/2 transform -translate-x-1/2 px-4 py-2 rounded-lg text-white font-bold text-sm shadow-lg transition-opacity duration-500 opacity-0 z-[9999] ${type === 'success' ? 'bg-emerald-600' : type === 'error' ? 'bg-rose-600' : 'bg-slate-800'}`;
+        toast.textContent = message;
+        document.body.appendChild(toast);
+        
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                toast.classList.remove('opacity-0');
+            });
+        });
+        
+        setTimeout(() => {
+            toast.classList.add('opacity-0');
+            setTimeout(() => toast.remove(), 500);
+        }, 3000);
+    }
+
     async actionSaveConstellation(id) {
         const tgt = id || this.kernel.state.session.selectedId;
         const json = this.kernel.extractConstellation(tgt);
         if (json) { 
             const saved = await this.kernel.saveConstellationToLibrary(json); 
-            if (saved !== false) alert("Saved to Library.");
+            if (saved !== false) this.showToast("Saved to Library.", "success");
         }
+    }
+
+    async actionCopyBranch(id) {
+        if (this.kernel.state.meta && (this.kernel.state.meta.isMaster === true || this.kernel.state.meta.title === "Project Directory" || this.kernel.state.meta.type === "file-root" || this.kernel.state.meta.type === "file")) {
+            this.showToast("Copy/paste actions are disabled in the Project Directory.", "error");
+            return;
+        }
+        const tgt = id || this.kernel.state.session.selectedId;
+        const node = this.kernel.state.nodes.find(n => n.id === tgt);
+        if (!node) return;
+
+        const branch = this.kernel.extractConstellation(tgt);
+        if (!branch) return;
+
+        const serialized = JSON.stringify({
+            type: "mm-branch",
+            sourceMapId: this.kernel.state.map_id,
+            nodes: branch.nodes,
+            connections: branch.connections,
+            original_root: tgt
+        }, null, 2);
+
+        try {
+            await (window.navigator || navigator).clipboard.writeText(serialized);
+            this.kernel.clipboardData = serialized;
+            localStorage.setItem('mm_clipboard_data', serialized);
+            this.showToast("Branch copied to clipboard.", "success");
+            this.render();
+        } catch (e) {
+            console.error("Failed to write to clipboard:", e);
+            this.kernel.clipboardData = serialized;
+            localStorage.setItem('mm_clipboard_data', serialized);
+            this.showToast("Branch copied (local fallback).", "info");
+            this.render();
+        }
+    }
+
+    async actionPasteBranch(id) {
+        if (this.kernel.state.meta && (this.kernel.state.meta.isMaster === true || this.kernel.state.meta.title === "Project Directory" || this.kernel.state.meta.type === "file-root" || this.kernel.state.meta.type === "file")) {
+            this.showToast("Copy/paste actions are disabled in the Project Directory.", "error");
+            return;
+        }
+        const tgt = id || this.kernel.state.session.selectedId;
+        const node = this.kernel.state.nodes.find(n => n.id === tgt);
+        if (!node) return;
+
+        let clipboardText = "";
+        try {
+            clipboardText = await (window.navigator || navigator).clipboard.readText();
+        } catch (e) {
+            console.warn("Failed to read system clipboard, using local fallback:", e);
+            clipboardText = this.kernel.clipboardData || localStorage.getItem('mm_clipboard_data') || "";
+        }
+
+        if (!clipboardText) {
+            clipboardText = this.kernel.clipboardData || localStorage.getItem('mm_clipboard_data') || "";
+        }
+
+        if (!clipboardText) {
+            this.showToast("Nothing to paste.", "error");
+            return;
+        }
+
+        let parsed = null;
+        try {
+            parsed = JSON.parse(clipboardText);
+        } catch (e) {
+            // Not JSON
+        }
+
+        if (parsed && parsed.type === 'mm-branch' && Array.isArray(parsed.nodes)) {
+            const originalRootId = parsed.original_root || (parsed.nodes[0] ? parsed.nodes[0].id : null);
+            const parsedRoot = parsed.nodes.find(n => n.id === originalRootId);
+            const isRootCopied = parsedRoot && (parsedRoot.type === 'root' || parsedRoot.type.endsWith('-root'));
+
+            const isTargetRoot = node.type === 'root' || node.type.endsWith('-root') || (node.data && node.data.isCore);
+            let tier1Result = 'hub';
+            if (isRootCopied) {
+                const sourceMapId = parsed.sourceMapId;
+                const lib = this.kernel.getLibrary() || [];
+                const originalPage = lib.find(p => p.map_id === sourceMapId);
+                const showLinkOption = !!originalPage;
+                const originalTitle = originalPage?.meta?.title || parsedRoot?.title || "Original Page";
+
+                tier1Result = await this.showDialogModal({
+                    title: "Paste Page/Root Node - Step 1",
+                    contentHtml: `
+                        <div class="flex flex-col gap-3">
+                            <div class="text-slate-400 text-[11px] uppercase tracking-wider mb-1 font-bold">Select Paste Format:</div>
+                            ${isTargetRoot ? `
+                            <button id="btn-paste-overwrite" class="flex flex-col items-start gap-1 p-3 border border-slate-700 hover:border-red-500 hover:bg-red-950/20 text-left rounded-xl transition-all cursor-pointer w-full group">
+                                <span class="text-slate-200 font-bold text-xs group-hover:text-red-400 transition-colors">⚠️ Overwrite Current Page</span>
+                                <span class="text-slate-400 text-[10px] leading-relaxed">Replaces the entire contents of this page with the copied page.</span>
+                            </button>
+                            ` : ''}
+                            <button id="btn-paste-hub" class="flex flex-col items-start gap-1 p-3 border border-slate-700 hover:border-indigo-500 hover:bg-indigo-950/20 text-left rounded-xl transition-all cursor-pointer w-full group">
+                                <span class="text-slate-200 font-bold text-xs group-hover:text-indigo-400 transition-colors">✨ Convert to Hub</span>
+                                <span class="text-slate-400 text-[10px] leading-relaxed">Converts the page root node to a generic Hub node and pastes the branch.</span>
+                            </button>
+                            ${showLinkOption ? `
+                            <button id="btn-paste-link" class="flex flex-col items-start gap-1 p-3 border border-slate-700 hover:border-indigo-500 hover:bg-indigo-950/20 text-left rounded-xl transition-all cursor-pointer w-full group">
+                                <span class="text-slate-200 font-bold text-xs group-hover:text-indigo-400 transition-colors">🔗 Link to Original Page</span>
+                                <span class="text-slate-400 text-[10px] leading-relaxed">Creates a portal node pointing to the original page: <strong>"${originalTitle}"</strong>.</span>
+                            </button>
+                            ` : ''}
+                            <button id="btn-paste-clone" class="flex flex-col items-start gap-1 p-3 border border-slate-700 hover:border-indigo-500 hover:bg-indigo-950/20 text-left rounded-xl transition-all cursor-pointer w-full group">
+                                <span class="text-slate-200 font-bold text-xs group-hover:text-indigo-400 transition-colors">🌀 Clone Page & Link</span>
+                                <span class="text-slate-400 text-[10px] leading-relaxed">Duplicates the copied branch under a new page, and creates a portal node pointing to it.</span>
+                            </button>
+                        </div>
+                    `,
+                    actionsHtml: `
+                        <button class="cancel-btn px-4 py-2 border border-slate-700 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg transition-colors font-bold text-[11px] uppercase tracking-wider">Cancel</button>
+                    `,
+                    onRender: (el, close) => {
+                        if (el.querySelector('#btn-paste-overwrite')) {
+                            el.querySelector('#btn-paste-overwrite').onclick = () => close('overwrite');
+                        }
+                        el.querySelector('#btn-paste-hub').onclick = () => close('hub');
+                        if (el.querySelector('#btn-paste-link')) {
+                            el.querySelector('#btn-paste-link').onclick = () => close('link');
+                        }
+                        el.querySelector('#btn-paste-clone').onclick = () => close('clone');
+                        el.querySelector('.cancel-btn').onclick = () => close(null);
+                    }
+                });
+                if (!tier1Result) return;
+
+                if (tier1Result === 'overwrite') {
+                    const confirmOverwrite = await this.showDialogModal({
+                        title: "Confirm Overwrite",
+                        contentHtml: `<div class="text-slate-300 text-sm">Are you sure you want to overwrite this page with the copied page? This action cannot be undone.</div>`,
+                        actionsHtml: `
+                            <button class="cancel-btn px-4 py-2 border border-slate-700 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg transition-colors font-bold text-[11px] uppercase tracking-wider">Cancel</button>
+                            <button class="confirm-btn px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg transition-colors font-bold text-[11px] uppercase tracking-wider">Overwrite</button>
+                        `,
+                        onRender: (el, close) => {
+                            el.querySelector('.cancel-btn').onclick = () => close(false);
+                            el.querySelector('.confirm-btn').onclick = () => close(true);
+                        }
+                    });
+                    
+                    if (!confirmOverwrite) {
+                        return;
+                    }
+                    
+                    this.kernel.saveHistory();
+                    const newRootId = tgt;
+                    this.kernel.state.nodes = this.kernel.state.nodes.filter(n => n.id === newRootId);
+                    this.kernel.state.connections = [];
+                    
+                    const idMap = {};
+                    idMap[originalRootId] = newRootId;
+                    
+                    parsed.nodes.forEach(n => {
+                        if (n.id !== originalRootId) {
+                            idMap[n.id] = this.kernel.generateId();
+                        }
+                    });
+                    
+                    parsed.nodes.forEach(n => {
+                        if (n.id === originalRootId) {
+                            const rootNode = this.kernel.state.nodes[0];
+                            rootNode.title = n.title;
+                            rootNode.content = n.content;
+                            rootNode.type = n.type;
+                        } else {
+                            const newId = idMap[n.id];
+                            const newNode = {
+                                id: newId,
+                                type: n.type,
+                                title: n.title,
+                                content: n.content,
+                                data: JSON.parse(JSON.stringify(n.data || {}))
+                            };
+                            if (newNode.data) newNode.data.isCore = false;
+                            this.kernel.state.nodes.push(newNode);
+                        }
+                    });
+                    
+                    if (Array.isArray(parsed.connections)) {
+                        parsed.connections.forEach(c => {
+                            const newFrom = idMap[c.from];
+                            const newTo = idMap[c.to];
+                            if (newFrom && newTo) {
+                                this.kernel.state.connections.push({
+                                    id: this.kernel.generateId(),
+                                    from: newFrom,
+                                    to: newTo,
+                                    type: c.type,
+                                    label: c.label
+                                });
+                            }
+                        });
+                    }
+                    
+                    this.kernel.notify();
+                    this.showToast("Page overwritten successfully.", "success");
+                    return;
+                }
+            }
+
+            let tier2Result = 'child';
+            if (!isTargetRoot) {
+                if (node.type === 'portal' || node.type === 'smart-portal') {
+                    tier2Result = 'replace';
+                } else {
+                    tier2Result = await this.showDialogModal({
+                        title: isRootCopied ? "Paste Page/Root Node - Step 2" : "Paste Branch",
+                        contentHtml: `
+                            <div class="flex flex-col gap-3">
+                                <div class="text-slate-400 text-[11px] uppercase tracking-wider mb-1 font-bold">Select Attachment Method:</div>
+                                <button id="btn-attach-child" class="flex flex-col items-start gap-1 p-3 border border-slate-700 hover:border-indigo-500 hover:bg-indigo-950/20 text-left rounded-xl transition-all cursor-pointer w-full group">
+                                    <span class="text-slate-200 font-bold text-xs group-hover:text-indigo-400 transition-colors">➕ Add as Child</span>
+                                    <span class="text-slate-400 text-[10px] leading-relaxed">Connects the pasted content as a structural child under the selected node <strong>"${node.title || 'selected node'}"</strong>.</span>
+                                </button>
+                                <button id="btn-attach-replace" class="flex flex-col items-start gap-1 p-3 border border-slate-700 hover:border-rose-500 hover:bg-rose-950/20 text-left rounded-xl transition-all cursor-pointer w-full group">
+                                    <span class="text-slate-200 font-bold text-xs group-hover:text-rose-400 transition-colors">🔄 Replace Target Node</span>
+                                    <span class="text-slate-400 text-[10px] leading-relaxed">Deletes the selected node <strong>"${node.title || 'selected node'}"</strong> and its downstream branch, replacing it with the pasted content.</span>
+                                </button>
+                            </div>
+                        `,
+                        actionsHtml: `
+                            <button class="cancel-btn px-4 py-2 border border-slate-700 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg transition-colors font-bold text-[11px] uppercase tracking-wider">Cancel</button>
+                        `,
+                        onRender: (el, close) => {
+                            el.querySelector('#btn-attach-child').onclick = () => close('child');
+                            el.querySelector('#btn-attach-replace').onclick = () => close('replace');
+                            el.querySelector('.cancel-btn').onclick = () => close(null);
+                        }
+                    });
+                    if (!tier2Result) return;
+                }
+
+                if (tier2Result === 'replace') {
+                    const hasChildren = this.kernel.state.connections.some(c => c.from === node.id);
+                    const hasContent = !!node.content;
+                    if (hasChildren || hasContent) {
+                        const confirmReplace = await this.showDialogModal({
+                            title: "Confirm Replace",
+                            contentHtml: `<div class="text-slate-300 text-sm">Are you sure you want to replace this node? Its content and all descendant nodes will be deleted. This action cannot be undone.</div>`,
+                            actionsHtml: `
+                                <button class="cancel-btn px-4 py-2 border border-slate-700 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg transition-colors font-bold text-[11px] uppercase tracking-wider">Cancel</button>
+                                <button class="confirm-btn px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg transition-colors font-bold text-[11px] uppercase tracking-wider">Replace</button>
+                            `,
+                            onRender: (el, close) => {
+                                el.querySelector('.cancel-btn').onclick = () => close(false);
+                                el.querySelector('.confirm-btn').onclick = () => close(true);
+                            }
+                        });
+                        
+                        if (!confirmReplace) {
+                            return;
+                        }
+                    }
+                }
+            }
+
+            this.kernel.saveHistory();
+
+            if (isRootCopied && (tier1Result === 'link' || tier1Result === 'clone')) {
+                let targetPageId = parsed.sourceMapId;
+                let finalTitle = parsedRoot?.title || "Portal Target";
+
+                if (tier1Result === 'clone') {
+                    targetPageId = this.kernel.generateId();
+                    finalTitle = (parsedRoot?.title || "Untitled Page") + " Copy";
+
+                    const idMap = {};
+                    parsed.nodes.forEach(n => {
+                        idMap[n.id] = this.kernel.generateId();
+                    });
+
+                    const clonedNodes = parsed.nodes.map(n => {
+                        const cloned = JSON.parse(JSON.stringify(n));
+                        cloned.id = idMap[n.id];
+                        if (n.id === originalRootId) {
+                            if (!cloned.data) cloned.data = {};
+                            cloned.data.isCore = true;
+                        } else {
+                            if (cloned.data) cloned.data.isCore = false;
+                        }
+                        return cloned;
+                    });
+
+                    const clonedConnections = (parsed.connections || []).map(c => {
+                        return {
+                            id: this.kernel.generateId(),
+                            from: idMap[c.from],
+                            to: idMap[c.to],
+                            type: c.type,
+                            label: c.label
+                        };
+                    }).filter(c => c.from && c.to);
+
+                    const clonedPageState = {
+                        map_id: targetPageId,
+                        meta: {
+                            title: finalTitle,
+                            type: parsedRoot?.type || "generic",
+                            project_id: this.kernel.activeProjectId,
+                            created_at: new Date().toISOString()
+                        },
+                        nodes: clonedNodes,
+                        connections: clonedConnections
+                    };
+                    await this.kernel.saveMapToLibrary(clonedPageState);
+                }
+
+                const portalNodeId = this.kernel.generateId();
+                const portalNode = {
+                    id: portalNodeId,
+                    type: 'portal',
+                    title: finalTitle,
+                    content: targetPageId,
+                    data: {
+                        x: tier2Result === 'replace' ? node.data.x : node.data.x + 100,
+                        y: tier2Result === 'replace' ? node.data.y : node.data.y + 100,
+                        isCore: false
+                    }
+                };
+
+                if (tier2Result === 'child') {
+                    this.kernel.state.nodes.push(portalNode);
+                    this.kernel.addConnection(tgt, portalNodeId, 'structural');
+                } else {
+                    const incoming = this.kernel.state.connections.filter(c => c.to === tgt);
+                    incoming.forEach(c => c.to = portalNodeId);
+
+                    const toDelete = this.kernel.getDownstreamNodes(tgt);
+                    this.kernel.state.nodes = this.kernel.state.nodes.filter(n => !toDelete.has(n.id));
+                    this.kernel.state.connections = this.kernel.state.connections.filter(c => !toDelete.has(c.from) && !toDelete.has(c.to));
+                    
+                    this.kernel.state.nodes.push(portalNode);
+                    this.kernel.state.session.selectedId = portalNodeId;
+                }
+
+                const rootNode = this.kernel.state.nodes.find(n => n.type === 'root' || n.type.endsWith('-root') || (n.data && n.data.isCore));
+                const isStatic = rootNode && rootNode.root_metadata && rootNode.root_metadata.static_layout === true;
+                if (!isStatic) {
+                    this.kernel.autoLayoutOrganic();
+                } else {
+                    this.kernel.resolveOverlaps(40);
+                }
+                this.kernel.notify();
+                this.showToast(tier1Result === 'clone' ? "Page cloned and portal pasted." : "Portal link pasted successfully.", "success");
+            } else {
+                // Hub or standard branch paste
+                const idMap = {};
+                parsed.nodes.forEach(n => {
+                    idMap[n.id] = this.kernel.generateId();
+                });
+
+                parsed.nodes.forEach(n => {
+                    const newId = idMap[n.id];
+                    const isRoot = n.id === originalRootId;
+                    const newNode = {
+                        id: newId,
+                        type: (isRoot && isRootCopied) ? 'hub' : n.type,
+                        title: n.title,
+                        content: n.content,
+                        data: JSON.parse(JSON.stringify(n.data || {}))
+                    };
+                    if (newNode.data) {
+                        newNode.data.isCore = false;
+                    }
+
+                    if (isRoot) {
+                        newNode.data.x = tier2Result === 'replace' ? node.data.x : node.data.x + 100;
+                        newNode.data.y = tier2Result === 'replace' ? node.data.y : node.data.y + 100;
+                    } else if (originalRootId) {
+                        const origRootNode = parsed.nodes.find(x => x.id === originalRootId);
+                        if (origRootNode) {
+                            const dx = n.data.x - origRootNode.data.x;
+                            const dy = n.data.y - origRootNode.data.y;
+                            newNode.data.x = (tier2Result === 'replace' ? node.data.x : node.data.x + 100) + dx;
+                            newNode.data.y = (tier2Result === 'replace' ? node.data.y : node.data.y + 100) + dy;
+                        } else {
+                            newNode.data.x = (tier2Result === 'replace' ? node.data.x : node.data.x + 100);
+                            newNode.data.y = (tier2Result === 'replace' ? node.data.y : node.data.y + 100);
+                        }
+                    }
+                    this.kernel.state.nodes.push(newNode);
+                });
+
+                if (Array.isArray(parsed.connections)) {
+                    parsed.connections.forEach(c => {
+                        const newFrom = idMap[c.from];
+                        const newTo = idMap[c.to];
+                        if (newFrom && newTo) {
+                            this.kernel.state.connections.push({
+                                id: this.kernel.generateId(),
+                                from: newFrom,
+                                to: newTo,
+                                type: c.type,
+                                label: c.label
+                            });
+                        }
+                    });
+                }
+
+                const newRootId = originalRootId ? idMap[originalRootId] : null;
+                if (newRootId) {
+                    if (tier2Result === 'child') {
+                        this.kernel.addConnection(tgt, newRootId, 'structural');
+                    } else {
+                        const incoming = this.kernel.state.connections.filter(c => c.to === tgt);
+                        incoming.forEach(c => c.to = newRootId);
+
+                        const toDelete = this.kernel.getDownstreamNodes(tgt);
+                        this.kernel.state.nodes = this.kernel.state.nodes.filter(n => !toDelete.has(n.id));
+                        this.kernel.state.connections = this.kernel.state.connections.filter(c => !toDelete.has(c.from) && !toDelete.has(c.to));
+
+                        this.kernel.state.session.selectedId = newRootId;
+                    }
+                }
+
+                const rootNode = this.kernel.state.nodes.find(n => n.type === 'root' || n.type.endsWith('-root') || (n.data && n.data.isCore));
+                const isStatic = rootNode && rootNode.root_metadata && rootNode.root_metadata.static_layout === true;
+                if (!isStatic) {
+                    this.kernel.autoLayoutOrganic();
+                } else {
+                    this.kernel.resolveOverlaps(40);
+                }
+                this.kernel.notify();
+                this.showToast("Branch pasted successfully.", "success");
+            }
+        } else {
+            const lines = this.parseIndentedList(clipboardText);
+            if (lines.length === 0) {
+                this.showToast("Clipboard text does not contain any valid list to paste.", "error");
+                return;
+            }
+
+            const stack = [{ id: tgt, indent: -1 }];
+            
+            lines.forEach(line => {
+                while (stack.length > 0 && stack[stack.length - 1].indent >= line.indent) {
+                    stack.pop();
+                }
+
+                const parent = stack[stack.length - 1] || stack[0];
+                const parentId = parent.id;
+                const childType = this.kernel.getSmartChildType(parentId);
+
+                const child = this.kernel.addNode({ title: line.title, type: childType }, parentId);
+                this.kernel.addConnection(parentId, child.id, 'structural');
+
+                stack.push({ id: child.id, indent: line.indent });
+            });
+
+            const rootNode = this.kernel.state.nodes.find(n => n.type === 'root' || n.type.endsWith('-root') || (n.data && n.data.isCore));
+            const isStatic = rootNode && rootNode.root_metadata && rootNode.root_metadata.static_layout === true;
+            if (!isStatic) {
+                this.kernel.autoLayoutOrganic();
+            } else {
+                this.kernel.resolveOverlaps(40);
+            }
+            this.kernel.notify();
+            this.showToast("List pasted successfully as sub-nodes.", "success");
+        }
+    }
+
+    parseIndentedList(text) {
+        const lines = text.split(/\r?\n/);
+        const parsed = [];
+        lines.forEach(line => {
+            if (!line.trim()) return;
+            
+            let indent = 0;
+            for (let i = 0; i < line.length; i++) {
+                if (line[i] === ' ') indent += 1;
+                else if (line[i] === '\t') indent += 4;
+                else break;
+            }
+            
+            let content = line.trim();
+            content = content.replace(/^([-\*\+•]|\d+\.)\s+/, '');
+            
+            if (content) {
+                parsed.push({ title: content, indent });
+            }
+        });
+        return parsed;
     }
 
     actionLoadRemoteTemplates() {
@@ -3098,7 +3681,7 @@ ${innerHtml}
 
         const ok = await this.actionConfirm({
             title: "Delete Page",
-            message: `Permanently delete "${title}"? This action cannot be undone.`,
+            message: "Are you sure you want to delete this page? This action cannot be undone.",
             confirmText: "Delete Page",
             isDestructive: true
         });
@@ -3650,6 +4233,50 @@ ${innerHtml}
             el.onpointerdown = (e) => {
                 if(e.target.closest('.radial-btn') || e.target.closest('.moon-btn')) return; 
                 e.stopPropagation();
+
+                // Shift+Click integration for changing parent
+                if (e.shiftKey) {
+                    const childId = selId;
+                    const childNode = childId ? this.kernel.state.nodes.find(n => n.id === childId) : null;
+                    const isChildRoot = childNode && (childNode.type === 'root' || childNode.type.endsWith('-root') || (childNode.data && childNode.data.isCore));
+
+                    if (childId && childId !== node.id && !isChildRoot) {
+                        const isParentPortal = node.type === 'portal' || node.type === 'smart-portal';
+                        if (isParentPortal) {
+                            this.showToast("Portal nodes cannot have child connections.", "error");
+                            return;
+                        }
+
+                        // Fast path: Set node.id as parent of childId
+                        const oldParentConnIndex = this.kernel.state.connections.findIndex(c => c.to === childId && c.type === 'structural');
+                        let oldConn = null;
+                        if (oldParentConnIndex !== -1) {
+                            oldConn = this.kernel.state.connections[oldParentConnIndex];
+                            this.kernel.state.connections.splice(oldParentConnIndex, 1);
+                        }
+                        
+                        const res = this.kernel.addConnection(node.id, childId, 'structural');
+                        if (res && res.success === false) {
+                            if (oldConn) this.kernel.state.connections.push(oldConn);
+                            this.showToast(`Schema constraint: Cannot make [${node.type}] a parent of [${childNode.type}].`, "error");
+                        } else {
+                            this.showToast(`Parent changed to "${node.title || 'untitled'}"`, "success");
+                            this.kernel.saveHistory();
+                            this.render();
+                        }
+                        return;
+                    } else {
+                        // Slow path: Start parent select mode for node.id (as child)
+                        const isNodeRoot = node.type === 'root' || node.type.endsWith('-root') || (node.data && node.data.isCore);
+                        if (isNodeRoot) {
+                            this.showToast("Root nodes cannot have a parent.", "error");
+                            return;
+                        }
+                        this.actionSelectParent(node.id);
+                        return;
+                    }
+                }
+
                 el.setPointerCapture(e.pointerId);
                 startX = e.clientX; startY = e.clientY;
                 this.draggedNode = node;

@@ -65,6 +65,7 @@
                 "summary": "",
                 "tags": [],
                 "portal_behavior": "standard",
+                "static_layout": false,
                 "custom_payload": {}
             }
         }
