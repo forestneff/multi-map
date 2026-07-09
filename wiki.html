@@ -68,7 +68,6 @@
             background: rgba(255, 255, 255, 0.02);
         }
 
-        /* Custom Scrollbar */
         .custom-scrollbar::-webkit-scrollbar {
             width: 8px;
             height: 8px;
@@ -81,6 +80,20 @@
         .custom-scrollbar::-webkit-scrollbar-thumb {
             background: #334155;
             border-radius: 4px;
+        }
+
+        kbd {
+            background-color: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 4px;
+            box-shadow: 0 2px 0 rgba(0, 0, 0, 0.2);
+            color: #e2e8f0;
+            display: inline-block;
+            font-size: 0.75em;
+            font-weight: 700;
+            line-height: 1;
+            padding: 2px 5px;
+            white-space: nowrap;
         }
     </style>
 </head>
@@ -135,18 +148,20 @@
             </div>
             <a href="#getting-started" class="nav-link pl-8">1. Getting Started</a>
             <a href="#navigation" class="nav-link pl-8">2. Navigation & Controls</a>
-            <a href="#universal-node" class="nav-link pl-8">3. The Universal Node System</a>
-            <a href="#phase-engines" class="nav-link pl-8">4. Phase Engines</a>
-            <a href="#data-manager" class="nav-link pl-8">5. Profile & Data Manager</a>
-            <a href="#portals" class="nav-link pl-8">6. Submaps and Portals</a>
+            <a href="#node-operations" class="nav-link pl-8">3. Node Operations & Linking</a>
+            <a href="#phase-engines" class="nav-link pl-8">4. Phase Engines & Views</a>
+            <a href="#data-manager" class="nav-link pl-8">5. Project Directory & Data Manager</a>
+            <a href="#portals" class="nav-link pl-8">6. Smart Roots & Portals</a>
+            <a href="#ai-engine" class="nav-link pl-8">7. MM-AI Assistant</a>
 
             <div class="px-6 text-[10px] font-black uppercase text-slate-500 tracking-widest mb-2 mt-6">II. Developer
                 Docs</div>
-            <a href="#architecture" class="nav-link pl-8">6. Core Architecture</a>
-            <a href="#ontology" class="nav-link pl-8">7. Node & Connection Rules</a>
-            <a href="#json-schema" class="nav-link pl-8">8. JSON Schema & Arrays</a>
-            <a href="#physics" class="nav-link pl-8">9. Force-Directed Physics</a>
-            <a href="#federation-library" class="nav-link pl-8">10. Serverless Library Engine</a>
+            <a href="#architecture" class="nav-link pl-8">8. Core Architecture</a>
+            <a href="#ontology" class="nav-link pl-8">9. Node & Connection Ontology</a>
+            <a href="#json-schema" class="nav-link pl-8">10. JSON Schema & Arrays</a>
+            <a href="#physics" class="nav-link pl-8">11. Force-Directed Physics</a>
+            <a href="#library-engine" class="nav-link pl-8">12. Serverless Library Engine</a>
+            <a href="#roadmap" class="nav-link pl-8">13. Federation Roadmap</a>
         </nav>
 
         <div class="p-4 border-t border-slate-800 bg-slate-900 sticky bottom-0">
@@ -167,8 +182,11 @@
             <header class="mb-16 border-b border-slate-800 pb-8">
                 <h1 class="text-4xl md:text-5xl font-black mb-4 tracking-tight">Multi-Map Master Reference</h1>
                 <p class="text-lg md:text-xl text-slate-400 leading-relaxed">
-                    Welcome to the definitive documentation for Multi-Map v14.11. This wiki serves both daily users
-                    navigating the spatial interface and developers building federated companion applications.
+                    Welcome to the definitive documentation for Multi-Map v14.11. This wiki serves daily users
+                    navigating the spatial interface, developers building federated companion applications, and AI
+                    agents interpreting the platform's data structures. Multi-Map is a spatial mapping ecosystem where
+                    information is organized into "Constellations" of interconnected nodes rather than traditional folders
+                    and files.
                 </p>
             </header>
 
@@ -186,14 +204,31 @@
                 <p class="text-slate-400 leading-relaxed mb-6">
                     Multi-Map is a spatial mapping ecosystem. Instead of folders and files, you organize information
                     into "Constellations" of interconnected nodes. Every map begins with a <strong>Universe
-                        Root</strong>. From there, you can spawn Hubs, Notes, Portals, and structured Web elements.
+                        Root</strong>. From there, you can spawn Hubs, Notes, Portals, and structured schema elements
+                    depending on the Map's designated Type (Generic, Web Architecture, Prompt Engine, Agent Config,
+                    Flowchart, Person Profile, Link Hub, Data Architecture, or File System).
                 </p>
+                <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl">
+                    <h4 class="font-bold text-sky-400 mb-2">Quick Overview</h4>
+                    <ul class="list-disc pl-5 text-sm text-slate-300 space-y-2">
+                        <li><strong>Maps</strong> are JSON documents containing nodes, connections, and metadata.</li>
+                        <li><strong>Nodes</strong> are typed data points (Root, Hub, Portal, Note, etc.) with spatial
+                            coordinates.</li>
+                        <li><strong>Connections</strong> define relationships: Structural (parent/child), Association
+                            (conceptual), or Flow (sequential logic).</li>
+                        <li><strong>Projects</strong> group multiple map pages together with folder organization.</li>
+                        <li><strong>Phase Engines</strong> are alternative visual renderers (views) for the same
+                            underlying data.</li>
+                    </ul>
+                </div>
             </section>
 
             <!-- 2. Navigation -->
             <section id="navigation" class="mb-20 pt-8 border-t border-slate-800/50 scroll-mt-24 md:scroll-mt-10">
                 <h3 class="text-2xl font-black mb-4 flex items-center gap-3">2. Navigation & Controls</h3>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+
+                <h4 class="font-bold text-lg mb-4 text-sky-400">Mouse & Touch Controls</h4>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
                     <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl">
                         <h4 class="font-bold text-sky-400 mb-2">Desktop (Mouse)</h4>
                         <ul class="list-disc pl-5 text-sm text-slate-300 space-y-2">
@@ -216,8 +251,16 @@
                     </div>
                 </div>
 
-                <h4 class="font-bold text-lg mb-2 mt-8">The Radial Menu & Moons</h4>
-                <p class="text-slate-400 text-sm leading-relaxed mb-4">
+                <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl mb-8">
+                    <h4 class="font-bold text-sky-400 mb-2">🔍 Global Search</h4>
+                    <p class="text-sm text-slate-300 leading-relaxed">
+                        Use the navigation search bar to fuzzy-search across node titles, types, and content. Selecting a
+                        search result will automatically uncollapse its parent branch and glide the camera to the node.
+                    </p>
+                </div>
+
+                <h4 class="font-bold text-lg mb-2 text-white">The Radial Menu & Moons</h4>
+                <p class="text-slate-400 text-sm leading-relaxed mb-6">
                     Selecting a node opens its Radial Menu—a circular array of quick actions (Edit, Link, Add,
                     Delete, Collapse).
                     <br><br>
@@ -225,16 +268,72 @@
                     from the map and replaced by orbiting <strong>"Moons"</strong> around the parent. Clicking a Moon
                     instantly expands the branch and focuses the camera on the child.
                 </p>
+
+                <h4 class="font-bold text-lg mb-4 text-emerald-400">Keyboard Power-User Shortcuts</h4>
+                <p class="text-slate-400 text-sm leading-relaxed mb-4">
+                    Multi-Map natively supports standard mind-map keyboard editing for rapid, mouse-free node creation.
+                    When a node is selected:
+                </p>
+                <div class="overflow-x-auto rounded-lg border border-slate-800 mb-6">
+                    <table class="w-full text-left text-sm text-slate-300 whitespace-nowrap">
+                        <thead class="table-header">
+                            <tr>
+                                <th class="p-3 w-1/4">Shortcut</th>
+                                <th class="p-3">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr class="table-row">
+                                <td class="p-3"><kbd>Tab</kbd></td>
+                                <td class="p-3">Creates a new <strong>Child</strong> node (default type per schema) and
+                                    focuses the Inspector text entry.</td>
+                            </tr>
+                            <tr class="table-row">
+                                <td class="p-3"><kbd>Enter</kbd></td>
+                                <td class="p-3">Creates a new <strong>Sibling</strong> node (same type as selected) and
+                                    focuses text entry.</td>
+                            </tr>
+                            <tr class="table-row">
+                                <td class="p-3"><kbd>Space</kbd></td>
+                                <td class="p-3">Triggers the node's primary <strong>Smart Action</strong> (e.g., Run
+                                    Chain, Launch Portal, Toggle Collapse).</td>
+                            </tr>
+                            <tr class="table-row">
+                                <td class="p-3"><kbd>Delete</kbd></td>
+                                <td class="p-3">Deletes the selected node and all downstream children (cascading BFS
+                                    deletion).</td>
+                            </tr>
+                            <tr class="table-row">
+                                <td class="p-3"><kbd>Arrows</kbd> (←↑↓→)</td>
+                                <td class="p-3"><strong>Semantic Traversal:</strong> intelligently navigates up to
+                                    parents, down to closest children, or across siblings based on layout geometry.
+                                    Collapsed folders auto-expand when navigated into.</td>
+                            </tr>
+                            <tr class="table-row">
+                                <td class="p-3"><kbd>Ctrl/Cmd</kbd> + <kbd>C</kbd> / <kbd>V</kbd></td>
+                                <td class="p-3">Copy and paste entire node branches (even across maps). You can also
+                                    paste formatted indented text to auto-generate node trees.</td>
+                            </tr>
+                            <tr class="table-row">
+                                <td class="p-3"><kbd>Escape</kbd></td>
+                                <td class="p-3">Deselect the current node and cancel any active mode (linking,
+                                    reparenting).</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </section>
 
-            <!-- 3. Linking -->
-            <section id="linking" class="mb-20 pt-8 border-t border-slate-800/50 scroll-mt-24 md:scroll-mt-10">
-                <h3 class="text-2xl font-black mb-4 flex items-center gap-3">3. Two-Step Targeted Linking</h3>
-                <p class="text-slate-400 leading-relaxed mb-6">
+            <!-- 3. Node Operations -->
+            <section id="node-operations" class="mb-20 pt-8 border-t border-slate-800/50 scroll-mt-24 md:scroll-mt-10">
+                <h3 class="text-2xl font-black mb-4 flex items-center gap-3">3. Node Operations & Linking</h3>
+
+                <h4 class="font-bold text-lg mb-3">Two-Step Targeted Linking</h4>
+                <p class="text-slate-400 text-sm leading-relaxed mb-4">
                     While "Add" creates strict hierarchical structures (solid lines), you can draw conceptual
                     relationships between any two nodes using the Two-Step Linking workflow (dotted lines).
                 </p>
-                <div class="bg-slate-900 border-l-4 border-amber-500 p-6 rounded-r-xl shadow-lg">
+                <div class="bg-slate-900 border-l-4 border-amber-500 p-6 rounded-r-xl shadow-lg mb-8">
                     <ol class="list-decimal pl-5 text-sm text-slate-300 space-y-3">
                         <li>Select your source node and click the <strong>Link (🔗)</strong> button on its Radial Menu.
                         </li>
@@ -248,23 +347,45 @@
                             button on the original node to abort).</li>
                     </ol>
                 </div>
+
+                <h4 class="font-bold text-lg mb-3">Changing Parents (Reparenting)</h4>
+                <div
+                    class="bg-slate-900 border-l-4 border-indigo-500 p-6 rounded-r-xl shadow-lg mt-2 mb-6 text-sm text-slate-300">
+                    <p class="mb-3">To move a node to a different branch, you can either:</p>
+                    <ul class="list-disc pl-5 space-y-2">
+                        <li>Click the <strong>Select Parent (👆)</strong> button in the radial menu.</li>
+                        <li><strong>Shortcut:</strong> <kbd>Alt</kbd> + <kbd>Click</kbd> the node you want to move.</li>
+                    </ul>
+                    <p class="mt-3">The screen will show a pulsing overlay. Next, simply click the new parent node and
+                        select the green Confirm button. Schema rules are strictly enforced (e.g., a node cannot be its
+                        own child, nor can a portal have children).</p>
+                </div>
+
+                <h4 class="font-bold text-lg mb-3">Clipping Branches</h4>
+                <p class="text-slate-400 text-sm leading-relaxed mb-4">
+                    If a map becomes too cluttered, select the <strong>Clip (✂️)</strong> action on a node. This deletes
+                    the node and its downstream children from the current map, pastes them into an entirely new Map
+                    file, and leaves behind a Portal node in its exact place pointing to the new file.
+                </p>
             </section>
 
             <!-- 4. Phase Engines -->
             <section id="phase-engines" class="mb-20 pt-8 border-t border-slate-800/50 scroll-mt-24 md:scroll-mt-10">
                 <h3 class="text-2xl font-black mb-4 flex items-center gap-3">4. Phase Engines (Views)</h3>
                 <p class="text-slate-400 leading-relaxed mb-6">
-                    Multi-Map separates your raw data from how it is displayed. "Phases" are different lenses through
-                    which you can view the exact same Mapstate JSON.
+                    Multi-Map separates your raw data from how it is displayed. "Phases" are different iframe-based
+                    lenses through which you can view the exact same Mapstate JSON. Switching phases never alters the
+                    underlying data—only how it's rendered.
                 </p>
                 <ul class="space-y-4">
                     <li
                         class="bg-slate-900 border border-slate-800 p-4 rounded-lg flex flex-col sm:flex-row sm:items-start gap-4 shadow">
                         <span class="text-3xl mt-1">🗺️</span>
                         <div>
-                            <strong class="text-sky-400 text-base">Celestial Map</strong>
+                            <strong class="text-sky-400 text-base">Celestial Map (Default)</strong>
                             <p class="text-sm text-slate-400 mt-1">The default spatial graph. Free-form dragging,
-                                physics engine enabled.</p>
+                                force-directed physics engine enabled. Nodes float as constellations with organic
+                                branching layouts.</p>
                         </div>
                     </li>
                     <li
@@ -285,7 +406,8 @@
                             <strong class="text-emerald-400 text-base">Web Architect & Spatial Browser</strong>
                             <p class="text-sm text-slate-400 mt-1 mb-2">A live HTML compiler. If your map uses
                                 <code>web-*</code> nodes, this engine dynamically compiles them into live, rendered
-                                HTML/Tailwind inside an iframe.</p>
+                                HTML/Tailwind inside an iframe.
+                            </p>
                             <div class="bg-slate-950 p-3 rounded border border-slate-800 text-xs text-slate-300">
                                 <strong class="text-white block mb-1">Advanced Iframe Integration:</strong>
                                 If you input a valid URL (e.g. <code>google.com</code> or
@@ -296,39 +418,151 @@
                             </div>
                         </div>
                     </li>
+                    <li
+                        class="bg-slate-900 border border-slate-800 p-4 rounded-lg flex flex-col sm:flex-row sm:items-start gap-4 shadow">
+                        <span class="text-3xl mt-1">📜</span>
+                        <div>
+                            <strong class="text-amber-400 text-base">Prompt Engine</strong>
+                            <p class="text-sm text-slate-400 mt-1">Compiles downstream <code>prompt-*</code> nodes
+                                (role, context, goal, instructions, constraints, examples, variables) into a linear,
+                                formatted Markdown document for LLM consumption. Supports chaining via
+                                <code>prompt-chain</code> nodes with portal execution.
+                            </p>
+                        </div>
+                    </li>
+                    <li
+                        class="bg-slate-900 border border-slate-800 p-4 rounded-lg flex flex-col sm:flex-row sm:items-start gap-4 shadow">
+                        <span class="text-3xl mt-1">🤖</span>
+                        <div>
+                            <strong class="text-rose-400 text-base">Agent Config</strong>
+                            <p class="text-sm text-slate-400 mt-1">Dedicated sandbox viewport providing a dynamic
+                                overview of the agent architecture—persona, router, skills, tools, memory, and
+                                guardrails—rendered from <code>agent-*</code> node hierarchies.</p>
+                        </div>
+                    </li>
+                    <li
+                        class="bg-slate-900 border border-slate-800 p-4 rounded-lg flex flex-col sm:flex-row sm:items-start gap-4 shadow">
+                        <span class="text-3xl mt-1">👤</span>
+                        <div>
+                            <strong class="text-indigo-400 text-base">Person / Identity</strong>
+                            <p class="text-sm text-slate-400 mt-1">Translates <code>person-root</code> node data into a
+                                professional profile or CV format. Hub children represent career sections, skills, and
+                                experience.</p>
+                        </div>
+                    </li>
                 </ul>
             </section>
 
-            <!-- 5. Profile & Data Manager -->
+            <!-- 5. Project Directory & Data Manager -->
             <section id="data-manager" class="mb-20 pt-8 border-t border-slate-800/50 scroll-mt-24 md:scroll-mt-10">
-                <h3 class="text-2xl font-black mb-4 flex items-center gap-3">5. Profile & Data Manager</h3>
+                <h3 class="text-2xl font-black mb-4 flex items-center gap-3">5. Project Directory & Data Manager</h3>
                 <p class="text-slate-400 leading-relaxed mb-6">
-                    Accessible via the "Profile" icon in the top right corner, the right-side drawer serves as your unified command center for Account settings and the Data Manager. It allows you to log in, manage cloud templates, and export the local library.
+                    Multi-Map organizes files hierarchically into Projects, Folders, and Pages. The left-hand Data
+                    Manager sidebar and the right-hand Profile drawer provide full project and library management.
                 </p>
                 <div class="space-y-6">
-                    <div>
-                        <h4 class="font-bold text-blue-400 mb-2">🌐 Cloud Templates</h4>
-                        <p class="text-sm text-slate-300">Provides read-only master templates. You can import these directly into your active workspace. Click "Upload" to upload external JSON templates to your local library.</p>
+                    <div class="bg-slate-900 border border-slate-800 p-5 rounded-lg border-l-4 border-l-purple-500">
+                        <h4 class="font-bold text-white mb-2 flex items-center gap-2"><span
+                                class="text-purple-400">📁</span> The Master Map (Project Directory)</h4>
+                        <p class="text-sm text-slate-300 mb-4">
+                            Every project automatically generates a special <strong>Project Directory</strong> page.
+                            This acts as the "Master Map" for the project.
+                        </p>
+                        <ul class="list-disc pl-5 text-sm text-slate-300 space-y-2">
+                            <li>It visually represents your project's architecture using a <code>file-root</code>
+                                structure with <code>file-folder</code> children.</li>
+                            <li><strong>Bi-directional Sync:</strong> Moving a map portal into a folder node on the
+                                Canvas automatically updates the folder hierarchy in the left-hand Data Manager UI, and
+                                vice-versa. Powered by <code>syncProjectMasterMap()</code>.</li>
+                            <li><strong>One per Project:</strong> A project can strictly only have one master directory.
+                            </li>
+                            <li><strong>Quick Access:</strong> From any map, selecting the "Project Directory (🏠)"
+                                button on a root node instantly returns you to the Master Map.</li>
+                        </ul>
                     </div>
-                    <div>
-                        <h4 class="font-bold text-purple-400 mb-2">📚 Saved Constellations</h4>
-                        <p class="text-sm text-slate-300">Your personal repository. You can Save your active session, Load previous sessions, or click "Export" to download your entire constellation library as a single JSON array.</p>
+
+                    <div class="bg-slate-900 border border-slate-800 p-5 rounded-lg border-l-4 border-l-blue-500">
+                        <h4 class="font-bold text-white mb-2 flex items-center gap-2"><span
+                                class="text-blue-400">🌐</span> Cloud Templates</h4>
+                        <p class="text-sm text-slate-300">Provides read-only master templates. You can import these
+                            directly into your active workspace. Click "Upload" to upload external JSON templates to your
+                            local library.</p>
+                    </div>
+
+                    <div class="bg-slate-900 border border-slate-800 p-5 rounded-lg border-l-4 border-l-violet-500">
+                        <h4 class="font-bold text-white mb-2 flex items-center gap-2"><span
+                                class="text-violet-400">📚</span> Saved Constellations</h4>
+                        <p class="text-sm text-slate-300">Your personal repository. You can Save your active session,
+                            Load previous sessions, or click "Export" to download your entire constellation library as a
+                            single JSON array. Accessible via the "Profile" icon in the top right corner.</p>
                     </div>
                 </div>
             </section>
 
-            <!-- 6. Portals & Mapstates -->
+            <!-- 6. Smart Roots & Portals -->
             <section id="portals" class="mb-20 pt-8 border-t border-slate-800/50 scroll-mt-24 md:scroll-mt-10">
-                <h3 class="text-2xl font-black mb-4 flex items-center gap-3">6. Submaps and Portals</h3>
+                <h3 class="text-2xl font-black mb-4 flex items-center gap-3">6. Smart Roots & Portals</h3>
                 <p class="text-slate-400 leading-relaxed mb-6">
-                    Maps in Multi-Map have intrinsic <strong>Subtype Mapstates</strong> (e.g., "Generic", "Web Architecture"). This enforces strict Ontology rules globally across the map.
+                    To link maps together, create a <code>Portal</code> node. Portals act as wormholes to other pages in
+                    your library. Maps have intrinsic <strong>Subtype Mapstates</strong> (e.g., "Generic", "Web
+                    Architecture") which enforce strict Ontology rules globally across the map.
                 </p>
-                <p class="text-slate-400 leading-relaxed mb-6">
-                    To link maps together, create a <code>Portal</code> node. Using the Portal Inspector, you can either select an existing map as the destination, or create a <strong>New Submap</strong> by selecting a Map Type. Creating a "Web Architecture" map will instantly enforce Web-only rules and generate a <code>web-root</code> node in the new space.
+
+                <h4 class="font-bold text-lg mb-3">Dynamic Portal System</h4>
+                <p class="text-sm text-slate-300 leading-relaxed mb-4">
+                    In previous versions, a specialized <code>smart-portal</code> node type existed separately. Now,
+                    <strong>all Portals are dynamic</strong>. The system utilizes <strong>Smart Roots</strong> to
+                    determine behavior. Using the Portal Inspector, you can either select an existing map as the
+                    destination, or create a <strong>New Submap</strong> by selecting a Map Type.
                 </p>
+
+                <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl text-sm text-slate-300 mb-6">
+                    <ol class="list-decimal pl-5 space-y-3">
+                        <li>Every Root node contains standardized <code>root_metadata</code>.</li>
+                        <li>When you interact with a Portal, it peeks at the target map's root metadata.</li>
+                        <li><strong>openPortal():</strong> If configured, interacting with the portal automatically
+                            spawns child data natively within the current map based on the target map's payload (e.g.,
+                            executing a prompt chain and returning the result locally).</li>
+                        <li><strong>enterPortal():</strong> The standard action replaces your current workspace with the
+                            destination map. The system maintains a "Portal History" stack allowing you to safely "Exit
+                            Portal" (🔙 button) back up the chain.</li>
+                    </ol>
+                </div>
+
                 <div class="bg-slate-900 border border-slate-800 p-4 rounded-lg">
-                    <strong class="text-emerald-400 text-sm block mb-2">🌀 Enter Portal</strong>
-                    <p class="text-xs text-slate-400">Entering a portal replaces your current workspace with the destination submap. Depending on the submap's Type, Multi-Map will automatically switch your Phase Engine (e.g., jumping into a Web Map auto-activates the Web Architect phase). Click the 🔙 button in the top menu to traverse back up the portal history stack.</p>
+                    <strong class="text-emerald-400 text-sm block mb-2">🌀 Auto-Phase Switching</strong>
+                    <p class="text-xs text-slate-400">Entering a portal automatically switches your Phase Engine to
+                        match the destination map's type. For example, jumping into a Web Architecture map auto-activates
+                        the Web Architect phase. Creating a "Web Architecture" submap instantly enforces Web-only rules
+                        and generates a <code>web-root</code> node.</p>
+                </div>
+            </section>
+
+            <!-- 7. AI Engine -->
+            <section id="ai-engine" class="mb-20 pt-8 border-t border-slate-800/50 scroll-mt-24 md:scroll-mt-10">
+                <h3 class="text-2xl font-black mb-4 flex items-center gap-3">7. MM-AI Assistant</h3>
+                <p class="text-slate-400 leading-relaxed mb-6">
+                    Multi-Map features a native LLM integration (Gemini) capable of converting natural language into
+                    spatial MapState JSON, modifying existing maps, and providing structural tutoring.
+                </p>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl">
+                        <h4 class="font-bold text-indigo-400 mb-2">✨ Autocomplete Commands</h4>
+                        <ul class="list-disc pl-5 text-sm text-slate-300 space-y-2">
+                            <li><code>/generate</code> - Create a completely new map or branch from a description.</li>
+                            <li><code>/edit</code> - Modify the current graph structurally.</li>
+                            <li><code>/project</code> - Generate a multi-page project package.</li>
+                            <li><code>/explain</code> - Narrate the current map context and structure.</li>
+                        </ul>
+                    </div>
+                    <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl">
+                        <h4 class="font-bold text-sky-400 mb-2">🗣️ Local Sandbox Commands</h4>
+                        <p class="text-sm text-slate-300">
+                            The AI can interpret commands locally without hitting the cloud API. Try commands like: <br>
+                            <em>"Select node Alpha"</em>, <em>"Rename node X to Y"</em>, <em>"Delete node Z"</em>, or
+                            <em>"Link Alpha to Beta"</em>.
+                        </p>
+                    </div>
                 </div>
             </section>
 
@@ -341,9 +575,9 @@
                 <h3 class="text-3xl md:text-4xl font-black">Developer Documentation</h3>
             </div>
 
-            <!-- 6. Architecture -->
+            <!-- 8. Architecture -->
             <section id="architecture" class="mb-20 pt-8 border-t border-slate-800/50 scroll-mt-24 md:scroll-mt-10">
-                <h3 class="text-2xl font-black mb-4 flex items-center gap-3">6. Core Architecture</h3>
+                <h3 class="text-2xl font-black mb-4 flex items-center gap-3">8. Core Architecture</h3>
                 <p class="text-slate-400 leading-relaxed mb-4">
                     The platform relies on a Decoupled State Machine pattern. The DOM never dictates truth.
                 </p>
@@ -352,29 +586,53 @@
                         <strong class="text-white text-sm">The Kernel (<code>multi-map-core.js</code>)</strong>
                         <p class="text-sm text-slate-400 mt-2">Holds the <code>MapState</code> object. Performs all
                             array mutations, handles UUID generation, runs the <code>resolveOverlaps()</code> physics
-                            loop, and manages the Breadth-First Search (BFS) algorithm for cascading downstream node
-                            deletions. Emits <code>this.notify()</code> on state change.</p>
+                            loop, manages the Breadth-First Search (BFS) algorithm for cascading downstream node
+                            deletions, handles syncing logic with Firestore, and enforces the "Project
+                            Directory" bidirectional folder-to-node synchronization via
+                            <code>syncProjectMasterMap()</code>. Emits <code>this.notify()</code> on state change.
+                        </p>
                     </div>
                     <div class="bg-slate-900 border border-slate-800 p-5 rounded-lg">
-                        <strong class="text-white text-sm">The Sandbox (<code>multi-map-sandbox.js</code>)</strong>
+                        <strong class="text-white text-sm">The Sandbox Controller
+                            (<code>multi-map-sandbox.js</code>)</strong>
                         <p class="text-sm text-slate-400 mt-2">The View Controller. Subscribes to the Kernel. Utilizes
                             pure mathematical DOM-Diffing (checking <code>dataset.stateHash</code>) to apply targeted
-                            innerHTML updates without destroying active mobile keyboards or CSS animation frames.</p>
+                            innerHTML updates without destroying active mobile keyboards or CSS animation frames. Handles
+                            DOM events, viewport transforms, UI overlay logic, Radial Menu generation, keyboard
+                            navigation routing, and phase engine iframe communication.</p>
+                    </div>
+                    <div class="bg-slate-900 border border-slate-800 p-5 rounded-lg">
+                        <strong class="text-white text-sm">The Rules Engine
+                            (<code>multi-map-rules.js</code>)</strong>
+                        <p class="text-sm text-slate-400 mt-2">Defines the complete node ontology: 50+ node type
+                            definitions, structural connection rules (which children each parent allows), map type
+                            configurations, and the <code>canConnect()</code> validation function. Exports the
+                            <code>MultiMapSchema</code> singleton.
+                        </p>
+                    </div>
+                    <div class="bg-slate-900 border border-slate-800 p-5 rounded-lg">
+                        <strong class="text-white text-sm">Phase Engines (<code>engines/*.html</code>)</strong>
+                        <p class="text-sm text-slate-400 mt-2">Each phase is an independent HTML file loaded into an
+                            iframe. Engines communicate with the Sandbox via <code>postMessage()</code> and receive the
+                            current MapState as serialized JSON. Engines: <code>universal.html</code> (Celestial Map),
+                            <code>orbital-focus.html</code>, <code>web-architect.html</code>,
+                            <code>prompt-engine.html</code>, <code>agent-config.html</code>, <code>person.html</code>.
+                        </p>
                     </div>
                 </div>
             </section>
 
-            <!-- 7. Ontology -->
+            <!-- 9. Ontology -->
             <section id="ontology" class="mb-20 pt-8 border-t border-slate-800/50 scroll-mt-24 md:scroll-mt-10">
-                <h3 class="text-2xl font-black mb-4 flex items-center gap-3">7. Node & Connection Ontology</h3>
+                <h3 class="text-2xl font-black mb-4 flex items-center gap-3">9. Node & Connection Ontology</h3>
                 <p class="text-slate-400 leading-relaxed mb-6">
-                    Defined in <code>Multi-Map-rules.js</code>, this schema dictates what types of nodes can exist and
-                    how they are allowed to connect. <em>Rule Exception: Any node is allowed to have a child of type
-                        'note'.</em>
+                    Defined in <code>multi-map-rules.js</code>, this schema dictates what types of nodes can exist and
+                    how they are allowed to connect. <em>Universal Exception: Any node is allowed to have a child of type
+                        <code>note</code> or <code>web-link</code>.</em>
                 </p>
 
                 <h4 class="font-bold text-lg mb-3">Connection Types</h4>
-                <ul class="list-disc pl-5 text-sm text-slate-300 space-y-2 mb-6">
+                <ul class="list-disc pl-5 text-sm text-slate-300 space-y-2 mb-8">
                     <li><strong class="text-sky-400">Structural (Solid):</strong> Strict Parent/Child hierarchy. Acts as
                         a spring in the physics engine. Triggers cascading deletions.</li>
                     <li><strong class="text-sky-400">Association (Dashed):</strong> Loose conceptual relation. Ignored
@@ -383,7 +641,69 @@
                         Logic Gates / execution loops).</li>
                 </ul>
 
-                <h4 class="font-bold text-lg mb-3">Web Architect Nodes</h4>
+                <h4 class="font-bold text-lg mb-3">Schema Hierarchy by Map Type</h4>
+                <div class="overflow-x-auto rounded-lg border border-slate-800 mb-8">
+                    <table class="w-full text-left text-sm text-slate-300 whitespace-nowrap">
+                        <thead class="table-header">
+                            <tr>
+                                <th class="p-3">Map Type</th>
+                                <th class="p-3">Root Node</th>
+                                <th class="p-3">Key Children</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr class="table-row">
+                                <td class="p-3 font-bold text-white">Generic Space</td>
+                                <td class="p-3 text-sky-400"><code>root</code></td>
+                                <td class="p-3">hub, portal, smart-portal, note, all root types</td>
+                            </tr>
+                            <tr class="table-row">
+                                <td class="p-3 font-bold text-white">Prompt Engine</td>
+                                <td class="p-3 text-amber-400"><code>prompt-root</code></td>
+                                <td class="p-3">role, goal, context, instruction, constraint, example, variable, chain,
+                                    image, data-analytic, text-to-text, code-gen</td>
+                            </tr>
+                            <tr class="table-row">
+                                <td class="p-3 font-bold text-white">Agent Config</td>
+                                <td class="p-3 text-rose-400"><code>agent-root</code></td>
+                                <td class="p-3">persona, router, skill, tool, memory, guardrail</td>
+                            </tr>
+                            <tr class="table-row">
+                                <td class="p-3 font-bold text-white">Flowchart</td>
+                                <td class="p-3 text-indigo-400"><code>flow-root</code></td>
+                                <td class="p-3">process, decision, terminal</td>
+                            </tr>
+                            <tr class="table-row">
+                                <td class="p-3 font-bold text-white">Web Architecture</td>
+                                <td class="p-3 text-emerald-400"><code>web-root</code></td>
+                                <td class="p-3">nav, hero, section, footer, card, button, text, image, video, form,
+                                    input, grid, list, modal, carousel</td>
+                            </tr>
+                            <tr class="table-row">
+                                <td class="p-3 font-bold text-white">Person Profile</td>
+                                <td class="p-3 text-indigo-400"><code>person-root</code></td>
+                                <td class="p-3">hub, portal, note</td>
+                            </tr>
+                            <tr class="table-row">
+                                <td class="p-3 font-bold text-white">File System</td>
+                                <td class="p-3 text-purple-400"><code>file-root</code></td>
+                                <td class="p-3">file-folder, portal, note</td>
+                            </tr>
+                            <tr class="table-row">
+                                <td class="p-3 font-bold text-white">Link Hub</td>
+                                <td class="p-3 text-green-400"><code>link-root</code></td>
+                                <td class="p-3">hub, portal, web-link, note</td>
+                            </tr>
+                            <tr class="table-row">
+                                <td class="p-3 font-bold text-white">Data Architecture</td>
+                                <td class="p-3 text-cyan-400"><code>data-root</code></td>
+                                <td class="p-3">hub, portal, note</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <h4 class="font-bold text-lg mb-3">Web Architect Nodes (Detail)</h4>
                 <div class="overflow-x-auto rounded-lg border border-slate-800">
                     <table class="w-full text-left text-sm text-slate-300 whitespace-nowrap">
                         <thead class="table-header">
@@ -398,20 +718,38 @@
                             <tr class="table-row">
                                 <td class="p-3 font-bold text-white">web-root</td>
                                 <td class="p-3"><code>&lt;body&gt;</code> / <code>&lt;iframe&gt;</code></td>
-                                <td class="p-3">nav, hero, section, footer</td>
+                                <td class="p-3">nav, hero, section, footer, modal</td>
                                 <td class="p-3">Mounts embedded URLs or basic HTML roots.</td>
                             </tr>
                             <tr class="table-row">
                                 <td class="p-3 font-bold text-white">web-nav</td>
                                 <td class="p-3"><code>&lt;nav&gt;</code></td>
-                                <td class="p-3">link, button</td>
+                                <td class="p-3">link, button, image</td>
                                 <td class="p-3">Sticks to top of compiled page.</td>
                             </tr>
                             <tr class="table-row">
                                 <td class="p-3 font-bold text-white">web-section</td>
                                 <td class="p-3"><code>&lt;section&gt;</code></td>
-                                <td class="p-3">text, image, button, link</td>
+                                <td class="p-3">text, image, card, button, link, grid, list, video, form, carousel</td>
                                 <td class="p-3">Standard flex container.</td>
+                            </tr>
+                            <tr class="table-row">
+                                <td class="p-3 font-bold text-white">web-card</td>
+                                <td class="p-3"><code>&lt;article&gt;</code></td>
+                                <td class="p-3">text, image, button, link, list</td>
+                                <td class="p-3">Contained card component.</td>
+                            </tr>
+                            <tr class="table-row">
+                                <td class="p-3 font-bold text-white">web-grid</td>
+                                <td class="p-3"><code>&lt;div&gt;</code> (grid)</td>
+                                <td class="p-3">card, image, text, video, form</td>
+                                <td class="p-3">CSS Grid layout container.</td>
+                            </tr>
+                            <tr class="table-row">
+                                <td class="p-3 font-bold text-white">web-form</td>
+                                <td class="p-3"><code>&lt;form&gt;</code></td>
+                                <td class="p-3">input, button, text</td>
+                                <td class="p-3">Form container with input children.</td>
                             </tr>
                             <tr class="table-row">
                                 <td class="p-3 font-bold text-white">web-text</td>
@@ -430,51 +768,60 @@
                 </div>
             </section>
 
-            <!-- 8. JSON Schema -->
+            <!-- 10. JSON Schema -->
             <section id="json-schema" class="mb-20 pt-8 border-t border-slate-800/50 scroll-mt-24 md:scroll-mt-10">
-                <h3 class="text-2xl font-black mb-4 flex items-center gap-3">8. JSON Schema & Arrays</h3>
+                <h3 class="text-2xl font-black mb-4 flex items-center gap-3">10. JSON Schema & Arrays</h3>
                 <p class="text-slate-400 leading-relaxed mb-4 text-sm">
-                    The JSON standard for importing/exporting mapstates. The v14.9 system can parse a single object OR
-                    an array `[{...}, {...}]` of mapstates during upload.
+                    The JSON standard for importing/exporting mapstates. The system can parse a single object OR
+                    an array <code>[{...}, {...}]</code> of mapstates during upload.
                 </p>
                 <pre><code>{
   "map_id": "u7b9v2z1x",
   "meta": {
     "title": "Project Master Plan",
+    "type": "generic",          // Map type: generic|web|prompt|agent|flow|person|link|data|file
     "created": "2026-02-24T12:00:00Z",
     "notes": "System schema reference",
-    "shared": false
+    "shared": false,
+    "project_id": "proj_abc",   // Links to parent project
+    "isMaster": false           // true only for Project Directory pages
   },
   "nodes": [
     {
       "id": "abc123xyz",
-      "type": "hub",
+      "type": "hub",            // Must match MultiMapSchema.definitions
       "title": "Central Architecture",
       "content": "Description payload here...",
       "data": {
-        "x": 145.2,
-        "y": -22.4,
-        "isCore": true,
-        "collapsed": false
+        "x": 145.2,             // Canvas X coordinate
+        "y": -22.4,             // Canvas Y coordinate
+        "isCore": true,         // Pinned (immune to physics)
+        "collapsed": false      // Children hidden behind Moons
       },
-      "submaps": [] 
+      "submaps": []
     }
   ],
   "connections": [
     {
       "id": "edge_999",
-      "from": "abc123xyz",
-      "to": "def456lmn",
-      "type": "structural"
+      "from": "abc123xyz",      // Source node ID
+      "to": "def456lmn",        // Target node ID
+      "type": "structural"      // structural | association | flow
     }
   ],
-  "submaps": [] // Caches templates or local portal configurations
+  "session": {
+    "viewport": { "x": 960, "y": 540, "scale": 1 },
+    "selectedId": null,
+    "remoteTemplates": [],
+    "layoutMode": "organic"
+  },
+  "submaps": []                 // Caches templates or local portal configurations
 }</code></pre>
             </section>
 
-            <!-- 9. Physics -->
+            <!-- 11. Physics -->
             <section id="physics" class="mb-20 pt-8 border-t border-slate-800/50 scroll-mt-24 md:scroll-mt-10">
-                <h3 class="text-2xl font-black mb-4 flex items-center gap-3">9. Force-Directed Physics</h3>
+                <h3 class="text-2xl font-black mb-4 flex items-center gap-3">11. Force-Directed Physics</h3>
                 <p class="text-slate-400 leading-relaxed mb-6">
                     The layout is driven by a custom iterative algorithm found in <code>Kernel.resolveOverlaps()</code>.
                     It applies two simultaneous forces to form organic trees dynamically.
@@ -493,14 +840,15 @@
                 </div>
                 <p class="text-sm text-slate-400 leading-relaxed mt-4">
                     Upon node creation, a fast 40-iteration burst runs to clear space. Clicking the "Arrange" UI button
-                    triggers a deep 150-iteration simulation to organically untangle complex webs.
+                    triggers a deep 150-iteration simulation to organically untangle complex webs. Pinned nodes
+                    (<code>isCore: true</code>) are immune to physics forces.
                 </p>
             </section>
 
-            <!-- 10. Federation Library -->
-            <section id="federation-library"
+            <!-- 12. Library Engine -->
+            <section id="library-engine"
                 class="mb-20 pt-8 border-t border-slate-800/50 scroll-mt-24 md:scroll-mt-10">
-                <h3 class="text-2xl font-black mb-4 flex items-center gap-3">10. Serverless Library Engine</h3>
+                <h3 class="text-2xl font-black mb-4 flex items-center gap-3">12. Serverless Library Engine</h3>
                 <p class="text-slate-400 leading-relaxed mb-4">
                     In v14.7, we deprecated <code>fetch()</code> calls to external JSON files to bypass local
                     <code>file://</code> CORS restrictions. The engine now uses a globally mounted
@@ -513,11 +861,37 @@
                     </p>
                     <ol class="list-decimal pl-5 text-sm text-slate-300 space-y-3">
                         <li><strong>Manual Source:</strong> Paste the generated JSON directly into the
-                            <code>defaults: [...]</code> array inside <code>multi-map-library.js</code>.</li>
+                            <code>defaults: [...]</code> array inside <code>multi-map-library.js</code>.
+                        </li>
                         <li><strong>Runtime Upload:</strong> Save the AI output as a <code>.json</code> file, open the
                             Data Manager Phase in the app, and click the <strong>Upload Template</strong> button to
                             write it permanently to your LocalStorage.</li>
                     </ol>
+                </div>
+            </section>
+
+            <!-- 13. Federation Roadmap -->
+            <section id="roadmap" class="mb-20 pt-8 border-t border-slate-800/50 scroll-mt-24 md:scroll-mt-10">
+                <h3 class="text-2xl font-black mb-4 flex items-center gap-3">13. Federation & API Roadmap</h3>
+                <p class="text-slate-400 leading-relaxed mb-4">
+                    The platform is actively transitioning toward a federated, decentralized storage model.
+                </p>
+                <div class="bg-slate-900 border border-slate-800 rounded-lg p-5 mb-4">
+                    <h4 class="font-bold text-white mb-2 text-sm">Bring Your Own Storage (BYOS)</h4>
+                    <p class="text-sm text-slate-300 leading-relaxed">
+                        Currently, maps are saved to <code>localStorage</code> or a centralized <strong>Firebase Cloud
+                            Vault</strong>. The map schema includes a <code>storage_target</code> property preparing for
+                        Google Drive and Local OS integration via the HTML5 File System API.
+                    </p>
+                </div>
+                <div class="bg-slate-900 border border-slate-800 rounded-lg p-5">
+                    <h4 class="font-bold text-white mb-2 text-sm">True Federation (WebRTC + CRDTs)</h4>
+                    <p class="text-sm text-slate-300 leading-relaxed">
+                        Upcoming releases will transition live collaborative edits from Firestore
+                        <code>onSnapshot</code> listeners to direct <strong>P2P WebRTC data channels</strong>, utilizing
+                        CRDT frameworks (like Yjs or Automerge) to handle conflict resolution across community
+                        <code>colab-root</code> spaces.
+                    </p>
                 </div>
             </section>
 
