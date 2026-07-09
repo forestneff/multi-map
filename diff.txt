@@ -1,0 +1,811 @@
+﻿diff --git a/auth.js b/auth.js
+index c7c218d..ec7d35f 100644
+--- a/auth.js
++++ b/auth.js
+@@ -203,6 +203,12 @@ window.Auth = {
+                     class="w-16 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200 outline-none focus:border-indigo-500 text-center" 
+                     value="${window.Kernel ? window.Kernel.config.autoCollapseDepth || 3 : 3}">
+             </div>
++            <div class="flex items-center justify-between gap-4 mt-2">
++                <label for="settings-theme-toggle" class="text-xs text-slate-400">Light Mode</label>
++                <button id="settings-theme-toggle" onclick="window.Auth.toggleTheme()" class="w-10 h-5 bg-slate-700 rounded-full relative transition-colors focus:outline-none">
++                    <span class="absolute left-1 top-1 w-3 h-3 bg-white rounded-full transition-transform"></span>
++                </button>
++            </div>
+         `;
+         container.appendChild(settingsDiv);
+ 
+@@ -216,6 +222,12 @@ window.Auth = {
+                 }
+             });
+         }
++        
++        const themeToggle = settingsDiv.querySelector('#settings-theme-toggle');
++        if (themeToggle && document.body.classList.contains('light-mode')) {
++            themeToggle.classList.replace('bg-slate-700', 'bg-emerald-500');
++            themeToggle.querySelector('span').classList.add('translate-x-5');
++        }
+     },
+ 
+     renderDataManager: function(container) {
+@@ -341,5 +353,12 @@ window.Auth = {
+         } catch (err) {
+             this.handleError(err);
+         }
++    },
++    
++    toggleTheme: function() {
++        const isLight = document.body.classList.toggle('light-mode');
++        localStorage.setItem('mm_theme', isLight ? 'light' : 'dark');
++        this.renderProfile(document.getElementById('profile-content'));
++        if (window.SC) window.SC.render();
+     }
+ };
+diff --git a/engines/agent-config.html b/engines/agent-config.html
+index 19830c9..1ccd8fa 100644
+--- a/engines/agent-config.html
++++ b/engines/agent-config.html
+@@ -21,6 +21,16 @@
+         .dry-run-box input { width: calc(100% - 100px); padding: 8px; background: #0f172a; border: 1px solid #334155; color: #fff; border-radius: 4px; }
+         .dry-run-box button { padding: 8px 16px; background: #334155; color: #f8fafc; border: none; border-radius: 4px; cursor: pointer; }
+         .dry-run-result { margin-top: 10px; padding: 10px; background: #0f172a; border-radius: 4px; font-family: monospace; font-size: 0.9rem; color: #818cf8; min-height: 40px; }
++        
++        body.light-mode { background: #fafaf9; color: #1c1917; }
++        body.light-mode .card, body.light-mode .dry-run-box { background: #ffffff; border-color: #e7e5e4; box-shadow: 0 10px 15px rgba(0,0,0,0.1); }
++        body.light-mode .card h2, body.light-mode h1 { color: #1c1917; border-bottom-color: #d6d3d1; }
++        body.light-mode .skill-item { background: #f5f5f4; border-color: #d6d3d1; }
++        body.light-mode .skill-item h3 { color: #1c1917; }
++        body.light-mode .tool-badge { background: #e7e5e4; color: #44403c; }
++        body.light-mode .dry-run-box input { background: #ffffff; border-color: #d6d3d1; color: #1c1917; box-shadow: inset 0 2px 4px rgba(0,0,0,0.05); }
++        body.light-mode .dry-run-box button { background: #d6d3d1; color: #1c1917; }
++        body.light-mode .dry-run-result { background: #f5f5f4; color: #4f46e5; border: 1px solid #e7e5e4; }
+     </style>
+ </head>
+ <body>
+@@ -55,6 +65,9 @@
+         window.addEventListener('message', (event) => {
+             if (event.data && event.data.type === 'STATE_UPDATE') {
+                 currentState = event.data.state;
++                if (event.data.theme) {
++                    document.body.classList.toggle('light-mode', event.data.theme === 'light');
++                }
+                 render();
+             }
+         });
+diff --git a/engines/orbital-focus.html b/engines/orbital-focus.html
+index d790a96..017867d 100644
+--- a/engines/orbital-focus.html
++++ b/engines/orbital-focus.html
+@@ -104,6 +104,29 @@
+         
+         .node-icon { font-size: 1.25rem; line-height: 1.75rem; }
+         .node-title { font-size: 8px; text-transform: uppercase; margin-top: 4px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 4px; }
++        
++        body.light-mode {
++            background: #fafaf9;
++        }
++        body.light-mode .body-node {
++            background: #ffffff;
++            border-color: #e7e5e4;
++            color: #1c1917;
++            box-shadow: 0 10px 15px rgba(0,0,0,0.1);
++        }
++        body.light-mode .body-node[data-type="root"] {
++            box-shadow: 0 0 20px rgba(5,150,105,0.4);
++            border-color: #059669;
++        }
++        body.light-mode .info-panel {
++            background: rgba(255, 255, 255, 0.9);
++            border-color: #d6d3d1;
++            color: #1c1917;
++            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
++        }
++        body.light-mode .info-panel h3 { color: #1c1917; }
++        body.light-mode .info-panel h4 { color: #059669; }
++        body.light-mode .info-panel p { color: #44403c; }
+     </style>
+ </head>
+ <body>
+@@ -114,6 +137,9 @@
+         window.addEventListener('message', (event) => {
+             if (event.data && event.data.type === 'STATE_UPDATE') {
+                 currentState = event.data.state;
++                if (event.data.theme) {
++                    document.body.classList.toggle('light-mode', event.data.theme === 'light');
++                }
+                 render();
+             }
+         });
+diff --git a/engines/prompt-engine.html b/engines/prompt-engine.html
+index a23aac0..66e244c 100644
+--- a/engines/prompt-engine.html
++++ b/engines/prompt-engine.html
+@@ -21,6 +21,14 @@
+         .var-input input { padding: 6px; background: #0f172a; border: 1px solid #334155; color: #fff; border-radius: 4px; }
+         .btn-copy { background: #10b981; color: #0f172a; }
+         .btn-copy:hover { background: #34d399; }
++        
++        body.light-mode { background: #fafaf9; color: #1c1917; }
++        body.light-mode .section h2 { color: #059669; border-bottom-color: #d6d3d1; }
++        body.light-mode .node-card { background: #ffffff; border-color: #e7e5e4; box-shadow: 0 10px 15px rgba(0,0,0,0.1); }
++        body.light-mode .node-card strong { color: #1c1917; }
++        body.light-mode .node-card .type { background: #f5f5f4; color: #78716c; border-color: #d6d3d1; }
++        body.light-mode .var-input { background: #ffffff; border-color: #d6d3d1; color: #1c1917; box-shadow: inset 0 2px 4px rgba(0,0,0,0.05); }
++        body.light-mode h1 { color: #1c1917; }
+     </style>
+ </head>
+ <body>
+@@ -42,6 +50,9 @@
+         window.addEventListener('message', (event) => {
+             if (event.data && event.data.type === 'STATE_UPDATE') {
+                 currentState = event.data.state;
++                if (event.data.theme) {
++                    document.body.classList.toggle('light-mode', event.data.theme === 'light');
++                }
+                 render();
+             }
+         });
+diff --git a/engines/universal.html b/engines/universal.html
+index ce6f963..ea98f56 100644
+--- a/engines/universal.html
++++ b/engines/universal.html
+@@ -10,6 +10,21 @@
+         .custom-scrollbar::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.5); }
+         .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(56, 189, 248, 0.3); border-radius: 4px; }
+         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(56, 189, 248, 0.6); }
++
++        /* Light Mode Overrides for Inspector */
++        body.light-mode { color: #1c1917; }
++        body.light-mode .text-white { color: #1c1917 !important; }
++        body.light-mode .text-slate-200, body.light-mode .text-slate-300, body.light-mode .text-slate-400 { color: #44403c !important; }
++        body.light-mode .text-slate-500, body.light-mode .text-slate-600 { color: #57534e !important; }
++        body.light-mode .bg-slate-800, body.light-mode .bg-slate-800\/50 { background-color: #f5f5f4 !important; }
++        body.light-mode .bg-slate-900, body.light-mode .bg-slate-900\/50 { background-color: #ffffff !important; }
++        body.light-mode .bg-slate-950, body.light-mode .bg-slate-950\/50 { background-color: #ffffff !important; }
++        body.light-mode .border-slate-700, body.light-mode .border-slate-800 { border-color: #d6d3d1 !important; }
++        body.light-mode .hover\:bg-slate-700:hover { background-color: #e7e5e4 !important; }
++        body.light-mode input, body.light-mode textarea, body.light-mode select { background-color: #ffffff !important; border-color: #d6d3d1 !important; color: #1c1917 !important; box-shadow: inset 0 2px 4px rgba(0,0,0,0.05); }
++        
++        /* Keep colored buttons readable */
++        body.light-mode .bg-indigo-600, body.light-mode .bg-emerald-600, body.light-mode .bg-rose-600, body.light-mode .bg-red-500, body.light-mode .bg-purple-600, body.light-mode .bg-black { color: #ffffff !important; background-color: var(--tw-bg-opacity, 1) !important; }
+     </style>
+ </head>
+ <body class="custom-scrollbar">
+@@ -31,6 +46,9 @@
+             if (event.data && event.data.type === 'STATE_UPDATE') {
+                 currentState = event.data.state;
+                 activeHighlight = event.data.highlight || null;
++                if (event.data.theme) {
++                    document.body.classList.toggle('light-mode', event.data.theme === 'light');
++                }
+                 render();
+             } else if (event.data && event.data.type === 'FOCUS_TITLE') {
+                 const el = document.getElementById('edit-title');
+diff --git a/engines/web-architect.html b/engines/web-architect.html
+index d18d913..f1259ef 100644
+--- a/engines/web-architect.html
++++ b/engines/web-architect.html
+@@ -4,7 +4,8 @@
+     <meta charset="UTF-8">
+     <title>Web Architect Phase Engine</title>
+     <style>
+-        body { margin: 0; padding: 0; overflow: hidden; background: #f8fafc; }
++        body { margin: 0; padding: 0; overflow: hidden; background: #0f172a; }
++        body.light-mode { background: #fafaf9; }
+         #canvas { width: 100vw; height: 100vh; border: none; }
+     </style>
+ </head>
+@@ -16,6 +17,9 @@
+         window.addEventListener('message', (event) => {
+             if (event.data && event.data.type === 'STATE_UPDATE') {
+                 currentState = event.data.state;
++                if (event.data.theme) {
++                    document.body.classList.toggle('light-mode', event.data.theme === 'light');
++                }
+                 render();
+             } else if (event.data && event.data.type === 'WEB_EDIT_MODE') {
+                 // Not strictly necessary since we get state updates, but good for future toggles
+diff --git a/multi-map-core.js b/multi-map-core.js
+index bbd6528..27aa427 100644
+--- a/multi-map-core.js
++++ b/multi-map-core.js
+@@ -2844,16 +2844,31 @@ class MultiMapKernel {
+     selectNode(id) { 
+         this.state.session.selectedId = id; 
+         if (id) {
++            let currentId = id;
++            const nodesToExpand = [];
++            while (currentId) {
++                const parentConn = this.state.connections.find(c => c.to === currentId && c.type === 'structural');
++                if (!parentConn) break;
++                const parentNode = this.state.nodes.find(n => n.id === parentConn.from);
++                if (!parentNode) break;
++                nodesToExpand.push(parentNode);
++                currentId = parentNode.id;
++            }
++
+             const node = this.state.nodes.find(n => n.id === id);
+-            if (node && node.type === 'file-folder' && node.data && node.data.collapsed) {
+-                if (this.state.meta && (this.state.meta.isMaster === true || this.state.meta.title === 'Project Directory' || this.state.meta.type === 'file-root')) {
+-                    node.data.collapsed = false;
+-                    const projId = this.state.meta.project_id || this.activeProjectId;
+-                    if (projId && node.content) {
+-                        this.updateProjectFolder(projId, node.content, { isExpanded: true }).catch(console.error);
++            if (node) nodesToExpand.push(node);
++
++            nodesToExpand.forEach(n => {
++                if (n.data && n.data.collapsed) {
++                    n.data.collapsed = false;
++                    if (n.type === 'file-folder' && this.state.meta && (this.state.meta.isMaster === true || this.state.meta.title === 'Project Directory' || this.state.meta.type === 'file-root')) {
++                        const projId = this.state.meta.project_id || this.activeProjectId;
++                        if (projId && n.content) {
++                            this.updateProjectFolder(projId, n.content, { isExpanded: true }).catch(console.error);
++                        }
+                     }
+                 }
+-            }
++            });
+         }
+         this.notify(); 
+     }
+diff --git a/multi-map-sandbox.js b/multi-map-sandbox.js
+index 461dbea..132289b 100644
+--- a/multi-map-sandbox.js
++++ b/multi-map-sandbox.js
+@@ -2140,7 +2140,7 @@ ${innerHtml}
+         const actionsHtml = `
+             <div class="flex w-full justify-end items-center gap-2">
+                 <button id="portal-btn-cancel" class="border border-slate-700 hover:bg-slate-850 text-slate-300 text-[10px] font-bold py-2 px-4 rounded-lg transition-colors uppercase tracking-wide">Cancel</button>
+-                <button id="portal-btn-submit" class="bg-indigo-650 hover:bg-indigo-500 text-white text-[10px] font-bold py-2 px-4 rounded-lg transition-colors shadow-lg shadow-indigo-950/20 uppercase tracking-wide">Link Page</button>
++                <button id="portal-btn-submit" class="bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold py-2 px-4 rounded-lg transition-colors shadow-lg shadow-indigo-950/20 uppercase tracking-wide">Link Page</button>
+             </div>
+         `;
+ 
+@@ -2220,7 +2220,7 @@ ${innerHtml}
+ 
+                     const addOption = (pageObj) => {
+                         const b = document.createElement('button');
+-                        b.className = "text-left w-full px-3 py-2 text-[10px] font-medium text-slate-300 hover:bg-indigo-650 hover:text-white flex items-center justify-between transition-colors border-none bg-transparent cursor-pointer";
++                        b.className = "text-left w-full px-3 py-2 text-[10px] font-medium text-slate-300 hover:bg-indigo-600 hover:text-white flex items-center justify-between transition-colors border-none bg-transparent cursor-pointer";
+                         const pageTypeStr = pageObj.meta.type || 'generic';
+                         const escapedTitle = this.escapeHTML(pageObj.meta.title);
+                         b.innerHTML = `<span class="truncate flex-1 font-bold">${escapedTitle}</span><span class="text-[9px] text-slate-500 uppercase tracking-wider">${pageTypeStr}</span>`;
+@@ -2365,6 +2365,20 @@ ${innerHtml}
+         
+         if (targetPortal) {
+             this.kernel.state.session.selectedId = targetPortal.id;
++            
++            // Expand all ancestors to ensure the portal is visible
++            let currentId = targetPortal.id;
++            let parentLink = this.kernel.state.links.find(l => l.target === currentId);
++            while (parentLink) {
++                const parentNode = this.kernel.state.nodes.find(n => n.id === parentLink.source);
++                if (parentNode) {
++                    if (parentNode.data) parentNode.data.collapsed = false;
++                    currentId = parentNode.id;
++                    parentLink = this.kernel.state.links.find(l => l.target === currentId);
++                } else {
++                    break;
++                }
++            }
+         } else {
+             this.kernel.state.session.selectedId = null;
+         }
+@@ -2410,7 +2424,7 @@ ${innerHtml}
+         const actionsHtml = `
+             <div class="flex w-full justify-end items-center gap-2">
+                 <button id="clip-btn-cancel" class="border border-slate-700 hover:bg-slate-850 text-slate-300 text-[10px] font-bold py-2 px-4 rounded-lg transition-colors uppercase tracking-wide">Cancel</button>
+-                <button id="clip-btn-submit" class="bg-indigo-650 hover:bg-indigo-500 text-white text-[10px] font-bold py-2 px-4 rounded-lg transition-colors shadow-lg shadow-indigo-950/20 uppercase tracking-wide">Clip Branch</button>
++                <button id="clip-btn-submit" class="bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold py-2 px-4 rounded-lg transition-colors shadow-lg shadow-indigo-950/20 uppercase tracking-wide">Clip Branch</button>
+             </div>
+         `;
+         
+@@ -4745,7 +4759,7 @@ ${innerHtml}
+                     text = hasTarget ? 'Enter Portal' : 'Set Target';
+                     themeClasses = hasTarget 
+                         ? 'bg-emerald-600 hover:bg-emerald-500 border-emerald-400 text-emerald-100 hover:text-white shadow-[0_0_15px_rgba(16,185,129,0.4)]'
+-                        : 'bg-purple-650 hover:bg-purple-500 border-purple-400 text-purple-100 hover:text-white shadow-[0_0_15px_rgba(168,85,247,0.4)]';
++                        : 'bg-purple-600 hover:bg-purple-500 border-purple-400 text-purple-100 hover:text-white shadow-[0_0_15px_rgba(168,85,247,0.4)]';
+                 }
+             } else if (type === 'person-root') {
+                 action = () => this.setView('person');
+@@ -4820,7 +4834,7 @@ ${innerHtml}
+             if (!options) {
+                 action = () => this.actionExitPortal();
+                 text = 'Exit Portal Γ¥«';
+-                themeClasses = 'bg-purple-650 hover:bg-purple-500 border-purple-400 text-purple-100 hover:text-white shadow-[0_0_15px_rgba(168,85,247,0.4)]';
++                themeClasses = 'bg-purple-600 hover:bg-purple-500 border-purple-400 text-purple-100 hover:text-white shadow-[0_0_15px_rgba(168,85,247,0.4)]';
+                 options = [
+                     { text: 'Exit Portal Γ¥«', action: () => this.actionExitPortal() }
+                 ];
+@@ -4857,7 +4871,7 @@ ${innerHtml}
+                 const optBtn = document.createElement('button');
+                 optBtn.className = `w-full text-left text-xs p-2 rounded-xl transition-all cursor-pointer bg-transparent border-none ${
+                     idx === this.selectedSmartOptionIdx 
+-                        ? 'bg-gradient-to-r from-indigo-650 to-indigo-550 text-white font-bold shadow-[0_0_12px_rgba(79,70,229,0.4)]' 
++                        ? 'bg-gradient-to-r from-indigo-600 to-indigo-500 text-white font-bold shadow-[0_0_12px_rgba(79,70,229,0.4)]' 
+                         : 'text-slate-450 hover:bg-slate-900 hover:text-slate-200'
+                 }`;
+                 optBtn.innerHTML = opt.text;
+@@ -4899,7 +4913,7 @@ ${innerHtml}
+                     } else if (buttonText.includes('Enter Portal')) {
+                         themeClasses = 'bg-emerald-600 hover:bg-emerald-500 border-emerald-400 text-emerald-100 hover:text-white shadow-[0_0_15px_rgba(16,185,129,0.4)]';
+                     } else if (buttonText.includes('Set Target') || buttonText.includes('Configure Portal') || buttonText.includes('Exit Portal')) {
+-                        themeClasses = 'bg-purple-650 hover:bg-purple-500 border-purple-400 text-purple-100 hover:text-white shadow-[0_0_15px_rgba(168,85,247,0.4)]';
++                        themeClasses = 'bg-purple-600 hover:bg-purple-500 border-purple-400 text-purple-100 hover:text-white shadow-[0_0_15px_rgba(168,85,247,0.4)]';
+                     } else if (buttonText.includes('Visual Editor') || buttonText.includes('Preview Page') || buttonText.includes('Download Code')) {
+                         themeClasses = 'bg-sky-600 hover:bg-sky-500 border-sky-400 text-sky-100 hover:text-white shadow-[0_0_15px_rgba(14,165,233,0.4)]';
+                     } else if (buttonText.includes('Run Chain') || buttonText.includes('View Profile') || buttonText.includes('Export CV')) {
+@@ -5406,7 +5420,7 @@ ${innerHtml}
+                             actionsHtml: `
+                                 <button class="discard-btn px-4 py-2 border border-slate-700 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg transition-colors font-bold text-[11px] uppercase tracking-wider">Discard</button>
+                                 <button class="keep-btn px-4 py-2 border border-slate-700 hover:bg-slate-850 text-slate-300 hover:text-white rounded-lg transition-colors font-bold text-[11px] uppercase tracking-wider">Keep Editing</button>
+-                                <button class="save-btn px-4 py-2 bg-indigo-650 hover:bg-indigo-500 text-white rounded-lg transition-colors font-bold text-[11px] uppercase tracking-wider shadow-lg">Save & Load</button>
++                                <button class="save-btn px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors font-bold text-[11px] uppercase tracking-wider shadow-lg">Save & Load</button>
+                             `,
+                             onRender: (el, clsConfirm) => {
+                                 el.querySelector('.discard-btn').onclick = () => clsConfirm('discard');
+@@ -5777,7 +5791,7 @@ ${innerHtml}
+ 
+         const actionsHtml = `
+             <div class="flex w-full justify-end items-center gap-2">
+-                <button id="copy-modal-submit" class="bg-indigo-650 hover:bg-indigo-500 text-white text-[10px] font-bold py-2 px-4 rounded-lg transition-colors shadow-lg shadow-indigo-950/20 uppercase tracking-wide">Copy Page</button>
++                <button id="copy-modal-submit" class="bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold py-2 px-4 rounded-lg transition-colors shadow-lg shadow-indigo-950/20 uppercase tracking-wide">Copy Page</button>
+             </div>
+         `;
+ 
+@@ -5888,7 +5902,7 @@ ${innerHtml}
+                                 <div class="flex flex-col gap-3 font-sans text-slate-350 text-xs">
+                                     <p class="leading-relaxed">This space contains portals linking to other pages. Since you are copying it to a different project, select how these portal connections should be handled:</p>
+                                     <div class="flex flex-col gap-2.5 mt-1 select-none">
+-                                        <div id="option-keep" class="option-card p-3 rounded-xl border border-indigo-650 bg-indigo-950/20 text-slate-200 cursor-pointer transition-all flex items-start gap-3 shadow-lg shadow-indigo-950/20">
++                                        <div id="option-keep" class="option-card p-3 rounded-xl border border-indigo-600 bg-indigo-950/20 text-slate-200 cursor-pointer transition-all flex items-start gap-3 shadow-lg shadow-indigo-950/20">
+                                             <div class="radio-indicator w-4 h-4 rounded-full border-2 border-indigo-500 flex items-center justify-center shrink-0 mt-0.5">
+                                                 <div class="radio-fill w-2 h-2 rounded-full bg-indigo-500"></div>
+                                             </div>
+@@ -5898,7 +5912,7 @@ ${innerHtml}
+                                             </div>
+                                         </div>
+                                         <div id="option-clone" class="option-card p-3 rounded-xl border border-slate-800 hover:border-slate-700 bg-slate-950/40 text-slate-300 cursor-pointer transition-all flex items-start gap-3">
+-                                            <div class="radio-indicator w-4 h-4 rounded-full border-2 border-slate-650 flex items-center justify-center shrink-0 mt-0.5">
++                                            <div class="radio-indicator w-4 h-4 rounded-full border-2 border-slate-600 flex items-center justify-center shrink-0 mt-0.5">
+                                                 <div class="radio-fill w-2 h-2 rounded-full bg-transparent"></div>
+                                             </div>
+                                             <div class="flex-1">
+@@ -5907,7 +5921,7 @@ ${innerHtml}
+                                             </div>
+                                         </div>
+                                         <div id="option-clear" class="option-card p-3 rounded-xl border border-slate-800 hover:border-slate-700 bg-slate-950/40 text-slate-300 cursor-pointer transition-all flex items-start gap-3">
+-                                            <div class="radio-indicator w-4 h-4 rounded-full border-2 border-slate-650 flex items-center justify-center shrink-0 mt-0.5">
++                                            <div class="radio-indicator w-4 h-4 rounded-full border-2 border-slate-600 flex items-center justify-center shrink-0 mt-0.5">
+                                                 <div class="radio-fill w-2 h-2 rounded-full bg-transparent"></div>
+                                             </div>
+                                             <div class="flex-1">
+@@ -5921,7 +5935,7 @@ ${innerHtml}
+                             actionsHtml: `
+                                 <div class="flex w-full justify-between items-center gap-2">
+                                     <button class="cancel-btn border border-slate-700 hover:bg-slate-850 text-slate-300 text-[10px] font-bold py-2 px-4 rounded-lg transition-colors uppercase tracking-wide">Cancel Copy</button>
+-                                    <button class="confirm-btn bg-indigo-650 hover:bg-indigo-500 text-white text-[10px] font-bold py-2 px-5 rounded-lg transition-colors shadow-lg shadow-indigo-950/20 uppercase tracking-wide">Confirm Copy</button>
++                                    <button class="confirm-btn bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold py-2 px-5 rounded-lg transition-colors shadow-lg shadow-indigo-950/20 uppercase tracking-wide">Confirm Copy</button>
+                                 </div>
+                             `,
+                             onRender: (el, cls) => {
+@@ -5936,13 +5950,13 @@ ${innerHtml}
+                                         const radioFill = c.querySelector('.radio-fill');
+                                         const radioInd = c.querySelector('.radio-indicator');
+                                         if (opt === selected) {
+-                                            c.className = "option-card p-3 rounded-xl border border-indigo-650 bg-indigo-950/20 text-slate-200 cursor-pointer transition-all flex items-start gap-3 shadow-lg shadow-indigo-950/20";
++                                            c.className = "option-card p-3 rounded-xl border border-indigo-600 bg-indigo-950/20 text-slate-200 cursor-pointer transition-all flex items-start gap-3 shadow-lg shadow-indigo-950/20";
+                                             radioFill.className = "radio-fill w-2 h-2 rounded-full bg-indigo-500";
+                                             radioInd.className = "radio-indicator w-4 h-4 rounded-full border-2 border-indigo-500 flex items-center justify-center shrink-0 mt-0.5";
+                                         } else {
+                                             c.className = "option-card p-3 rounded-xl border border-slate-800 hover:border-slate-700 bg-slate-950/40 text-slate-300 cursor-pointer transition-all flex items-start gap-3";
+                                             radioFill.className = "radio-fill w-2 h-2 rounded-full bg-transparent";
+-                                            radioInd.className = "radio-indicator w-4 h-4 rounded-full border-2 border-slate-650 flex items-center justify-center shrink-0 mt-0.5";
++                                            radioInd.className = "radio-indicator w-4 h-4 rounded-full border-2 border-slate-600 flex items-center justify-center shrink-0 mt-0.5";
+                                         }
+                                     });
+                                 };
+@@ -6067,7 +6081,7 @@ ${innerHtml}
+ 
+         options.forEach(opt => {
+             const b = document.createElement('button');
+-            b.className = `text-left w-full px-3 py-2 text-[10px] font-medium flex flex-col transition-colors border-none bg-transparent cursor-pointer ${opt.enabled ? 'text-slate-300 hover:bg-indigo-650 hover:text-white' : 'text-slate-600 cursor-not-allowed'}`;
++            b.className = `text-left w-full px-3 py-2 text-[10px] font-medium flex flex-col transition-colors border-none bg-transparent cursor-pointer ${opt.enabled ? 'text-slate-300 hover:bg-indigo-600 hover:text-white' : 'text-slate-600 cursor-not-allowed'}`;
+             b.disabled = !opt.enabled;
+             b.innerHTML = `
+                 <div class="flex justify-between items-center w-full font-bold">
+@@ -6099,4 +6113,4 @@ ${innerHtml}
+             document.addEventListener('scroll', close, { capture: true, passive: true });
+         }, 0);
+     }
+-}
+\ No newline at end of file
++}
+diff --git a/multi-map-ui.css b/multi-map-ui.css
+index b2ba33b..19aee62 100644
+--- a/multi-map-ui.css
++++ b/multi-map-ui.css
+@@ -9,6 +9,8 @@
+     --glass-border: rgba(56, 189, 248, 0.2);
+     --text-main: #f8fafc;
+     --text-muted: #94a3b8;
++    --node-bg: rgba(30, 41, 59, 0.95);
++    --edge-color: rgba(148, 163, 184, 0.6);
+ }
+ 
+ body {
+@@ -58,7 +60,24 @@ body {
+ 
+ .custom-scrollbar::-webkit-scrollbar-thumb {
+     background: #334155;
+-    border-radius: 3px;
++    border-radius: 4px;
++}
++.custom-scrollbar::-webkit-scrollbar-thumb:hover {
++    background: #475569;
++}
++
++/* Light mode scrollbars */
++body.light-mode .custom-scrollbar::-webkit-scrollbar-track,
++body.light-mode .no-scrollbar::-webkit-scrollbar-track {
++    background: rgba(0, 0, 0, 0.05) !important;
++}
++body.light-mode .custom-scrollbar::-webkit-scrollbar-thumb,
++body.light-mode .no-scrollbar::-webkit-scrollbar-thumb {
++    background: #cbd5e1 !important;
++}
++body.light-mode .custom-scrollbar::-webkit-scrollbar-thumb:hover,
++body.light-mode .no-scrollbar::-webkit-scrollbar-thumb:hover {
++    background: #94a3b8 !important;
+ }
+ 
+ /* --- MAP LAYERS --- */
+@@ -82,7 +101,7 @@ body {
+ }
+ 
+ .edge-vis {
+-    stroke: rgba(148, 163, 184, 0.6);
++    stroke: var(--edge-color);
+     stroke-width: 1.5px;
+     transition: stroke 0.3s;
+ }
+@@ -96,7 +115,7 @@ body {
+     position: absolute;
+     width: 72px;
+     height: 72px;
+-    background: rgba(30, 41, 59, 0.95);
++    background: var(--node-bg);
+     border: 1px solid var(--glass-border);
+     border-radius: 50%;
+     display: flex;
+@@ -367,4 +386,246 @@ body {
+     transform: translateX(-50%) rotate(-45deg);
+     top: 130%;
+     left: 130%;
++}
++
++/* --- LIGHT MODE --- */
++body.light-mode {
++    --bg-deep: #fafaf9; 
++    --bg-nebula: #fafaf9; 
++    --glass-panel: #ffffff;
++    --glass-border: #d6d3d1; 
++    --text-main: #1c1917; 
++    --text-muted: #78716c; 
++    --glow-primary: #059669; 
++    --glow-accent: #f59e0b; 
++    --node-bg: #ffffff;
++    --edge-color: #a8a29e;
++}
++
++body.light-mode .node {
++    background-color: #ffffff !important;
++    filter: drop-shadow(0 4px 6px rgba(0,0,0,0.05)) drop-shadow(0 10px 15px rgba(0,0,0,0.1));
++    border-color: #e7e5e4 !important;
++}
++
++body.light-mode .bg-slate-950,
++body.light-mode .bg-slate-900 {
++    background-color: var(--glass-panel) !important;
++}
++
++body.light-mode .bg-slate-900\/50,
++body.light-mode .bg-slate-950\/50,
++body.light-mode .bg-slate-900\/60,
++body.light-mode .bg-slate-950\/60,
++body.light-mode .bg-slate-900\/40,
++body.light-mode .bg-slate-900\/20,
++body.light-mode .bg-slate-950\/70,
++body.light-mode .bg-slate-950\/80,
++body.light-mode .bg-slate-800\/50,
++body.light-mode .bg-slate-700\/50 {
++    background-color: rgba(255, 255, 255, 0.7) !important;
++}
++
++body.light-mode .bg-slate-900\/90,
++body.light-mode .bg-slate-950\/90,
++body.light-mode .bg-slate-900\/95,
++body.light-mode .bg-slate-950\/95 {
++    background-color: rgba(241, 245, 249, 0.95) !important;
++}
++
++/* Explicit panel overrides to guarantee light glass */
++body.light-mode #profile-drawer,
++body.light-mode #sidebar-data-manager,
++body.light-mode #sidebar-content,
++body.light-mode #ai-chat-panel,
++body.light-mode #ai-tooltip-bar,
++body.light-mode #ai-toggle-btn,
++body.light-mode .radial-btn,
++body.light-mode #sidebar-content button.bg-slate-800.rounded-full,
++body.light-mode #sidebar-content button.bg-slate-700.rounded-full,
++body.light-mode .bg-slate-900,
++body.light-mode .bg-slate-950 {
++    background-color: rgba(241, 245, 249, 0.95) !important;
++    border-color: var(--glass-border) !important;
++    color: #1c1917 !important;
++}
++
++body.light-mode .radial-btn:hover,
++body.light-mode #sidebar-content button.rounded-full.bg-slate-800:hover,
++body.light-mode #sidebar-content button.rounded-full.bg-slate-700:hover {
++    background-color: var(--glow-primary) !important;
++    color: #ffffff !important;
++}
++
++#ai-chat-panel {
++    z-index: 45 !important;
++}
++
++/* Global input overrides for light mode */
++body.light-mode input,
++body.light-mode textarea,
++body.light-mode select {
++    background-color: #ffffff !important;
++    border-color: #d6d3d1 !important;
++    color: #1c1917 !important;
++    box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);
++}
++
++body.light-mode .radial-btn:hover {
++    background-color: var(--glow-primary) !important;
++    color: #ffffff !important;
++}
++
++body.light-mode .node-label {
++    background: rgba(255, 255, 255, 0.9) !important;
++    color: #44403c !important;
++    border: 1px solid #d6d3d1;
++}
++
++/* Force text-white to dark UNLESS it's on a button or colored bg */
++body.light-mode .text-white:not(button):not(a):not(.radial-btn):not(.bg-indigo-600):not(.bg-emerald-600):not(.bg-slate-800):not(.bg-slate-900):not(.bg-black) {
++    color: var(--text-main) !important;
++}
++
++/* Fix DM Buttons (Make them distinct light buttons) */
++body.light-mode #sidebar-data-manager button.bg-slate-900,
++body.light-mode #sidebar-data-manager button.bg-slate-800,
++body.light-mode #sidebar-data-manager label.bg-slate-800,
++body.light-mode #sidebar-data-manager button.bg-slate-850 {
++    background-color: #ffffff !important;
++    color: #1c1917 !important;
++    border-color: #d6d3d1 !important;
++}
++body.light-mode #sidebar-data-manager button.bg-slate-900 .text-slate-300,
++body.light-mode #sidebar-data-manager button.bg-slate-900.text-slate-300,
++body.light-mode #sidebar-data-manager button.bg-slate-800 .text-slate-400,
++body.light-mode #sidebar-data-manager button.bg-slate-800.text-slate-400,
++body.light-mode #sidebar-data-manager label.bg-slate-800 .text-slate-300 {
++    color: #1c1917 !important;
++}
++
++/* Page/Asset Card info/state tags */
++body.light-mode .bg-slate-900\/60.text-slate-500,
++body.light-mode .bg-emerald-900\/50,
++body.light-mode .bg-blue-900\/50 {
++    background-color: #e2e8f0 !important;
++    color: #334155 !important;
++    border-color: #cbd5e1 !important;
++}
++body.light-mode .bg-emerald-900\/50.text-emerald-400 { color: #059669 !important; background-color: #d1fae5 !important; border-color: #a7f3d0 !important; }
++body.light-mode .bg-blue-900\/50.text-blue-400 { color: #0284c7 !important; background-color: #e0f2fe !important; border-color: #bae6fd !important; }
++
++/* Keep colored buttons readable */
++body.light-mode button.text-white,
++body.light-mode a.text-white,
++body.light-mode .bg-indigo-600,
++body.light-mode .bg-indigo-500,
++body.light-mode .bg-emerald-600,
++body.light-mode .bg-emerald-500,
++body.light-mode .bg-amber-500,
++body.light-mode .bg-rose-600,
++body.light-mode .bg-sky-600,
++body.light-mode .bg-purple-600,
++body.light-mode .bg-black,
++body.light-mode button.bg-slate-800,
++body.light-mode button.bg-slate-700,
++body.light-mode button.bg-slate-900 {
++    color: #ffffff !important; /* Default for filled buttons outside DM */
++}
++
++body.light-mode .hover\:bg-sky-600:hover,
++body.light-mode .hover\:bg-purple-600:hover,
++body.light-mode .hover\:bg-emerald-600:hover,
++body.light-mode .hover\:bg-amber-600:hover,
++body.light-mode .hover\:bg-rose-600:hover,
++body.light-mode .hover\:bg-indigo-600:hover,
++body.light-mode .hover\:bg-red-600:hover {
++    color: #ffffff !important;
++}
++
++body.light-mode #smart-portal-btn {
++    color: #4f46e5 !important; /* text-indigo-600 */
++    border-color: #6366f1 !important; /* border-indigo-500 */
++}
++
++/* Fix yellow warning text */
++body.light-mode .text-amber-500,
++body.light-mode .text-yellow-500,
++body.light-mode .text-amber-400,
++body.light-mode .text-amber-300 {
++    color: #d97706 !important; /* amber-600 */
++}
++
++/* Fix amber buttons */
++body.light-mode .bg-amber-900\/40 {
++    background-color: #fef3c7 !important; /* amber-100 */
++    border-color: #fcd34d !important; /* amber-300 */
++}
++
++/* Fix AI Chat Bubbles and Text */
++body.light-mode .bg-sky-900\/40 { background-color: #e0f2fe !important; border-color: #bae6fd !important; }
++body.light-mode .bg-slate-800\/80 { background-color: #f1f5f9 !important; border-color: #cbd5e1 !important; }
++body.light-mode .text-sky-100 { color: #0369a1 !important; }
++body.light-mode .text-slate-450, body.light-mode .text-slate-350 { color: #334155 !important; }
++body.light-mode .text-emerald-400 { color: #059669 !important; }
++body.light-mode .border-sky-700\/50, body.light-mode .border-indigo-700\/30 { border-color: #cbd5e1 !important; }
++
++body.light-mode .text-slate-400,
++body.light-mode .text-slate-300,
++body.light-mode .text-slate-500,
++body.light-mode .text-slate-200 {
++    color: #334155 !important; /* higher contrast slate-700 */
++}
++
++body.light-mode span.bg-slate-800,
++body.light-mode div.bg-slate-800:not(button),
++body.light-mode .bg-slate-700:not(button):not(a) {
++    background-color: #f1f5f9 !important; /* light slate */
++    border-color: #cbd5e1 !important;
++    color: #475569 !important;
++}
++body.light-mode span.bg-slate-800.text-slate-400 {
++    color: #475569 !important;
++}
++
++body.light-mode .border-slate-800,
++body.light-mode .border-slate-700,
++body.light-mode .border-slate-800\/80,
++body.light-mode .border-emerald-900\/50,
++body.light-mode .hover\:border-emerald-700\/50:hover {
++    border-color: var(--glass-border) !important;
++}
++
++body.light-mode .hover\:bg-slate-800:hover:not(button):not(a) {
++    background-color: rgba(241, 245, 249, 0.8) !important; /* light slate-100 glass for section cards */
++}
++body.light-mode button.hover\:bg-slate-800:hover,
++body.light-mode a.hover\:bg-slate-800:hover,
++body.light-mode .hover\:bg-slate-900:hover {
++    background-color: #e2e8f0 !important; /* Gentle slate-200 instead of dark 334155 */
++    color: #0f172a !important;
++}
++body.light-mode .hover\:bg-slate-700:hover {
++    background-color: #cbd5e1 !important; /* slate-300 */
++}
++body.light-mode .text-slate-400.hover\:text-white:hover,
++body.light-mode .text-slate-300.hover\:text-white:hover,
++body.light-mode .text-slate-500.hover\:text-white:hover {
++    color: var(--glow-primary) !important;
++}
++
++/* Fix profile settings panel in light mode */
++body.light-mode #profile-drawer .bg-slate-900 {
++    background-color: #f5f5f4 !important;
++    border-color: #d6d3d1 !important;
++}
++body.light-mode #profile-drawer input[type="number"] {
++    background-color: #ffffff !important;
++    border-color: #d6d3d1 !important;
++    color: #1c1917 !important;
++}
++
++/* Ensure AI chatbox occludes radial menu */
++#ai-chat-panel {
++    z-index: 100 !important;
+ }
+\ No newline at end of file
+diff --git a/multi_map_ai_engine.js b/multi_map_ai_engine.js
+index a056373..c5eb7b5 100644
+--- a/multi_map_ai_engine.js
++++ b/multi_map_ai_engine.js
+@@ -33,7 +33,7 @@ class MultiMapAI {
+             <!-- AI Widget Wrapper -->
+ 
+             <!-- AI Widget Radial Menu Wrapper -->
+-            <div id="ai-radial-wrapper" class="absolute bottom-6 right-6 z-[60] flex items-center justify-center">
++            <div id="ai-radial-wrapper" class="absolute bottom-6 right-6 z-[30] flex items-center justify-center">
+                 
+                 <!-- Main Toggle Button -->
+                 <button id="ai-toggle-btn" class="relative w-14 h-14 bg-indigo-600 hover:bg-indigo-500 rounded-full shadow-[0_0_20px_rgba(79,70,229,0.5)] flex items-center justify-center text-2xl transition-transform hover:scale-110 z-[61] text-white border-2 border-indigo-400">
+@@ -42,7 +42,7 @@ class MultiMapAI {
+             </div>
+ 
+             <!-- Chat Interface -->
+-            <div id="ai-chat-panel" class="absolute bottom-24 right-6 w-[380px] max-w-[calc(100vw-3rem)] h-[500px] max-h-[60vh] bg-slate-900/95 backdrop-blur-xl border border-indigo-500/30 rounded-2xl shadow-2xl flex flex-col hidden z-[50] overflow-hidden transform transition-all translate-y-4 opacity-0">
++            <div id="ai-chat-panel" class="absolute bottom-24 right-6 w-[380px] max-w-[calc(100vw-3rem)] h-[500px] max-h-[60vh] bg-slate-900/95 backdrop-blur-xl border border-indigo-500/30 rounded-2xl shadow-2xl flex flex-col hidden z-[60] overflow-hidden transform transition-all translate-y-4 opacity-0">
+                 
+                 <!-- Header -->
+                 <div class="p-3 border-b border-slate-800 bg-slate-950/50 flex justify-between items-center shrink-0 gap-2">
+@@ -71,7 +71,7 @@ class MultiMapAI {
+                 <!-- Input Area -->
+                 <div class="p-3 border-t border-slate-800 bg-slate-950/50 shrink-0 relative">
+                     <!-- Autocomplete Popover -->
+-                    <div id="ai-autocomplete-popover" class="absolute bottom-full mb-2 left-3 right-3 bg-slate-900 border border-indigo-500/40 rounded-xl shadow-2xl z-[120] hidden flex flex-col overflow-hidden max-h-48 custom-scrollbar">
++                    <div id="ai-autocomplete-popover" class="absolute bottom-full mb-2 left-3 right-3 bg-slate-900 border border-indigo-500/40 rounded-xl shadow-2xl z-[40] hidden flex flex-col overflow-hidden max-h-48 custom-scrollbar">
+                     </div>
+                     <div class="relative flex items-end gap-2">
+                         <textarea id="ai-input" rows="1" placeholder="Generate a map for..." class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200 outline-none focus:border-indigo-500 resize-none custom-scrollbar max-h-32" oninput="this.style.height = ''; this.style.height = this.scrollHeight + 'px'"></textarea>
+@@ -83,7 +83,7 @@ class MultiMapAI {
+             </div>
+ 
+             <!-- Single Line Tooltip Mode -->
+-            <div id="ai-tooltip-bar" class="absolute bottom-6 right-24 mr-2 bg-slate-900/95 backdrop-blur-xl border border-indigo-500/50 rounded-2xl shadow-[0_0_20px_rgba(79,70,229,0.3)] hidden flex flex-col sm:flex-row sm:items-center px-4 py-3 z-[110] transform transition-all translate-x-4 opacity-0 pointer-events-auto max-w-[calc(100vw-6rem)] gap-3">
++            <div id="ai-tooltip-bar" class="absolute bottom-6 right-24 mr-2 bg-slate-900/95 backdrop-blur-xl border border-indigo-500/50 rounded-2xl shadow-[0_0_20px_rgba(79,70,229,0.3)] hidden flex flex-col sm:flex-row sm:items-center px-4 py-3 z-[30] transform transition-all translate-x-4 opacity-0 pointer-events-auto max-w-[calc(100vw-6rem)] gap-3">
+                 <div id="ai-tooltip-content" class="text-sm text-slate-200 flex-1 whitespace-normal break-words w-full"></div>
+                 <div id="ai-tooltip-actions" class="flex items-center shrink-0 self-end sm:self-auto"></div>
+                 <button id="btn-smart-action" class="hidden text-xs font-bold uppercase tracking-widest px-6 py-3 rounded-full border shadow-lg transition-all flex items-center gap-2"></button>
+diff --git a/phase-engines.js b/phase-engines.js
+index 1450051..c3dcb12 100644
+--- a/phase-engines.js
++++ b/phase-engines.js
+@@ -102,10 +102,11 @@ class IframePhaseEngine extends PhaseEngineBase {
+         }
+ 
+         // Always update the onload handler to use the latest state and highlight
++        const highlight = window.SC && window.SC.activeSearchHighlight ? window.SC.activeSearchHighlight : null;
++        const theme = document.body.classList.contains('light-mode') ? 'light' : 'dark';
+         this.iframe.onload = () => {
+-            const highlight = window.SC && window.SC.activeSearchHighlight ? window.SC.activeSearchHighlight : null;
+             if (this.iframe && this.iframe.contentWindow) {
+-                this.iframe.contentWindow.postMessage({ type: 'STATE_UPDATE', state: stateClone, highlight: highlight }, '*');
++                this.iframe.contentWindow.postMessage({ type: 'STATE_UPDATE', state: stateClone, highlight: highlight, theme: theme }, '*');
+             }
+         };
+         
+@@ -116,7 +117,8 @@ class IframePhaseEngine extends PhaseEngineBase {
+         
+         if (this.iframe.contentWindow) {
+             const highlight = window.SC && window.SC.activeSearchHighlight ? window.SC.activeSearchHighlight : null;
+-            this.iframe.contentWindow.postMessage({ type: 'STATE_UPDATE', state: stateClone, highlight: highlight }, '*');
++            const theme = document.body.classList.contains('light-mode') ? 'light' : 'dark';
++            this.iframe.contentWindow.postMessage({ type: 'STATE_UPDATE', state: stateClone, highlight: highlight, theme: theme }, '*');
+         }
+     }
+ }
+diff --git a/sandbox.html b/sandbox.html
+index 35e9ae8..070becf 100644
+--- a/sandbox.html
++++ b/sandbox.html
+@@ -20,6 +20,9 @@
+ </head>
+ 
+ <body class="overflow-hidden bg-slate-950 select-none">
++    <script>
++        if (localStorage.getItem('mm_theme') === 'light') document.body.classList.add('light-mode');
++    </script>
+     <nav
+         class="h-14 border-b border-slate-800 bg-slate-900/50 flex justify-between items-center px-2 md:px-4 z-50 relative backdrop-blur w-full gap-2 md:gap-4">
+         <!-- Identity & Status -->

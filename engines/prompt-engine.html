@@ -21,6 +21,14 @@
         .var-input input { padding: 6px; background: #0f172a; border: 1px solid #334155; color: #fff; border-radius: 4px; }
         .btn-copy { background: #10b981; color: #0f172a; }
         .btn-copy:hover { background: #34d399; }
+        
+        body.light-mode { background: #fafaf9; color: #1c1917; }
+        body.light-mode .section h2 { color: #059669; border-bottom-color: #d6d3d1; }
+        body.light-mode .node-card { background: #ffffff; border-color: #e7e5e4; box-shadow: 0 10px 15px rgba(0,0,0,0.1); }
+        body.light-mode .node-card strong { color: #1c1917; }
+        body.light-mode .node-card .type { background: #f5f5f4; color: #78716c; border-color: #d6d3d1; }
+        body.light-mode .var-input { background: #ffffff; border-color: #d6d3d1; color: #1c1917; box-shadow: inset 0 2px 4px rgba(0,0,0,0.05); }
+        body.light-mode h1 { color: #1c1917; }
     </style>
 </head>
 <body>
@@ -42,6 +50,9 @@
         window.addEventListener('message', (event) => {
             if (event.data && event.data.type === 'STATE_UPDATE') {
                 currentState = event.data.state;
+                if (event.data.theme) {
+                    document.body.classList.toggle('light-mode', event.data.theme === 'light');
+                }
                 render();
             }
         });

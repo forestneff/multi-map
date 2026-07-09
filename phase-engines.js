@@ -102,10 +102,11 @@ class IframePhaseEngine extends PhaseEngineBase {
         }
 
         // Always update the onload handler to use the latest state and highlight
+        const highlight = window.SC && window.SC.activeSearchHighlight ? window.SC.activeSearchHighlight : null;
+        const theme = document.body.classList.contains('light-mode') ? 'light' : 'dark';
         this.iframe.onload = () => {
-            const highlight = window.SC && window.SC.activeSearchHighlight ? window.SC.activeSearchHighlight : null;
             if (this.iframe && this.iframe.contentWindow) {
-                this.iframe.contentWindow.postMessage({ type: 'STATE_UPDATE', state: stateClone, highlight: highlight }, '*');
+                this.iframe.contentWindow.postMessage({ type: 'STATE_UPDATE', state: stateClone, highlight: highlight, theme: theme }, '*');
             }
         };
         
@@ -116,7 +117,8 @@ class IframePhaseEngine extends PhaseEngineBase {
         
         if (this.iframe.contentWindow) {
             const highlight = window.SC && window.SC.activeSearchHighlight ? window.SC.activeSearchHighlight : null;
-            this.iframe.contentWindow.postMessage({ type: 'STATE_UPDATE', state: stateClone, highlight: highlight }, '*');
+            const theme = document.body.classList.contains('light-mode') ? 'light' : 'dark';
+            this.iframe.contentWindow.postMessage({ type: 'STATE_UPDATE', state: stateClone, highlight: highlight, theme: theme }, '*');
         }
     }
 }

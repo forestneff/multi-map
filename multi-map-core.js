@@ -2844,16 +2844,31 @@ class MultiMapKernel {
     selectNode(id) { 
         this.state.session.selectedId = id; 
         if (id) {
+            let currentId = id;
+            const nodesToExpand = [];
+            while (currentId) {
+                const parentConn = this.state.connections.find(c => c.to === currentId && c.type === 'structural');
+                if (!parentConn) break;
+                const parentNode = this.state.nodes.find(n => n.id === parentConn.from);
+                if (!parentNode) break;
+                nodesToExpand.push(parentNode);
+                currentId = parentNode.id;
+            }
+
             const node = this.state.nodes.find(n => n.id === id);
-            if (node && node.type === 'file-folder' && node.data && node.data.collapsed) {
-                if (this.state.meta && (this.state.meta.isMaster === true || this.state.meta.title === 'Project Directory' || this.state.meta.type === 'file-root')) {
-                    node.data.collapsed = false;
-                    const projId = this.state.meta.project_id || this.activeProjectId;
-                    if (projId && node.content) {
-                        this.updateProjectFolder(projId, node.content, { isExpanded: true }).catch(console.error);
+            if (node) nodesToExpand.push(node);
+
+            nodesToExpand.forEach(n => {
+                if (n.data && n.data.collapsed) {
+                    n.data.collapsed = false;
+                    if (n.type === 'file-folder' && this.state.meta && (this.state.meta.isMaster === true || this.state.meta.title === 'Project Directory' || this.state.meta.type === 'file-root')) {
+                        const projId = this.state.meta.project_id || this.activeProjectId;
+                        if (projId && n.content) {
+                            this.updateProjectFolder(projId, n.content, { isExpanded: true }).catch(console.error);
+                        }
                     }
                 }
-            }
+            });
         }
         this.notify(); 
     }

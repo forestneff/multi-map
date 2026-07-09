@@ -8,154 +8,79 @@
 
 ---
 
-### [x] Phase 1: The Data & Identity Layer
+### [ ] Phase 1: The Data & Identity Layer
 - Agent Context: firestore.rules, multi-map-core.js (data manager), multi-map-library.js, auth.js, Firebase Admin functions.
 
-### [x] 1. Guest-to-Auth Data Migration
-- Intent: Ensure a seamless transition when a user "graduates" from guest mode to an authenticated account without losing work.
+### [ ] 1. Project Directory Cleanup & Data Integrity
+- Intent: Enforce a strict single-directory rule per project to ensure database cleanliness and prevent recursive navigation issues.
 - Details:
-  - When a user signs in (handled in auth.js via onAuthStateChanged), scan local storage/IndexedDB for existing guest projects.
-  - Merge these w/ user’s local projects using the logic inside multi-map-library.js (e.g., expanding loadLocalProjects()).
-  - Dynamically update the Data Manager UI to merge and display these newly migrated projects alongside any existing local ones, without requiring a hard refresh.
-  - Clear the local guest cache once migration is confirmed successful to prevent duplication.
+  - Run a migration/cleanup script to identify and repair legacy projects with multiple directories or directories pointing to other projects.
+  - Selecting a project in the data-manager should make its unique directory the active map.
+  - Enforce logic ensuring the project directory only has one pointer to each unique page in the project.
 
----
-
-### [x] 2. Federated Storage & Quota Management UI
-- Intent: Implement the first stage of the federated architecture. Firebase acts as the central directory and offers limited default storage, while the UI prompts users to "Bring Your Own Storage" (Local OS or Google Drive) to bypass quotas and own their data.
-- Specification: feature-specs/prep-federated-spec.md
+### [ ] 2. Refine Map Sharing & Read-Only Views
+- Intent: Refine the existing map-sharing system and polish the read-only `view.html` experience.
 - Details:
-  - Update map schema to include a storage_target property (firebase, google_drive, local_os).
-  - Implement a soft and hard storage cap on Firebase-hosted maps (e.g., limit on total map count or node count for free users).
-  - Add a capacity warning UI: When a user hits 80% capacity, prompt them with: "Your cloud workspace is almost full. Connect Google Drive or a Local Directory for unlimited free storage."
-  - Update the Data Manager UI (multi-map-core.js, multi-map-ui.css) to allow users to select their primary "Vault" (storage location) and visually distinguish the storage target of each project with distinct icons.
-  - Ensure Firebase correctly stores lightweight "pointers" (external IDs or local IndexedDB references) rather than full payloads for maps hosted on external targets.
-
----
-
-### [ ] 3. Map Sharing / Public Links
-- Intent: Allow users to share a read-only link to any map in their library.
-- Details:
-  - Add a shared: boolean flag and a share_token: string field to mapstate-schema.json.
-  - "Share" action in the Data Manager generates a unique share_token (UUID), sets shared: true, and writes the map to a public Firestore collection: shared_maps/{share_token}.
-  - Update firestore.rules to allow public read access to the shared_maps collection.
-  - Public URL format: https://mm.forestneff.com/view/{share_token}.
-  - Create a lightweight view.html page that renders the shared map in read-only map mode (stripping out inspector panels and editing event listeners from multi-map-core.js).
-  - Shared maps show a "Fork to my workspace" button for authenticated visitors.
-  - Revoke sharing: sets shared: false and deletes the shared_maps document.
-  - Expiry option: shared links can optionally expire after 7 / 30 / 90 days.
-
----
-
-### [x] 4. Standard Keyboard Editing
-- Intent: Implement standard mind-map keyboard shortcuts for rapid, mouse-free node creation and navigation.
-- Details:
-  - Bind these to the main global keydown event listener in multi-map-core.js.
-  - Tab: Trigger existing addChildNode() logic attached to the currently selected node and automatically focus it for text entry.
-  - Enter: Trigger existing addSiblingNode() logic at the same hierarchical level as the currently selected node and automatically focus it for text entry.
-  - Arrow Keys (Up/Down/Left/Right): Navigate node selection along branches based on spatial and hierarchical relationships.
-
----
-
-### [x] 5. AI Telemetry & Automated Feedback
-- Intent: Capture user friction and bug reports directly via the AI widget to improve agentic workflows and pinpoint engine errors.
-- Details:
-  - Create a structured feedback and error schema in Firestore. Ensure firestore.rules permits users to write to this log collection.
-  - Automate log capture when possible (e.g., "User attempted [Action], got [Error Type], navigated away after [X] seconds"). Tie into the logger.js service.
-  - Add a user-facing feature suggestion/bug report form launched directly from the AI widget (multi_map_ai_engine.js). Call automatically if user intent is parsed as "suggestion."
-  - Route all captured telemetry and feedback to the admin.html dashboard (populated via functions/routes/admin.js) for developer review.
+  - Improve the `view.html` page to provide a seamless read-only map mode (stripping out inspector panels and editing event listeners, but keeping limitted smart button and navigation features from multi-map-core.js).
+  - Ensure shared maps show a robust "Fork to my workspace" button for authenticated visitors. When forked, full content of original map/project will need to be imported as a fresh project for a fully functional workspace.
+  - Add expiry options for shared links (7 / 30 / 90 days).
+  - *Cross-Reference:* This system will be heavily revisited and integrated with Cloud Storage Vaults (Task 4), P2P Federation pointers (Task 7), and Colab-Root Shared Spaces (Task 12).
 
 ---
 
 ### [ ] Phase 2: The Portal & Agent Paradigm Shift
 - Agent Context: phase-engines.js, engines/*, mapstate-schema.json, Portal logic (multi-map-core.js), AI Agent prompt definitions.
 
----
-
-### [x] 6. Smart Roots
-- Intent: Upgrade root nodes so they contain structured metadata for their maps that they can easily pass to portals that call them or that exist within them.
-- Specification: feature-specs/smart-roots-spec.md
-- Details:
-  - Define a standardized root_metadata object schema specifically for root nodes in mapstate-schema.json.
-  - Implement UI in the inspector/properties panel (multi-map-core.js or multi-map-ui.css layouts) for defining and editing this root node metadata.
-  - Ensure this metadata payload is bundled and readily accessible when generating or evaluating a portal link.
-
----
-
-### [x] 7. Dynamic Portals
-- Intent: Deprecate the bespoke "smart portal" and make all portals dynamic, data-driven endpoints that utilize the new Smart Root metadata natively within the host map.
-- Specification: feature-specs/dynamic-portals-spec.md
-- Details:
-  - Portals serve as map endpoints — no generic user map editing past a portal.
-  - Implement an openPortal() method to dynamically auto-spawn children and behavior locally in the current host map based on the root node type and explicitly passed metadata payloads from the Smart Root.
-  - Preserve the existing enterPortal() method strictly for standard submap page traversal.
-  - Remove the manual "add node" button from the portal radial menu (tutorials/radial_menu.json / multi-map-rules.js logic) for these dynamic nodes.
-  - Standardize the metadata passing/pulling architecture across the portal boundary, implementing explicit local handoffs of the Smart Root data.
-
----
-
-### [x] 8. Flowchart Maptype
-- Intent: Introduce a dedicated maptype designed specifically for plotting logic flows, workflow automation, and state machines (useful for the agent-root sub-components, timelines, and project design).
-- Specification: feature-specs/flowchart-spec.md
-- Details:  
-  - Define schema rules for directional relationships (beyond standard parent/child trees) in mapstate-schema.json.
-  - Implement custom radial menu and rendering rules for flowchart nodes (e.g., decision diamonds, conditional branches/logic gates) in multi-map-rules.js and the canvas rendering loop.
-
----
-
-### [x] 9. Expand Prompt-Root and Agent-Root Ecosystems
-- Intent: Utilize the map-native interface to design and build structured, complex, high-quality prompts and agent architectures that can then be exported for use with external LLMs/Agentic Systems (like Antigravity).
-- Specification: feature-specs/prompt-root-spec.md & feature-specs/agent-root-spec.md
-- Details:
-  - Prompt Ecosystem
-    - Expand the prompt-root maptype to build/handle structured prompts, complex prompt chaining, variable injection, and prompt-library management. Expand sub-type hierarchy in mapstate-schema.json.
-    - Flesh out engines/prompt-engine.html as a dedicated sandbox viewport w/ the ability to export the structured prompt as a .md or raw text (via string builder logic).
-  - Agent Ecosystem
-    - Expand the agent-root maptype to configure system instructions, tool access, and agentic workflows. Ensure compatibility with templates found in .agents/skills/.
-    - Flesh out engines/agent-config.html as a dedicated sandbox viewport that provides a dynamic overview of the agent architecture, including an option to export as a .zip file structure.
-    - Allow multi_map_ai_engine.js logic to dictate the dynamic layout of portals linking to these specific roots.
-
----
-
-### [ ] 10. File-Root Maptype & Local File System Explorer
+### [ ] 3. File-Root Maptype & Local File System Explorer
 - Intent: Create a map-native local file-system explorer for seamless local file management within Multi-Map.
 - Specification: feature-specs/file-root-spec.md
 - Details:
   - Integrate file-root maptypes into mapstate-schema.json.
   - Utilize the browser's HTML5 File System Access API (where supported) to read local directory structures and represent them as dynamic child nodes.
   - Build a corresponding phase engine (engines/file-explorer.html) and register it in phase-engines.js. It should provide a specialized viewport for viewing, organizing, and executing basic file operations.
+  - *Cross-Reference:* Establishes the baseline for external file mapping to be expanded in Task 4.
 
----
-
-### [ ] 11. Third-Party Cloud Storage Integrations
-- Intent: Extend the file system mapping capabilities to interact with external cloud drives.
+### [ ] 4. Third-Party Cloud Storage Integrations & Cloud Sync
+- Intent: Extend the file system mapping capabilities to interact with external cloud drives and enable per-page/per-project cloud syncing.
 - Specification: feature-specs/third-party-cloud-spec.md
 - Details:
+  - Add "Cloud Sync" button to projects and pages (project syncing applies to all pages). Marking for cloud sync adds it to the cloud vault (Firestore/BYO-storage) respecting quotas.
+  - Add an "All Vaults" option to Data Vault dropdown showing all available projects sorted by category (local only, local cloud synced, cloud only).
   - Implement authentication and API bridging for services like Google Drive and Google Docs. Expand Firebase Auth providers in auth.js to request Drive OAuth scopes.
   - Enable syncing, fetching, and map-native representation of external cloud files. Ensure OAuth tokens and API limits are handled safely (utilizing functions/middleware/rateLimit.js).
+  - *Cross-Reference:* Integrates with Map Sharing (Task 2) to allow permissions mapping for cloud-vault maps.
 
----
+### [ ] 5. Flowchart Upgrades & Flow-Phase-Engine
+- Intent: Expand the flowchart maptype to natively support dynamic portal passing and phase engine visualization for complex decision logic.
+- Details:
+  - Upgrade all flow-type nodes to act as portals. 
+  - `Process` = generic payload link.
+  - `Decision` = flow-logic-root map with metadata that returns T/F or values based on internal logic.
+  - `Terminal` = flow-io-root map with sub-types for building UI in/out or data/metadata pass (e.g., text entry, file download, yes/no). Calls a modal for user interaction and returns to the flow.
+  - Generate a new `Flow-Phase-Engine` with play/pause/stop/skip controls to visually walk through the flowchart, auto-expanding connections and calling map logic/payloads as it traverses.
 
-### [ ] 12. Launch True Federation (WebRTC + CRDTs)
+### [ ] 6. Sectional Text Editing in Prompt/Agent Engines
+- Intent: Improve the text-editing experience for prompt and agent maptypes directly inside their phase engine views.
+- Details:
+  - Allow sectional text editing with dynamic updating directly in the prompt and agent phase engine views.
+  - This bridges the gap between spatial map building and raw text document editing.
+
+### [ ] 7. Launch True Federation (WebRTC + CRDTs)
 - Intent: Transition Multi-Map from a centralized Firebase payload host to a true peer-to-peer (P2P) federated network, relegating Firebase strictly to an identity and WebRTC signaling switchboard.
 - Specification: feature-specs/launch-federation-spec.md
 - Details:
   - Transition the local memory map states (state.nodes) to a CRDT framework (like Yjs or Automerge).
   - Implement WebRTC signaling using Firebase Firestore to exchange connection offers and ICE candidates between peers.
-  - NOTE (from TODO #3): The shared_maps Firestore collection currently stores full map payloads per share token.
-    When federation ships, replace this with a lightweight pointer (owner_uid + map_id) and serve
-    shared maps directly from the peer network. This eliminates duplication and aligns with the CRDT model.
   - Shift the primary network transport for live collaborative map edits from Firestore onSnapshot to direct P2P WebRTC data channels.
-  - Ensure data persistence fallbacks utilize the user's primary "Vault" (Drive/Local OS) as defined in previous steps. 
+  - Ensure data persistence fallbacks utilize the user's primary "Vault" (Drive/Local OS).
+  - *Cross-Reference:* Replaces the central payload storage in Task 2 (Map Sharing) with lightweight pointers (owner_uid + map_id), serving shared maps directly from the peer network. Serves as the networking foundation for Colab-Roots (Task 12).
 
 ---
 
 ### [ ] Phase 3: Core Mechanics & Interaction Stability
 - Agent Context: multi-map-core.js, multi-map-rules.js, Keyboard event listeners, functions/index.js.
 
----
-
-### [ ] 13. Multi-Level Undo / Redo Polish
+### [ ] 8. Multi-Level Undo / Redo Polish
 - Intent: Implement a multi-level undo/redo system that persists across the new dynamic portal navigations.
 - Details:
   - Isolate undo/redo state arrays inside the kernel map object (e.g., window.kernel.maps[map_id].history) instead of a global array.
@@ -165,42 +90,53 @@
   - Keyboard: Bind Ctrl/Cmd+Z = undo, Ctrl/Cmd+Shift+Z = redo to the global key listener.
   - Show current undo depth as a subtle counter on the undo button (↩️ 3).
 
----
-
-### [ ] 14. Node Search / Global Jump
-- Intent: Extend the existing nav search bar to support cross-map semantic search, natively understanding the new dynamic portal endpoints.
+### [ ] 9. Keyboard & Clipboard Polish
+- Intent: Refine keyboard editing interactions and implement robust cross-platform copy/cut/paste logic.
 - Details:
-  - Tier 1: Initialize Fuse.js in multi-map-library.js for local fuzzy search that filters state.nodes by title/content for instant DOM results.
-  - Tier 2: Cross-map search across all library pages, surfacing results with [Page Name] › Node Title breadcrumbs.
-  - Selecting a cross-map result opens/creates a portal to that page and fires selectNode() on the matched node.
-  - Keyboard shortcut: Cmd/Ctrl + K opens the search bar with focus.
-  - AI Semantic Search: Create a new /api/search endpoint in functions/index.js that embeds and vector-searches across log-stored maps.
+  - Update text-box interaction: Only "enter" should commit a title box when selected after new-node generation. Wait for user to finish typing or press enter again to skip.
+  - Implement `Ctrl+X` to clip/cut nodes (using existing clip logic). Fix current clipping bug where modal launches but returns "Clip failed. The node may not be clippable."
+  - Native paste logic: paste as a targeted portal.
+  - Off-platform paste logic: paste full text of the clipped branch.
+  - Internal paste logic: insert children in layers naturally, respecting auto-arrange geometry (unless tagged for specific meaning) as if created by the user.
+
+### [ ] 10. Phase Engine Interaction & UI Sync
+- Intent: Ensure dynamic portals and radial menus render seamlessly across different phase engine views.
+- Details:
+  - Update Sidebar Phase Engine rendering: If a portal's payload triggers a phase engine render, and that portal is selected, selecting the phase engine from the sidebar should show the payload's phase-specific rendering (as if that page's root were selected).
+  - Only show that phase engine as accessible if that portal is selected, unless the hosting page map can also be rendered in that phase.
+  - Bring Radial Menu editing and smart button navigation natively into the Orbital Focus engine.
+  - *Cross-Reference:* Ensures UI syncing for the new Flow-Phase-Engine introduced in Task 5.
+
+### [ ] 11. Unified Search & AI UX Polish
+- Intent: Unify global node search with the AI widget, creating a single intelligent interface for navigation and generation, while refining AI intent parsing.
+- Details:
+  - Integrate cross-map semantic search directly into the AI interface. Selecting a cross-map result opens/creates a portal to that page and fires selectNode().
+  - Implement Tier 1 local fuzzy search (Fuse.js in multi-map-library.js) and Tier 2 AI Semantic Search (/api/search endpoint in functions/index.js for vector-searching log-stored maps).
+  - Make text selectable/copyable in the chat interface. Users should be able to select and copy individual words/segments of old prompts, responses, error messages, etc.
+  - Teach intent parser to intelligently choose between search, edit, generation, and, for generation tasks, the best map-type if none is explicitly provided. Allow the AI to identify desired actions (insertion via portal, new page, expand current node, etc.) directly from the prompt without explicit clarification unless strictly necessary.
+  - *Cross-Reference:* Default out-of-scope AI intents to the Wiki/Links system being expanded in Task 13.
 
 ---
 
 ### [ ] Phase 4: Social & Collaborative Expansion
 - Agent Context: engines/colab-engine.html, engines/person.html, multi-map-library.js, Realtime Database/Firestore Listeners, firestore.rules.
 
----
-
-### [ ] 15. Colab-Root, Communities, & Shared Spaces
+### [ ] 12. Colab-Root, Communities, & Shared Spaces
 - Intent: Introduce an entirely new colab-root system that acts as a dedicated container for social networks, communities, and collaborative spaces.
 - Specification: feature-specs/contacts-communities-spec.md
 - Details:
   - Introduce a new colab-root maptype and a dedicated phase engine (engines/colab-engine.html) to manage organizational structures, shared maps, and user roles.
   - Introduce organizational sub-types: colab-organization, colab-community, and colab-group. Update mapstate-schema.json.
   - Incorporate existing person objects (contacts, user profiles) as sub-types or dynamically reference them via portals inside the colab-root.
-  - Connect multiplayer instances securely utilizing the new WebRTC P2P mesh established in Item #11.
-  - Update firestore.rules heavily to enforce Role-Based Access Control (RBAC) based on the acl metadata for colab-root nodes to ensure only authorized users can initiate P2P handshakes.
+  - Update firestore.rules heavily to enforce Role-Based Access Control (RBAC) based on the acl metadata for colab-root nodes.
+  - *Cross-Reference:* Connects multiplayer instances securely utilizing the WebRTC P2P mesh established in Task 7. Greatly expands upon the basic read-only sharing established in Task 2.
 
 ---
 
 ### [ ] Phase 5: Platform Delivery & Documentation
 - Agent Context: service-worker.js, manifest.json, multi-map-tutorials.js, wiki.html.
 
----
-
-### [ ] 16. Robust Wiki & Auto-Driven Tutorial System
+### [ ] 13. Robust Wiki & Auto-Driven Tutorial System
 - Intent: Build a robust, map-native Wiki alongside an automated tutorial system to document the finished architecture.
 - Details:
   - Substantially expand wiki.html to act as the central documentation hub, linking directly to map states and tutorials in tutorials/*.json.
@@ -210,9 +146,7 @@
   - Add step validators in multi-map-tutorials.js: the "Next" button only activates once the user successfully completes the requested UI interaction.
   - Persist tutorial progress to localStorage to survive page refreshes.
 
----
-
-### [ ] 17. PWA / Offline Mode
+### [ ] 14. PWA / Offline Mode
 - Intent: Package the app as a Progressive Web App so it can be installed natively and continue working on flaky connections.
 - Details:
   - Add a Web App Manifest (manifest.json): app name, icons, theme color, display: standalone.
@@ -220,66 +154,3 @@
   - Tie IndexedDB caching into multi-map-library.js fetch routines so active project maps are readable/editable offline.
   - Sync queue: changes made offline are written to a local queue and flushed to Firestore when connectivity returns (using the Background Sync API).
   - Add an offline indicator in the nav bar and an "Install Multi-Map" prompt after 3 sessions.
-
-
-### Notes:
-
-
-1. Add to TODO workflow: Add "Cloud Sync" button to projects and pages (projects syncing applies to all project pages) for projects/pages from local vaults. When a project or page is marked for cloud sync, add it to the cloud vault (firestore for now, BYO-storage later). Respect user quota. Add an "All Vaults" option to Data Vault dropdown that shows all available projects sorted by category (local only, local cloud synced, cloud only). (Skip for now or scaffold only, will evolve naturally out of related features and cloud tasks)
-
-2. [x] The master map should consist entirely of portals to project pages (+ hubs for sorting), also auto-create the master map if it doesn't exist in a project. This is meant for map-native navigation. Set the default child type for these special file-root-master maps to portal. Instead of auto spawning a portal to the master map (make sure to clean out they systems and logic for the current spawn-portal system we will replace as follows), let's simply use a radial/smart button option on root nodes that acts as a link directly back to the project's root/master map. Make sure each project has only one (it's own) project directory map. Make sure that the direcorty spawns a portal for all pages, regardless of how a page is created (via settings modal, clip injection, portal create target, *any*, etc.).
-
-3. [x] Keyboard updates:
-3.1. [x] When using keyboard map editing, inspector text entry box (title) should eat one "enter" to commit title text before allowing the creation of another sibling. (Text-entry boxes should commit on enter in general and use tab to navigate between interactive elements/fields unless multiline entry is explicitly allowed for that text-field)
-3.2. [x] Let's gracefully add detele back to root nodes. Deleting the root should allow page deletion/clean-up w/ correspondng "are you sure"
-3.3. [x] Tab (or inject/import through assets, copy/paste, etc.) should not work on portals, option to add as a child of root or select different node.
-3.4. [x] Enter to create sibling should create a sibling of the same type as the selected node.
-
-4. [x] All phase engines may need access to keyboard smart button behaviors. Some may adopt differnt arrow key, tab, and enter behaviors. eg. web may use a different spatial/semantic arrow selection logic for element navigation than a universe map would. 
-
-5. [x] Refine web-root type portal smart button behavior, make similar to run-chain option as we have it for promp-root types, with a radial and smart button option to link directly to the web-phase view of the page.
-
-6. [x] Move data manager drawer to left side w/ inspector and phase engines. Only dm or inspector open at a time (opening one closes the other). Need to figure out a good ui for the Inspector and Data Manager buttons. 
-
-7. [x] Current active project/page should auto-focus in the data-manager project/page lists when dm opens. (Instead of refreshing to top of list)
-
-8. [x] When a portal node is focused, tab should not create a new child. Neither should a new child be allowed injected by other means, eg. asset via portal injection, AI inject children, etc. (Possible exception?: May allow portals to have children in flowcharts to allow multi-step prompt chaining for agents through dynamic portal payloads and other unique cases, only specific children allowed - eg. other portals, logic gates, etc - in such cases.)
-
-9. [x] it looks like we need to syncronize the page type lists in the inspector, portal config modal, and page-setting modal. Those lists (and similar) should all have the same options and allow the creation of any available type of map.
-
-10. [x] ctrl+c/ctrl+v to copy paste nodes (w/ children) within and between pages or even to/from text documents if text structured hiearchically (refuse jarbled/unformatted pastes or put them in the details of a simple note). Use simple text format for copy, parse for map integration if pasted locally (eg. paste as child branch of selected, or child of root if none selected), paste as formatted text into any external document otherwise (or even local text input field - eg. chatbox - if selected/active). Add s "copy" button to radial w/ same functionality and a "paste" button to recieve. <- Maybe the copy/paste/clip buttons should all be variatns of the clip button or at least grouped together w/ it (neighbors in radial)? This should work across projects and maps and use standard copy/paste tools/controls for off platform copying/pasting. We may be able to use/modify/expand existing clip and/or map passing/injection tools we have in place to integrate key-board native copy/paste functionality, as long as we do so w/o breaking the existing functionality.
-
-11. [x] Teach the AI to use web-link nodes in all generative and editing tasks to provide links to refferences, relevant resources, tools, or anything else it may want to offer a link for (eg. might be useful in prompt or file maps to point to external websites/data/tools/resources/apis/etc. or as children of a "refferences" hub for a overview/analysis/advice map).
-
-12. [x] AI generate-prompt skill may not be engaging. Maybe update parse intent? Maybe generate-prompt skill or node ontology? Check that this also works for agent-gen skill.
-
-Tried: "Generate a new prompt map architecture in this project to optimize prompting on this platform" 
-Got: single node w/ content/payload: """To optimize map generation, provide clear, specific instructions:
-1.  **Map Type & Purpose:** State the desired map type (e.g., 'a conceptual hub map', 'a website layout', 'a dashboard UI') and its primary goal.
-2.  **Key Nodes & Types:** List essential nodes, their types (e.g., 'root', 'hub', 'note', 'web-section', 'web-button'), and initial titles/content.
-3.  **Relationships & Structure:** Describe how nodes should connect (e.g., 'structural', 'directional', 'parent-child') and the overall layout (e.g., 'hierarchical', 'radial', 'linear flow').
-4.  **Content Details:** Include specific text, labels, or data for nodes where applicable.
-5.  **Constraints & Exclusions:** Specify any limitations, required elements, or things to avoid.
-6.  **Iterative Approach:** Start with a high-level overview and refine with subsequent prompts for details."""
-
-13. Light mode. 
-
-14. we need to pre-pack the set-portal-target modal for the create new-page branch with the selected type if the user selects a type through the inspector before launching it or if a default type for the current map exists. 
-
-15. Explore change parent ui options w/ keyboard integration (alt + click). Expand existing set parrent interface (dynamic radial button) we have for orphanned nodes, make universal. Integrate w/ copy/paste logic for simplicity?
-
-16. [x] Delete page radial button/keyboard action. Delete action triggeres verification pop up but page persists. Should delete page and corresponding portal on master map if allowed. Go to previos map (if portal history exists) or root directory after page deletion.
-
-17. If a portal's payload triggers a phase engine render and that portal is the active/selected node, when that phase engine is selected from the sidebar, show the payload's phase-specific rendering as if that page's root were the selected node. Only show that phase engine as accessible if that portal is selected, unless the hosting page map can also be rendered in that phase's view.  
-
-18. A project should only have one directory (it's own), let's clean legacy projects if they have multiple directories or point to other porject's directories. Selecting a project in the project's section of the data-manager should make it's directory the active map.
-
-19. Make text selectable/copyable in the chat interface. Should be able to select and copy individual words/segments of old prompts, responses, error messages, etc. w/ cursor like normal text (not just copy the whole message block).
-
-20. Flowchart upgrades.
-20.1 - All flow-type nodes as portals. (This is a special case in which flow-portals will be able to have flow-portal-type children.) The payload page will contain the logic or content that outlines that node's corresponding logic/content in the flowchart using existing or dedicated types as follows and dynamic portal functionality (meta-data passing).
-* Process = generic (link any payload)
-* Descision = logic-root page/map with metadata that returns t/f or a value from a set based on internal logic (accepts input or chooses w/in map's local logic)
-* Terminal = UI in/out or data/metadata pass (eg. text entry, file download, select option, yes/no, pass update map's metadata according after completion for passing to whatever calls the flowchart, etc. <- dynamic based on payload map/metadata>). Calls a corresponding modal for user interaction (in/out), returns to flow after if children, passing user input as needed.
-
-20.2 - Generate a Flow-Phase-Engine for flow-type maps, it should have similar functionality to the universal map view (maybe build on top?), but allow for a "play/pause/stop/skip/back" button interface to walk through the flowchart from the root or the selected node w/ progress animation along node connections and call each node's map's logic/payload as it does. Eg: descision will choose which branch, open new tab for web pages/sub maps/etc., use target root's metadata as payload to next node?, etc. Let's brainstorm this one and dail it in. Allow recursion as necessary but prevent infinite loops.

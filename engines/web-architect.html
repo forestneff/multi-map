@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <title>Web Architect Phase Engine</title>
     <style>
-        body { margin: 0; padding: 0; overflow: hidden; background: #f8fafc; }
+        body { margin: 0; padding: 0; overflow: hidden; background: #0f172a; }
+        body.light-mode { background: #fafaf9; }
         #canvas { width: 100vw; height: 100vh; border: none; }
     </style>
 </head>
@@ -16,6 +17,9 @@
         window.addEventListener('message', (event) => {
             if (event.data && event.data.type === 'STATE_UPDATE') {
                 currentState = event.data.state;
+                if (event.data.theme) {
+                    document.body.classList.toggle('light-mode', event.data.theme === 'light');
+                }
                 render();
             } else if (event.data && event.data.type === 'WEB_EDIT_MODE') {
                 // Not strictly necessary since we get state updates, but good for future toggles

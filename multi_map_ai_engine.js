@@ -33,7 +33,7 @@ class MultiMapAI {
             <!-- AI Widget Wrapper -->
 
             <!-- AI Widget Radial Menu Wrapper -->
-            <div id="ai-radial-wrapper" class="absolute bottom-6 right-6 z-[60] flex items-center justify-center">
+            <div id="ai-radial-wrapper" class="absolute bottom-6 right-6 z-[30] flex items-center justify-center">
                 
                 <!-- Main Toggle Button -->
                 <button id="ai-toggle-btn" class="relative w-14 h-14 bg-indigo-600 hover:bg-indigo-500 rounded-full shadow-[0_0_20px_rgba(79,70,229,0.5)] flex items-center justify-center text-2xl transition-transform hover:scale-110 z-[61] text-white border-2 border-indigo-400">
@@ -42,7 +42,7 @@ class MultiMapAI {
             </div>
 
             <!-- Chat Interface -->
-            <div id="ai-chat-panel" class="absolute bottom-24 right-6 w-[380px] max-w-[calc(100vw-3rem)] h-[500px] max-h-[60vh] bg-slate-900/95 backdrop-blur-xl border border-indigo-500/30 rounded-2xl shadow-2xl flex flex-col hidden z-[50] overflow-hidden transform transition-all translate-y-4 opacity-0">
+            <div id="ai-chat-panel" class="absolute bottom-24 right-6 w-[380px] max-w-[calc(100vw-3rem)] h-[500px] max-h-[60vh] bg-slate-900/95 backdrop-blur-xl border border-indigo-500/30 rounded-2xl shadow-2xl flex flex-col hidden z-[60] overflow-hidden transform transition-all translate-y-4 opacity-0">
                 
                 <!-- Header -->
                 <div class="p-3 border-b border-slate-800 bg-slate-950/50 flex justify-between items-center shrink-0 gap-2">
@@ -71,7 +71,7 @@ class MultiMapAI {
                 <!-- Input Area -->
                 <div class="p-3 border-t border-slate-800 bg-slate-950/50 shrink-0 relative">
                     <!-- Autocomplete Popover -->
-                    <div id="ai-autocomplete-popover" class="absolute bottom-full mb-2 left-3 right-3 bg-slate-900 border border-indigo-500/40 rounded-xl shadow-2xl z-[120] hidden flex flex-col overflow-hidden max-h-48 custom-scrollbar">
+                    <div id="ai-autocomplete-popover" class="absolute bottom-full mb-2 left-3 right-3 bg-slate-900 border border-indigo-500/40 rounded-xl shadow-2xl z-[40] hidden flex flex-col overflow-hidden max-h-48 custom-scrollbar">
                     </div>
                     <div class="relative flex items-end gap-2">
                         <textarea id="ai-input" rows="1" placeholder="Generate a map for..." class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200 outline-none focus:border-indigo-500 resize-none custom-scrollbar max-h-32" oninput="this.style.height = ''; this.style.height = this.scrollHeight + 'px'"></textarea>
@@ -83,7 +83,7 @@ class MultiMapAI {
             </div>
 
             <!-- Single Line Tooltip Mode -->
-            <div id="ai-tooltip-bar" class="absolute bottom-6 right-24 mr-2 bg-slate-900/95 backdrop-blur-xl border border-indigo-500/50 rounded-2xl shadow-[0_0_20px_rgba(79,70,229,0.3)] hidden flex flex-col sm:flex-row sm:items-center px-4 py-3 z-[110] transform transition-all translate-x-4 opacity-0 pointer-events-auto max-w-[calc(100vw-6rem)] gap-3">
+            <div id="ai-tooltip-bar" class="absolute bottom-6 right-24 mr-2 bg-slate-900/95 backdrop-blur-xl border border-indigo-500/50 rounded-2xl shadow-[0_0_20px_rgba(79,70,229,0.3)] hidden flex flex-col sm:flex-row sm:items-center px-4 py-3 z-[30] transform transition-all translate-x-4 opacity-0 pointer-events-auto max-w-[calc(100vw-6rem)] gap-3">
                 <div id="ai-tooltip-content" class="text-sm text-slate-200 flex-1 whitespace-normal break-words w-full"></div>
                 <div id="ai-tooltip-actions" class="flex items-center shrink-0 self-end sm:self-auto"></div>
                 <button id="btn-smart-action" class="hidden text-xs font-bold uppercase tracking-widest px-6 py-3 rounded-full border shadow-lg transition-all flex items-center gap-2"></button>

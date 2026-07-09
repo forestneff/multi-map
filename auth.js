@@ -203,6 +203,12 @@ window.Auth = {
                     class="w-16 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200 outline-none focus:border-indigo-500 text-center" 
                     value="${window.Kernel ? window.Kernel.config.autoCollapseDepth || 3 : 3}">
             </div>
+            <div class="flex items-center justify-between gap-4 mt-2">
+                <label for="settings-theme-toggle" class="text-xs text-slate-400">Light Mode</label>
+                <button id="settings-theme-toggle" onclick="window.Auth.toggleTheme()" class="w-10 h-5 bg-slate-700 rounded-full relative transition-colors focus:outline-none">
+                    <span class="absolute left-1 top-1 w-3 h-3 bg-white rounded-full transition-transform"></span>
+                </button>
+            </div>
         `;
         container.appendChild(settingsDiv);
 
@@ -215,6 +221,12 @@ window.Auth = {
                     if (window.SC) window.SC.render();
                 }
             });
+        }
+        
+        const themeToggle = settingsDiv.querySelector('#settings-theme-toggle');
+        if (themeToggle && document.body.classList.contains('light-mode')) {
+            themeToggle.classList.replace('bg-slate-700', 'bg-emerald-500');
+            themeToggle.querySelector('span').classList.add('translate-x-5');
         }
     },
 
@@ -341,5 +353,12 @@ window.Auth = {
         } catch (err) {
             this.handleError(err);
         }
+    },
+    
+    toggleTheme: function() {
+        const isLight = document.body.classList.toggle('light-mode');
+        localStorage.setItem('mm_theme', isLight ? 'light' : 'dark');
+        this.renderProfile(document.getElementById('profile-content'));
+        if (window.SC) window.SC.render();
     }
 };

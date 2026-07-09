@@ -2140,7 +2140,7 @@ ${innerHtml}
         const actionsHtml = `
             <div class="flex w-full justify-end items-center gap-2">
                 <button id="portal-btn-cancel" class="border border-slate-700 hover:bg-slate-850 text-slate-300 text-[10px] font-bold py-2 px-4 rounded-lg transition-colors uppercase tracking-wide">Cancel</button>
-                <button id="portal-btn-submit" class="bg-indigo-650 hover:bg-indigo-500 text-white text-[10px] font-bold py-2 px-4 rounded-lg transition-colors shadow-lg shadow-indigo-950/20 uppercase tracking-wide">Link Page</button>
+                <button id="portal-btn-submit" class="bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold py-2 px-4 rounded-lg transition-colors shadow-lg shadow-indigo-950/20 uppercase tracking-wide">Link Page</button>
             </div>
         `;
 
@@ -2220,7 +2220,7 @@ ${innerHtml}
 
                     const addOption = (pageObj) => {
                         const b = document.createElement('button');
-                        b.className = "text-left w-full px-3 py-2 text-[10px] font-medium text-slate-300 hover:bg-indigo-650 hover:text-white flex items-center justify-between transition-colors border-none bg-transparent cursor-pointer";
+                        b.className = "text-left w-full px-3 py-2 text-[10px] font-medium text-slate-300 hover:bg-indigo-600 hover:text-white flex items-center justify-between transition-colors border-none bg-transparent cursor-pointer";
                         const pageTypeStr = pageObj.meta.type || 'generic';
                         const escapedTitle = this.escapeHTML(pageObj.meta.title);
                         b.innerHTML = `<span class="truncate flex-1 font-bold">${escapedTitle}</span><span class="text-[9px] text-slate-500 uppercase tracking-wider">${pageTypeStr}</span>`;
@@ -2365,6 +2365,20 @@ ${innerHtml}
         
         if (targetPortal) {
             this.kernel.state.session.selectedId = targetPortal.id;
+            
+            // Expand all ancestors to ensure the portal is visible
+            let currentId = targetPortal.id;
+            let parentLink = this.kernel.state.links.find(l => l.target === currentId);
+            while (parentLink) {
+                const parentNode = this.kernel.state.nodes.find(n => n.id === parentLink.source);
+                if (parentNode) {
+                    if (parentNode.data) parentNode.data.collapsed = false;
+                    currentId = parentNode.id;
+                    parentLink = this.kernel.state.links.find(l => l.target === currentId);
+                } else {
+                    break;
+                }
+            }
         } else {
             this.kernel.state.session.selectedId = null;
         }
@@ -2410,7 +2424,7 @@ ${innerHtml}
         const actionsHtml = `
             <div class="flex w-full justify-end items-center gap-2">
                 <button id="clip-btn-cancel" class="border border-slate-700 hover:bg-slate-850 text-slate-300 text-[10px] font-bold py-2 px-4 rounded-lg transition-colors uppercase tracking-wide">Cancel</button>
-                <button id="clip-btn-submit" class="bg-indigo-650 hover:bg-indigo-500 text-white text-[10px] font-bold py-2 px-4 rounded-lg transition-colors shadow-lg shadow-indigo-950/20 uppercase tracking-wide">Clip Branch</button>
+                <button id="clip-btn-submit" class="bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold py-2 px-4 rounded-lg transition-colors shadow-lg shadow-indigo-950/20 uppercase tracking-wide">Clip Branch</button>
             </div>
         `;
         
@@ -4745,7 +4759,7 @@ ${innerHtml}
                     text = hasTarget ? 'Enter Portal' : 'Set Target';
                     themeClasses = hasTarget 
                         ? 'bg-emerald-600 hover:bg-emerald-500 border-emerald-400 text-emerald-100 hover:text-white shadow-[0_0_15px_rgba(16,185,129,0.4)]'
-                        : 'bg-purple-650 hover:bg-purple-500 border-purple-400 text-purple-100 hover:text-white shadow-[0_0_15px_rgba(168,85,247,0.4)]';
+                        : 'bg-purple-600 hover:bg-purple-500 border-purple-400 text-purple-100 hover:text-white shadow-[0_0_15px_rgba(168,85,247,0.4)]';
                 }
             } else if (type === 'person-root') {
                 action = () => this.setView('person');
@@ -4820,7 +4834,7 @@ ${innerHtml}
             if (!options) {
                 action = () => this.actionExitPortal();
                 text = 'Exit Portal ❮';
-                themeClasses = 'bg-purple-650 hover:bg-purple-500 border-purple-400 text-purple-100 hover:text-white shadow-[0_0_15px_rgba(168,85,247,0.4)]';
+                themeClasses = 'bg-purple-600 hover:bg-purple-500 border-purple-400 text-purple-100 hover:text-white shadow-[0_0_15px_rgba(168,85,247,0.4)]';
                 options = [
                     { text: 'Exit Portal ❮', action: () => this.actionExitPortal() }
                 ];
@@ -4857,7 +4871,7 @@ ${innerHtml}
                 const optBtn = document.createElement('button');
                 optBtn.className = `w-full text-left text-xs p-2 rounded-xl transition-all cursor-pointer bg-transparent border-none ${
                     idx === this.selectedSmartOptionIdx 
-                        ? 'bg-gradient-to-r from-indigo-650 to-indigo-550 text-white font-bold shadow-[0_0_12px_rgba(79,70,229,0.4)]' 
+                        ? 'bg-gradient-to-r from-indigo-600 to-indigo-500 text-white font-bold shadow-[0_0_12px_rgba(79,70,229,0.4)]' 
                         : 'text-slate-450 hover:bg-slate-900 hover:text-slate-200'
                 }`;
                 optBtn.innerHTML = opt.text;
@@ -4899,7 +4913,7 @@ ${innerHtml}
                     } else if (buttonText.includes('Enter Portal')) {
                         themeClasses = 'bg-emerald-600 hover:bg-emerald-500 border-emerald-400 text-emerald-100 hover:text-white shadow-[0_0_15px_rgba(16,185,129,0.4)]';
                     } else if (buttonText.includes('Set Target') || buttonText.includes('Configure Portal') || buttonText.includes('Exit Portal')) {
-                        themeClasses = 'bg-purple-650 hover:bg-purple-500 border-purple-400 text-purple-100 hover:text-white shadow-[0_0_15px_rgba(168,85,247,0.4)]';
+                        themeClasses = 'bg-purple-600 hover:bg-purple-500 border-purple-400 text-purple-100 hover:text-white shadow-[0_0_15px_rgba(168,85,247,0.4)]';
                     } else if (buttonText.includes('Visual Editor') || buttonText.includes('Preview Page') || buttonText.includes('Download Code')) {
                         themeClasses = 'bg-sky-600 hover:bg-sky-500 border-sky-400 text-sky-100 hover:text-white shadow-[0_0_15px_rgba(14,165,233,0.4)]';
                     } else if (buttonText.includes('Run Chain') || buttonText.includes('View Profile') || buttonText.includes('Export CV')) {
@@ -5406,7 +5420,7 @@ ${innerHtml}
                             actionsHtml: `
                                 <button class="discard-btn px-4 py-2 border border-slate-700 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg transition-colors font-bold text-[11px] uppercase tracking-wider">Discard</button>
                                 <button class="keep-btn px-4 py-2 border border-slate-700 hover:bg-slate-850 text-slate-300 hover:text-white rounded-lg transition-colors font-bold text-[11px] uppercase tracking-wider">Keep Editing</button>
-                                <button class="save-btn px-4 py-2 bg-indigo-650 hover:bg-indigo-500 text-white rounded-lg transition-colors font-bold text-[11px] uppercase tracking-wider shadow-lg">Save & Load</button>
+                                <button class="save-btn px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors font-bold text-[11px] uppercase tracking-wider shadow-lg">Save & Load</button>
                             `,
                             onRender: (el, clsConfirm) => {
                                 el.querySelector('.discard-btn').onclick = () => clsConfirm('discard');
@@ -5777,7 +5791,7 @@ ${innerHtml}
 
         const actionsHtml = `
             <div class="flex w-full justify-end items-center gap-2">
-                <button id="copy-modal-submit" class="bg-indigo-650 hover:bg-indigo-500 text-white text-[10px] font-bold py-2 px-4 rounded-lg transition-colors shadow-lg shadow-indigo-950/20 uppercase tracking-wide">Copy Page</button>
+                <button id="copy-modal-submit" class="bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold py-2 px-4 rounded-lg transition-colors shadow-lg shadow-indigo-950/20 uppercase tracking-wide">Copy Page</button>
             </div>
         `;
 
@@ -5888,7 +5902,7 @@ ${innerHtml}
                                 <div class="flex flex-col gap-3 font-sans text-slate-350 text-xs">
                                     <p class="leading-relaxed">This space contains portals linking to other pages. Since you are copying it to a different project, select how these portal connections should be handled:</p>
                                     <div class="flex flex-col gap-2.5 mt-1 select-none">
-                                        <div id="option-keep" class="option-card p-3 rounded-xl border border-indigo-650 bg-indigo-950/20 text-slate-200 cursor-pointer transition-all flex items-start gap-3 shadow-lg shadow-indigo-950/20">
+                                        <div id="option-keep" class="option-card p-3 rounded-xl border border-indigo-600 bg-indigo-950/20 text-slate-200 cursor-pointer transition-all flex items-start gap-3 shadow-lg shadow-indigo-950/20">
                                             <div class="radio-indicator w-4 h-4 rounded-full border-2 border-indigo-500 flex items-center justify-center shrink-0 mt-0.5">
                                                 <div class="radio-fill w-2 h-2 rounded-full bg-indigo-500"></div>
                                             </div>
@@ -5898,7 +5912,7 @@ ${innerHtml}
                                             </div>
                                         </div>
                                         <div id="option-clone" class="option-card p-3 rounded-xl border border-slate-800 hover:border-slate-700 bg-slate-950/40 text-slate-300 cursor-pointer transition-all flex items-start gap-3">
-                                            <div class="radio-indicator w-4 h-4 rounded-full border-2 border-slate-650 flex items-center justify-center shrink-0 mt-0.5">
+                                            <div class="radio-indicator w-4 h-4 rounded-full border-2 border-slate-600 flex items-center justify-center shrink-0 mt-0.5">
                                                 <div class="radio-fill w-2 h-2 rounded-full bg-transparent"></div>
                                             </div>
                                             <div class="flex-1">
@@ -5907,7 +5921,7 @@ ${innerHtml}
                                             </div>
                                         </div>
                                         <div id="option-clear" class="option-card p-3 rounded-xl border border-slate-800 hover:border-slate-700 bg-slate-950/40 text-slate-300 cursor-pointer transition-all flex items-start gap-3">
-                                            <div class="radio-indicator w-4 h-4 rounded-full border-2 border-slate-650 flex items-center justify-center shrink-0 mt-0.5">
+                                            <div class="radio-indicator w-4 h-4 rounded-full border-2 border-slate-600 flex items-center justify-center shrink-0 mt-0.5">
                                                 <div class="radio-fill w-2 h-2 rounded-full bg-transparent"></div>
                                             </div>
                                             <div class="flex-1">
@@ -5921,7 +5935,7 @@ ${innerHtml}
                             actionsHtml: `
                                 <div class="flex w-full justify-between items-center gap-2">
                                     <button class="cancel-btn border border-slate-700 hover:bg-slate-850 text-slate-300 text-[10px] font-bold py-2 px-4 rounded-lg transition-colors uppercase tracking-wide">Cancel Copy</button>
-                                    <button class="confirm-btn bg-indigo-650 hover:bg-indigo-500 text-white text-[10px] font-bold py-2 px-5 rounded-lg transition-colors shadow-lg shadow-indigo-950/20 uppercase tracking-wide">Confirm Copy</button>
+                                    <button class="confirm-btn bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold py-2 px-5 rounded-lg transition-colors shadow-lg shadow-indigo-950/20 uppercase tracking-wide">Confirm Copy</button>
                                 </div>
                             `,
                             onRender: (el, cls) => {
@@ -5936,13 +5950,13 @@ ${innerHtml}
                                         const radioFill = c.querySelector('.radio-fill');
                                         const radioInd = c.querySelector('.radio-indicator');
                                         if (opt === selected) {
-                                            c.className = "option-card p-3 rounded-xl border border-indigo-650 bg-indigo-950/20 text-slate-200 cursor-pointer transition-all flex items-start gap-3 shadow-lg shadow-indigo-950/20";
+                                            c.className = "option-card p-3 rounded-xl border border-indigo-600 bg-indigo-950/20 text-slate-200 cursor-pointer transition-all flex items-start gap-3 shadow-lg shadow-indigo-950/20";
                                             radioFill.className = "radio-fill w-2 h-2 rounded-full bg-indigo-500";
                                             radioInd.className = "radio-indicator w-4 h-4 rounded-full border-2 border-indigo-500 flex items-center justify-center shrink-0 mt-0.5";
                                         } else {
                                             c.className = "option-card p-3 rounded-xl border border-slate-800 hover:border-slate-700 bg-slate-950/40 text-slate-300 cursor-pointer transition-all flex items-start gap-3";
                                             radioFill.className = "radio-fill w-2 h-2 rounded-full bg-transparent";
-                                            radioInd.className = "radio-indicator w-4 h-4 rounded-full border-2 border-slate-650 flex items-center justify-center shrink-0 mt-0.5";
+                                            radioInd.className = "radio-indicator w-4 h-4 rounded-full border-2 border-slate-600 flex items-center justify-center shrink-0 mt-0.5";
                                         }
                                     });
                                 };
@@ -6067,7 +6081,7 @@ ${innerHtml}
 
         options.forEach(opt => {
             const b = document.createElement('button');
-            b.className = `text-left w-full px-3 py-2 text-[10px] font-medium flex flex-col transition-colors border-none bg-transparent cursor-pointer ${opt.enabled ? 'text-slate-300 hover:bg-indigo-650 hover:text-white' : 'text-slate-600 cursor-not-allowed'}`;
+            b.className = `text-left w-full px-3 py-2 text-[10px] font-medium flex flex-col transition-colors border-none bg-transparent cursor-pointer ${opt.enabled ? 'text-slate-300 hover:bg-indigo-600 hover:text-white' : 'text-slate-600 cursor-not-allowed'}`;
             b.disabled = !opt.enabled;
             b.innerHTML = `
                 <div class="flex justify-between items-center w-full font-bold">

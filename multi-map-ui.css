@@ -9,6 +9,8 @@
     --glass-border: rgba(56, 189, 248, 0.2);
     --text-main: #f8fafc;
     --text-muted: #94a3b8;
+    --node-bg: rgba(30, 41, 59, 0.95);
+    --edge-color: rgba(148, 163, 184, 0.6);
 }
 
 body {
@@ -58,7 +60,24 @@ body {
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
     background: #334155;
-    border-radius: 3px;
+    border-radius: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #475569;
+}
+
+/* Light mode scrollbars */
+body.light-mode .custom-scrollbar::-webkit-scrollbar-track,
+body.light-mode .no-scrollbar::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.05) !important;
+}
+body.light-mode .custom-scrollbar::-webkit-scrollbar-thumb,
+body.light-mode .no-scrollbar::-webkit-scrollbar-thumb {
+    background: #cbd5e1 !important;
+}
+body.light-mode .custom-scrollbar::-webkit-scrollbar-thumb:hover,
+body.light-mode .no-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8 !important;
 }
 
 /* --- MAP LAYERS --- */
@@ -82,7 +101,7 @@ body {
 }
 
 .edge-vis {
-    stroke: rgba(148, 163, 184, 0.6);
+    stroke: var(--edge-color);
     stroke-width: 1.5px;
     transition: stroke 0.3s;
 }
@@ -96,7 +115,7 @@ body {
     position: absolute;
     width: 72px;
     height: 72px;
-    background: rgba(30, 41, 59, 0.95);
+    background: var(--node-bg);
     border: 1px solid var(--glass-border);
     border-radius: 50%;
     display: flex;
@@ -367,4 +386,246 @@ body {
     transform: translateX(-50%) rotate(-45deg);
     top: 130%;
     left: 130%;
+}
+
+/* --- LIGHT MODE --- */
+body.light-mode {
+    --bg-deep: #fafaf9; 
+    --bg-nebula: #fafaf9; 
+    --glass-panel: #ffffff;
+    --glass-border: #d6d3d1; 
+    --text-main: #1c1917; 
+    --text-muted: #78716c; 
+    --glow-primary: #059669; 
+    --glow-accent: #f59e0b; 
+    --node-bg: #ffffff;
+    --edge-color: #a8a29e;
+}
+
+body.light-mode .node {
+    background-color: #ffffff !important;
+    filter: drop-shadow(0 4px 6px rgba(0,0,0,0.05)) drop-shadow(0 10px 15px rgba(0,0,0,0.1));
+    border-color: #e7e5e4 !important;
+}
+
+body.light-mode .bg-slate-950,
+body.light-mode .bg-slate-900 {
+    background-color: var(--glass-panel) !important;
+}
+
+body.light-mode .bg-slate-900\/50,
+body.light-mode .bg-slate-950\/50,
+body.light-mode .bg-slate-900\/60,
+body.light-mode .bg-slate-950\/60,
+body.light-mode .bg-slate-900\/40,
+body.light-mode .bg-slate-900\/20,
+body.light-mode .bg-slate-950\/70,
+body.light-mode .bg-slate-950\/80,
+body.light-mode .bg-slate-800\/50,
+body.light-mode .bg-slate-700\/50 {
+    background-color: rgba(255, 255, 255, 0.7) !important;
+}
+
+body.light-mode .bg-slate-900\/90,
+body.light-mode .bg-slate-950\/90,
+body.light-mode .bg-slate-900\/95,
+body.light-mode .bg-slate-950\/95 {
+    background-color: rgba(241, 245, 249, 0.95) !important;
+}
+
+/* Explicit panel overrides to guarantee light glass */
+body.light-mode #profile-drawer,
+body.light-mode #sidebar-data-manager,
+body.light-mode #sidebar-content,
+body.light-mode #ai-chat-panel,
+body.light-mode #ai-tooltip-bar,
+body.light-mode #ai-toggle-btn,
+body.light-mode .radial-btn,
+body.light-mode #sidebar-content button.bg-slate-800.rounded-full,
+body.light-mode #sidebar-content button.bg-slate-700.rounded-full,
+body.light-mode .bg-slate-900,
+body.light-mode .bg-slate-950 {
+    background-color: rgba(241, 245, 249, 0.95) !important;
+    border-color: var(--glass-border) !important;
+    color: #1c1917 !important;
+}
+
+body.light-mode .radial-btn:hover,
+body.light-mode #sidebar-content button.rounded-full.bg-slate-800:hover,
+body.light-mode #sidebar-content button.rounded-full.bg-slate-700:hover {
+    background-color: var(--glow-primary) !important;
+    color: #ffffff !important;
+}
+
+#ai-chat-panel {
+    z-index: 45 !important;
+}
+
+/* Global input overrides for light mode */
+body.light-mode input,
+body.light-mode textarea,
+body.light-mode select {
+    background-color: #ffffff !important;
+    border-color: #d6d3d1 !important;
+    color: #1c1917 !important;
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);
+}
+
+body.light-mode .radial-btn:hover {
+    background-color: var(--glow-primary) !important;
+    color: #ffffff !important;
+}
+
+body.light-mode .node-label {
+    background: rgba(255, 255, 255, 0.9) !important;
+    color: #44403c !important;
+    border: 1px solid #d6d3d1;
+}
+
+/* Force text-white to dark UNLESS it's on a button or colored bg */
+body.light-mode .text-white:not(button):not(a):not(.radial-btn):not(.bg-indigo-600):not(.bg-emerald-600):not(.bg-slate-800):not(.bg-slate-900):not(.bg-black) {
+    color: var(--text-main) !important;
+}
+
+/* Fix DM Buttons (Make them distinct light buttons) */
+body.light-mode #sidebar-data-manager button.bg-slate-900,
+body.light-mode #sidebar-data-manager button.bg-slate-800,
+body.light-mode #sidebar-data-manager label.bg-slate-800,
+body.light-mode #sidebar-data-manager button.bg-slate-850 {
+    background-color: #ffffff !important;
+    color: #1c1917 !important;
+    border-color: #d6d3d1 !important;
+}
+body.light-mode #sidebar-data-manager button.bg-slate-900 .text-slate-300,
+body.light-mode #sidebar-data-manager button.bg-slate-900.text-slate-300,
+body.light-mode #sidebar-data-manager button.bg-slate-800 .text-slate-400,
+body.light-mode #sidebar-data-manager button.bg-slate-800.text-slate-400,
+body.light-mode #sidebar-data-manager label.bg-slate-800 .text-slate-300 {
+    color: #1c1917 !important;
+}
+
+/* Page/Asset Card info/state tags */
+body.light-mode .bg-slate-900\/60.text-slate-500,
+body.light-mode .bg-emerald-900\/50,
+body.light-mode .bg-blue-900\/50 {
+    background-color: #e2e8f0 !important;
+    color: #334155 !important;
+    border-color: #cbd5e1 !important;
+}
+body.light-mode .bg-emerald-900\/50.text-emerald-400 { color: #059669 !important; background-color: #d1fae5 !important; border-color: #a7f3d0 !important; }
+body.light-mode .bg-blue-900\/50.text-blue-400 { color: #0284c7 !important; background-color: #e0f2fe !important; border-color: #bae6fd !important; }
+
+/* Keep colored buttons readable */
+body.light-mode button.text-white,
+body.light-mode a.text-white,
+body.light-mode .bg-indigo-600,
+body.light-mode .bg-indigo-500,
+body.light-mode .bg-emerald-600,
+body.light-mode .bg-emerald-500,
+body.light-mode .bg-amber-500,
+body.light-mode .bg-rose-600,
+body.light-mode .bg-sky-600,
+body.light-mode .bg-purple-600,
+body.light-mode .bg-black,
+body.light-mode button.bg-slate-800,
+body.light-mode button.bg-slate-700,
+body.light-mode button.bg-slate-900 {
+    color: #ffffff !important; /* Default for filled buttons outside DM */
+}
+
+body.light-mode .hover\:bg-sky-600:hover,
+body.light-mode .hover\:bg-purple-600:hover,
+body.light-mode .hover\:bg-emerald-600:hover,
+body.light-mode .hover\:bg-amber-600:hover,
+body.light-mode .hover\:bg-rose-600:hover,
+body.light-mode .hover\:bg-indigo-600:hover,
+body.light-mode .hover\:bg-red-600:hover {
+    color: #ffffff !important;
+}
+
+body.light-mode #smart-portal-btn {
+    color: #4f46e5 !important; /* text-indigo-600 */
+    border-color: #6366f1 !important; /* border-indigo-500 */
+}
+
+/* Fix yellow warning text */
+body.light-mode .text-amber-500,
+body.light-mode .text-yellow-500,
+body.light-mode .text-amber-400,
+body.light-mode .text-amber-300 {
+    color: #d97706 !important; /* amber-600 */
+}
+
+/* Fix amber buttons */
+body.light-mode .bg-amber-900\/40 {
+    background-color: #fef3c7 !important; /* amber-100 */
+    border-color: #fcd34d !important; /* amber-300 */
+}
+
+/* Fix AI Chat Bubbles and Text */
+body.light-mode .bg-sky-900\/40 { background-color: #e0f2fe !important; border-color: #bae6fd !important; }
+body.light-mode .bg-slate-800\/80 { background-color: #f1f5f9 !important; border-color: #cbd5e1 !important; }
+body.light-mode .text-sky-100 { color: #0369a1 !important; }
+body.light-mode .text-slate-450, body.light-mode .text-slate-350 { color: #334155 !important; }
+body.light-mode .text-emerald-400 { color: #059669 !important; }
+body.light-mode .border-sky-700\/50, body.light-mode .border-indigo-700\/30 { border-color: #cbd5e1 !important; }
+
+body.light-mode .text-slate-400,
+body.light-mode .text-slate-300,
+body.light-mode .text-slate-500,
+body.light-mode .text-slate-200 {
+    color: #334155 !important; /* higher contrast slate-700 */
+}
+
+body.light-mode span.bg-slate-800,
+body.light-mode div.bg-slate-800:not(button),
+body.light-mode .bg-slate-700:not(button):not(a) {
+    background-color: #f1f5f9 !important; /* light slate */
+    border-color: #cbd5e1 !important;
+    color: #475569 !important;
+}
+body.light-mode span.bg-slate-800.text-slate-400 {
+    color: #475569 !important;
+}
+
+body.light-mode .border-slate-800,
+body.light-mode .border-slate-700,
+body.light-mode .border-slate-800\/80,
+body.light-mode .border-emerald-900\/50,
+body.light-mode .hover\:border-emerald-700\/50:hover {
+    border-color: var(--glass-border) !important;
+}
+
+body.light-mode .hover\:bg-slate-800:hover:not(button):not(a) {
+    background-color: rgba(241, 245, 249, 0.8) !important; /* light slate-100 glass for section cards */
+}
+body.light-mode button.hover\:bg-slate-800:hover,
+body.light-mode a.hover\:bg-slate-800:hover,
+body.light-mode .hover\:bg-slate-900:hover {
+    background-color: #e2e8f0 !important; /* Gentle slate-200 instead of dark 334155 */
+    color: #0f172a !important;
+}
+body.light-mode .hover\:bg-slate-700:hover {
+    background-color: #cbd5e1 !important; /* slate-300 */
+}
+body.light-mode .text-slate-400.hover\:text-white:hover,
+body.light-mode .text-slate-300.hover\:text-white:hover,
+body.light-mode .text-slate-500.hover\:text-white:hover {
+    color: var(--glow-primary) !important;
+}
+
+/* Fix profile settings panel in light mode */
+body.light-mode #profile-drawer .bg-slate-900 {
+    background-color: #f5f5f4 !important;
+    border-color: #d6d3d1 !important;
+}
+body.light-mode #profile-drawer input[type="number"] {
+    background-color: #ffffff !important;
+    border-color: #d6d3d1 !important;
+    color: #1c1917 !important;
+}
+
+/* Ensure AI chatbox occludes radial menu */
+#ai-chat-panel {
+    z-index: 100 !important;
 }
