@@ -700,8 +700,9 @@ class SandboxController {
             if (!isNodeRoot) {
                 actions.push({ icon: '👆', action: 'SelectParent', title: hasParent ? 'Change Parent' : 'Select Parent' });
             }
-            // Add "Go to Directory" action for root nodes on non-master pages
-            if (isNodeRoot && !isMaster) {
+            // Add "Project Directory" action for root nodes on all pages except Project Directory itself
+            const isProjDir = this.kernel.state.meta && this.kernel.state.meta.title === "Project Directory";
+            if (isNodeRoot && !isProjDir) {
                 actions.push({ icon: '🏠', action: 'GoToDirectory', title: 'Project Directory' });
             }
             if (node.type === 'portal') {
@@ -1006,6 +1007,16 @@ class SandboxController {
                 } else {
                     this.showToast(`Parent changed successfully.`, "success");
                     this.kernel.saveHistory();
+
+                    if (this.kernel.state.meta && (this.kernel.state.meta.isMaster === true || this.kernel.state.meta.title === "Project Directory" || this.kernel.state.meta.type === "file-root")) {
+                        this.kernel.syncFoldersFromMasterMap(this.kernel.state).then(() => {
+                            if (this.dom.dataManager && !this.dom.dataManager.classList.contains('translate-x-full')) {
+                                if (window.Auth && window.Auth.renderDataManager) {
+                                    window.Auth.renderDataManager(document.getElementById('data-manager-content'));
+                                }
+                            }
+                        }).catch(console.error);
+                    }
                 }
             }
         }
@@ -1063,9 +1074,15 @@ class SandboxController {
         });
         if (ok) {
             this.kernel.deleteNode(tgt);
+            if (this.kernel.state.meta && (this.kernel.state.meta.isMaster === true || this.kernel.state.meta.title === "Project Directory")) {
+                await this.kernel.syncFoldersFromMasterMap(this.kernel.state);
+            }
         }
     }
-    actionToggleCollapse(id) { const tgt = id || this.kernel.state.session.selectedId; this.kernel.toggleCollapse(tgt); }
+    actionToggleCollapse(id) { 
+        const tgt = id || this.kernel.state.session.selectedId; 
+        this.kernel.toggleCollapse(tgt); 
+    }
     
     async actionAddChild(id, forcedType) {
         let pid = id || this.kernel.state.session.selectedId;
@@ -1130,6 +1147,11 @@ class SandboxController {
             this.kernel.addConnection(pid, child.id);
             this.kernel.selectNode(child.id); 
             p.data.collapsed = false; 
+
+            if (this.kernel.state.meta && (this.kernel.state.meta.isMaster === true || this.kernel.state.meta.title === "Project Directory")) {
+                await this.kernel.syncFoldersFromMasterMap(this.kernel.state);
+            }
+
             return child;
         }
         return null;
@@ -1532,6 +1554,16 @@ class SandboxController {
         }
 
         if (targetNode) {
+            // Auto‑expand collapsed folder nodes and sync project state
+            if (targetNode.type === 'file-folder' && targetNode.data && targetNode.data.collapsed) {
+                targetNode.data.collapsed = false;
+                if (this.state.meta && (this.state.meta.isMaster === true || this.state.meta.title === 'Project Directory' || this.state.meta.type === 'file-root')) {
+                    const projId = this.state.meta.project_id || this.activeProjectId;
+                    if (projId && targetNode.content) {
+                        this.updateProjectFolder(projId, targetNode.content, { isExpanded: true }).catch(console.error);
+                    }
+                }
+            }
             this.kernel.selectNode(targetNode.id);
             this.render();
         }
@@ -2263,6 +2295,16 @@ ${innerHtml}
 
                         const newPage = await this.kernel.createPage(this.kernel.activeProjectId, title, type);
                         if (newPage) {
+                            // Inherit folder assignment if the parent map is in a folder
+                            const proj = this.kernel.getProjects().find(p => p.project_id === this.kernel.activeProjectId);
+                            const currentMapId = this.kernel.state.map_id;
+                            const isProjectDir = this.kernel.state.meta && (this.kernel.state.meta.isMaster === true || this.kernel.state.meta.title === 'Project Directory' || this.kernel.state.meta.type === 'file-root');
+                            
+                            if (!isProjectDir && proj && proj.page_assignments && proj.page_assignments[currentMapId]) {
+                                const currentFolderId = proj.page_assignments[currentMapId];
+                                await this.kernel.assignPageToFolder(this.kernel.activeProjectId, newPage.map_id, currentFolderId);
+                            }
+
                             node.content = newPage.map_id;
                             this.kernel.saveCurrentMapToLibrary();
                             
@@ -2295,9 +2337,14 @@ ${innerHtml}
     }
 
     async actionGoToDirectory(nodeId) {
-        const projectId = this.kernel.activeProjectId;
+        let projectId = this.kernel.state.meta && this.kernel.state.meta.project_id;
+        if (!projectId) projectId = this.kernel.activeProjectId;
         if (!projectId) return;
-        // Ensure master map exists then navigate to it via portal history (Esc returns)
+
+        // Remember the map we are coming from so we can focus its portal
+        const currentMapId = this.kernel.state.map_id;
+
+        // Ensure master map exists then navigate to it
         const masterMap = await this.kernel.getOrCreateMasterMap(projectId);
         if (!masterMap) {
             alert('No project directory found.');
@@ -2306,7 +2353,22 @@ ${innerHtml}
         // Retrieve full saved state for the master map
         const lib = this.kernel.getLibrary();
         const masterState = lib.find(m => m.map_id === masterMap.map_id) || masterMap;
-        this.kernel.enterPortal(masterState);
+        
+        // Clear portal history and load the project directory directly
+        this.kernel.portalHistory = [];
+        this.kernel.loadMapState(masterState);
+        
+        // Find the portal node corresponding to the page we just left
+        const targetPortal = this.kernel.state.nodes.find(n => 
+            (n.type === 'portal' || n.type === 'smart-portal') && n.content === currentMapId
+        );
+        
+        if (targetPortal) {
+            this.kernel.state.session.selectedId = targetPortal.id;
+        } else {
+            this.kernel.state.session.selectedId = null;
+        }
+        
         this.setView('map');
         this.actionCloseDataManager();
         this.render();
@@ -2691,6 +2753,16 @@ ${innerHtml}
                         this.kernel.saveHistory();
                         this.kernel.notify();
                         this.showToast(`Moved "${sourceRootNode?.title || 'untitled'}" under "${node.title || 'untitled'}".`, "success");
+
+                        if (this.kernel.state.meta && (this.kernel.state.meta.isMaster === true || this.kernel.state.meta.title === "Project Directory" || this.kernel.state.meta.type === "file-root")) {
+                            this.kernel.syncFoldersFromMasterMap(this.kernel.state).then(() => {
+                                if (this.dom.dataManager && !this.dom.dataManager.classList.contains('translate-x-full')) {
+                                    if (window.Auth && window.Auth.renderDataManager) {
+                                        window.Auth.renderDataManager(document.getElementById('data-manager-content'));
+                                    }
+                                }
+                            }).catch(console.error);
+                        }
                     }
                     return;
                 }
@@ -3615,6 +3687,134 @@ ${innerHtml}
         this.actionCreatePageCustom();
     }
 
+    async actionCreateProjectFolder() {
+        const activeProjId = this.kernel.activeProjectId;
+        if (!activeProjId) return;
+
+        const folderName = await this.actionPrompt({
+            title: "New Folder",
+            label: "Enter a name for the new folder:",
+            defaultValue: "New Folder"
+        });
+
+        if (folderName) {
+            await this.kernel.createProjectFolder(activeProjId, folderName, null);
+            await this.kernel.syncProjectMasterMap(activeProjId);
+            this.render();
+        }
+    }
+
+    async actionRenameProjectFolder(folderId) {
+        const activeProjId = this.kernel.activeProjectId;
+        if (!activeProjId) return;
+
+        const proj = this.kernel.getProjects().find(p => p.project_id === activeProjId);
+        const folder = proj?.folders?.find(f => f.id === folderId);
+        if (!folder) return;
+
+        const newName = await this.actionPrompt({
+            title: "Rename Folder",
+            label: "Enter a new name for the folder:",
+            defaultValue: folder.name
+        });
+
+        if (newName && newName !== folder.name) {
+            await this.kernel.updateProjectFolder(activeProjId, folderId, { name: newName });
+            await this.kernel.syncProjectMasterMap(activeProjId);
+            this.render();
+        }
+    }
+
+    async actionDeleteProjectFolder(folderId) {
+        const activeProjId = this.kernel.activeProjectId;
+        if (!activeProjId) return;
+
+        const proj = this.kernel.getProjects().find(p => p.project_id === activeProjId);
+        const folder = proj?.folders?.find(f => f.id === folderId);
+        if (!folder) return;
+
+        const modalId = `modal-${Math.random().toString(36).substr(2, 9)}`;
+        const modalHtml = `
+            <div id="${modalId}" class="fixed inset-0 bg-slate-950/80 backdrop-blur flex items-center justify-center z-50 p-4">
+                <div class="bg-slate-900 border border-slate-700 rounded-xl shadow-2xl w-full max-w-sm flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                    <div class="p-4 border-b border-slate-800 bg-slate-800/50">
+                        <h3 class="text-white font-bold text-lg flex items-center gap-2">🗑️ Delete Folder</h3>
+                    </div>
+                    <div class="p-5 text-slate-300 text-sm leading-relaxed">
+                        Are you sure you want to delete <span class="text-white font-bold">'${folder.name}'</span>?<br><br>
+                        <div class="bg-rose-500/10 border border-rose-500/20 p-3 rounded-lg text-rose-400 text-xs">
+                            <span class="font-bold">Warning:</span> All items within this folder will be moved to the root. The items themselves will not be deleted.
+                        </div>
+                    </div>
+                    <div class="p-4 bg-slate-900 border-t border-slate-800 flex justify-end gap-3">
+                        <button id="cancel-${modalId}" class="px-4 py-2 text-sm font-bold text-slate-400 hover:text-white transition-colors">Cancel</button>
+                        <button id="confirm-${modalId}" class="px-4 py-2 text-sm font-bold bg-rose-600 hover:bg-rose-500 text-white rounded-lg shadow-lg shadow-rose-900/20 transition-all">Delete Folder</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        
+        return new Promise((resolve) => {
+            document.getElementById(`cancel-${modalId}`).onclick = () => {
+                document.getElementById(modalId).remove();
+                resolve();
+            };
+            document.getElementById(`confirm-${modalId}`).onclick = async () => {
+                document.getElementById(modalId).remove();
+                await this.kernel.deleteProjectFolder(activeProjId, folderId);
+                await this.kernel.syncProjectMasterMap(activeProjId);
+                this.render();
+                resolve();
+            };
+        });
+    }
+
+    async actionToggleFolder(folderId) {
+        const activeProjId = this.kernel.activeProjectId;
+        if (!activeProjId) return;
+
+        const proj = this.kernel.getProjects().find(p => p.project_id === activeProjId);
+        const folder = proj?.folders?.find(f => f.id === folderId);
+        if (folder) {
+            await this.kernel.updateProjectFolder(activeProjId, folderId, { isExpanded: folder.isExpanded === false });
+            await this.kernel.syncProjectMasterMap(activeProjId);
+            this.render();
+        }
+    }
+
+    async actionAssignToFolder(event, folderId) {
+        event.preventDefault();
+        const activeProjId = this.kernel.activeProjectId;
+        if (!activeProjId) return;
+
+        const draggedData = event.dataTransfer.getData("text/plain");
+        if (!draggedData) return;
+
+        if (draggedData.startsWith('page:')) {
+            const pageId = draggedData.substring(5);
+            await this.kernel.assignPageToFolder(activeProjId, pageId, folderId || null);
+            await this.kernel.syncProjectMasterMap(activeProjId);
+            this.render();
+        } else if (draggedData.startsWith('folder:')) {
+            const draggedFolderId = draggedData.substring(7);
+            if (draggedFolderId !== folderId) {
+                // Prevent cyclic assignment
+                let current = folderId;
+                const proj = this.kernel.getProjects().find(p => p.project_id === activeProjId);
+                while(current) {
+                    if (current === draggedFolderId) return; // Cycle!
+                    const f = proj?.folders?.find(x => x.id === current);
+                    current = f ? f.parent_id : null;
+                }
+                
+                await this.kernel.updateProjectFolder(activeProjId, draggedFolderId, { parent_id: folderId || null });
+                await this.kernel.syncProjectMasterMap(activeProjId);
+                this.render();
+            }
+        }
+    }
+
     actionPromptRenamePage(pageId) {
         this.actionOpenPageSettings(pageId);
     }
@@ -4454,6 +4654,13 @@ ${innerHtml}
             if (['portal', 'smart-portal', 'person-root', 'web-root', 'prompt-root', 'agent-root'].includes(type) || type.startsWith('web-')) {
                 return true;
             }
+            
+            // Also show for any root node except the Project Directory itself
+            const isRoot = type === 'root' || type.endsWith('-root') || (selectedNode.data && selectedNode.data.isCore);
+            const isProjDir = this.kernel.state.meta && this.kernel.state.meta.title === "Project Directory";
+            if (isRoot && !isProjDir) {
+                return true;
+            }
         }
         return !!canExit;
     }
@@ -4597,14 +4804,14 @@ ${innerHtml}
             ];
         }
 
-        // For root nodes on non-master pages: inject "Go to Directory" into options cascade
+        // For root nodes on all pages except Project Directory: inject "Project Directory" into options cascade
         if (selectedNode && this.viewMode === 'map') {
             const nodeType = selectedNode.type;
             const isRoot = nodeType === 'root' || nodeType.endsWith('-root') || (selectedNode.data && selectedNode.data.isCore);
-            const isMasterPage = this.kernel.state.meta && (this.kernel.state.meta.isMaster === true || this.kernel.state.meta.title === "Project Directory");
-            if (isRoot && !isMasterPage) {
+            const isProjDir = this.kernel.state.meta && this.kernel.state.meta.title === "Project Directory";
+            if (isRoot && !isProjDir) {
                 if (!options) options = [];
-                options.push({ text: 'Go to Directory 🏠', action: () => this.actionGoToDirectory(selectedNode.id) });
+                options.push({ text: 'Project Directory 🏠', action: () => this.actionGoToDirectory(selectedNode.id) });
             }
         }
 
@@ -4623,6 +4830,14 @@ ${innerHtml}
         }
 
         this.smartButtonOptions = options;
+
+        if (!action && options && options.length > 0) {
+            action = options[0].action;
+            text = options[0].text;
+            if (text.includes('Project Directory')) {
+                themeClasses = 'bg-slate-700 hover:bg-slate-600 border-slate-500 text-slate-100 hover:text-white shadow-[0_0_15px_rgba(100,116,139,0.4)]';
+            }
+        }
 
         const tutorialActive = window.Tutorials && window.Tutorials.isActive;
 

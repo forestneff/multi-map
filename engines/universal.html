@@ -485,6 +485,14 @@
                     }
                 });
                 contentAreaHtml += `</div>`;
+            } else if (node.type === 'file-folder') {
+                contentAreaHtml = `
+                    <div class="flex flex-col h-full bg-slate-900/50 border border-slate-800 rounded-lg p-3 text-center justify-center items-center gap-2">
+                        <span class="text-3xl">📁</span>
+                        <span class="text-slate-400 text-xs">Project Directory Folder</span>
+                        <span class="text-slate-600 text-[10px] font-mono mt-2">ID: ${escapeHTML(node.content || 'Pending Sync')}</span>
+                    </div>
+                `;
             } else {
                 contentAreaHtml = `<textarea id="raw-content" class="${contentClass}" oninput="notifyUpdate('${node.id}', { content: this.value })">${node.content || ''}</textarea>`;
             }
@@ -596,16 +604,28 @@
                     // For root nodes: list all root types
                     const group = document.createElement('optgroup');
                     group.label = "MAP ROOT TYPES";
-                    Object.keys(schema.definitions).forEach(t => {
-                        const isTargetRoot = t.endsWith('-root') || t === 'root';
-                        if (!isTargetRoot) return;
-                        
-                        const def = schema.definitions[t];
+                    
+                    const isMasterMap = state.meta && (state.meta.isMaster === true || state.meta.title === "Project Directory");
+                    if (isMasterMap) {
+                        const def = schema.definitions['file-root'];
                         const opt = document.createElement('option');
-                        opt.value = t; opt.textContent = `${def.icon} ${def.label}`;
-                        if (node.type === t) opt.selected = true;
+                        opt.value = 'file-root'; opt.textContent = `${def.icon} ${def.label}`;
+                        opt.selected = true;
                         group.appendChild(opt);
-                    });
+                        sel.disabled = true;
+                        sel.classList.add('opacity-50', 'cursor-not-allowed');
+                    } else {
+                        Object.keys(schema.definitions).forEach(t => {
+                            const isTargetRoot = t.endsWith('-root') || t === 'root';
+                            if (!isTargetRoot) return;
+                            
+                            const def = schema.definitions[t];
+                            const opt = document.createElement('option');
+                            opt.value = t; opt.textContent = `${def.icon} ${def.label}`;
+                            if (node.type === t) opt.selected = true;
+                            group.appendChild(opt);
+                        });
+                    }
                     sel.appendChild(group);
                 } else {
                     // For regular nodes: split into type-specific and generic groups

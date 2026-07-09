@@ -34,6 +34,7 @@ class PhaseRegistrySystem {
                     window.SC.render();
                 } else if (type === 'UPDATE_NODE' && id && event.data.data) {
                     window.SC.kernel.updateNode(id, event.data.data);
+                    if (window.SC.saveHistoryState) window.SC.saveHistoryState();
                     window.SC.render();
                 } else if (type === 'ACTION' && event.data.action) {
                     const action = event.data.action;
@@ -298,21 +299,26 @@ class DataPhaseEngine extends PhaseEngineBase {
                                     ` : ''}
                                 </div>
                                 
-                                <!-- Bottom Section: Pages Panel -->
+                                <!-- Bottom Section: Content Panel -->
                                 <div class="flex flex-col gap-2 min-h-0 bg-slate-950/20 p-3 rounded-xl border border-slate-800/40 shrink-0">
                                     <div class="flex justify-between items-center shrink-0 gap-2 cursor-pointer select-none hover:opacity-85 transition-opacity" onclick="SC.registry.get('data').toggle('pagesSub')">
                                         <div class="flex flex-col min-w-0">
                                             <h3 class="text-sky-400 font-bold uppercase text-[10px] tracking-widest flex items-center gap-1.5">
-                                                📄 Pages <span class="text-slate-500 text-[8px]">${this.ui.pagesSub ? '▼' : '▶'}</span>
+                                                📄 Content <span class="text-slate-500 text-[8px]">${this.ui.pagesSub ? '▼' : '▶'}</span>
                                             </h3>
                                             <span class="text-[8px] text-slate-400 truncate font-semibold">Active Project: ${activeProjTitle}</span>
                                         </div>
-                                        <button onclick="event.stopPropagation(); SC.actionCreatePage()" class="text-[9px] bg-sky-600 hover:bg-sky-500 text-white px-2 py-0.5 rounded transition-all font-bold uppercase tracking-wider shrink-0">+ New Page</button>
+                                        <div class="flex gap-1 shrink-0">
+                                            <button onclick="event.stopPropagation(); SC.actionCreateProjectFolder()" class="text-[9px] bg-emerald-600 hover:bg-emerald-500 text-white px-2 py-0.5 rounded transition-all font-bold uppercase tracking-wider">+ New Folder</button>
+                                            <button onclick="event.stopPropagation(); SC.actionCreatePage()" class="text-[9px] bg-sky-600 hover:bg-sky-500 text-white px-2 py-0.5 rounded transition-all font-bold uppercase tracking-wider">+ New Page</button>
+                                        </div>
                                     </div>
-                                    ${this.ui.pagesSub ? `
-                                    <div class="flex flex-col gap-2 overflow-y-auto max-h-[250px] custom-scrollbar pr-1" id="pages-list-container">
-                                        ${(!sortedPages || sortedPages.length === 0) ? '<div class="text-center text-slate-600 text-xs py-10 italic border border-dashed border-slate-800 rounded-lg">No pages found in this project.</div>' : ''}
-                                        ${sortedPages.map(page => {
+                                    ${this.ui.pagesSub ? (() => {
+                                        const activeProject = projects.find(p => p.project_id === activeProjId);
+                                        const folders = activeProject?.folders || [];
+                                        const pageAssignments = activeProject?.page_assignments || {};
+                                        
+                                        const renderPageItem = (page, indentClass = "") => {
                                             const isCurrentPage = page.map_id === state.map_id;
                                             const meta = page.meta || {};
                                             const title = meta.title || "Untitled Page";
@@ -320,21 +326,16 @@ class DataPhaseEngine extends PhaseEngineBase {
                                             const nodeCount = page.nodes ? page.nodes.length : 0;
                                             const isMaster = meta.isMaster === true;
                                             
-                                            // Determine storage target icon
-                                            let storageIcon = '☁️'; // Default firebase
+                                            let storageIcon = '☁️';
                                             if (meta.storage_target === 'google_drive') storageIcon = '🔺';
                                             else if (meta.storage_target === 'local_os') storageIcon = '📁';
 
-                                            // Determine accents/highlights (purple highlights for master, sky for current active map, normal borders otherwise)
                                             const accentColor = isMaster ? 'purple' : 'sky';
                                             const cardClasses = isMaster
                                                 ? 'bg-purple-950/20 border-purple-800/80 shadow-[0_0_15px_rgba(139,92,246,0.15)] ring-1 ring-purple-500/20 hover:border-purple-500'
                                                 : (isCurrentPage ? 'bg-slate-900/50 border-sky-500 shadow-[0_0_15px_rgba(14,165,233,0.15)] ring-1 ring-sky-500/10 hover:border-sky-500/80' : 'border-slate-800/80 hover:border-sky-500/40');
                                                 
-                                            const leftBarClasses = isMaster
-                                                ? 'bg-purple-500'
-                                                : 'bg-sky-500';
-                                                
+                                            const leftBarClasses = isMaster ? 'bg-purple-500' : 'bg-sky-500';
                                             const leftBarOpacity = (isMaster || isCurrentPage) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100';
 
                                             const activeBadge = isCurrentPage ? `<span class="text-[8px] bg-${accentColor}-950/60 border border-${accentColor}-600 text-${accentColor}-400 px-1.5 py-0.5 rounded-full shrink-0 uppercase tracking-widest font-extrabold">● Active</span>` : '';
@@ -345,13 +346,12 @@ class DataPhaseEngine extends PhaseEngineBase {
                                             const typeBadgeColor = isMaster ? 'bg-purple-950 border-purple-800/60 text-purple-300' : 'bg-slate-900 border border-slate-800 text-slate-400';
 
                                             return `
-                                            <div id="page-item-${page.map_id}" class="bg-slate-950/70 border rounded-xl overflow-hidden group relative transition-all shrink-0 ${cardClasses}" 
+                                            <div id="page-item-${page.map_id}" class="bg-slate-950/70 border rounded-xl overflow-hidden group relative transition-all shrink-0 ${cardClasses} ${indentClass}" 
                                                  draggable="true" 
-                                                 ondragstart="event.dataTransfer.setData('text/plain', '${page.map_id}')">
+                                                 ondragstart="event.dataTransfer.setData('text/plain', 'page:${page.map_id}')">
                                                 <div class="absolute left-0 top-0 bottom-0 w-1 ${leftBarClasses} rounded-l-xl ${leftBarOpacity} transition-opacity"></div>
                                                 
                                                 <div class="p-3 flex flex-col gap-2">
-                                                    <!-- Title row -->
                                                     <div class="flex justify-between items-start gap-2">
                                                         <div class="font-bold text-xs text-slate-200 truncate flex-1 flex items-center gap-1.5 min-w-0 cursor-grab active:cursor-grabbing">
                                                             <span title="Storage Target" class="shrink-0">${storageIcon}</span>
@@ -363,7 +363,6 @@ class DataPhaseEngine extends PhaseEngineBase {
                                                         <span class="text-[9px] text-slate-500 bg-slate-900/60 px-1.5 py-0.5 rounded border border-slate-800/60 shrink-0">${nodeCount} nodes</span>
                                                     </div>
                                                     
-                                                    <!-- Action row: Load + Settings modal trigger -->
                                                     <div class="flex gap-1.5 ${isCurrentPage ? 'opacity-100' : 'opacity-60 group-hover:opacity-100'} transition-opacity">
                                                         ${loadBtn}
                                                         <button onclick="SC.actionOpenPageSettings('${page.map_id}')" class="bg-slate-900 hover:bg-slate-700 text-slate-300 hover:text-white text-[9px] py-1 px-2.5 rounded font-bold transition-all border border-slate-800/80 shadow" title="Settings & Sharing">⚙️ Settings</button>
@@ -371,9 +370,69 @@ class DataPhaseEngine extends PhaseEngineBase {
                                                 </div>
                                             </div>
                                             `;
-                                        }).join('')}
-                                    </div>
-                                    ` : ''}
+                                        };
+
+                                        const renderFolder = (folderId, depth = 0) => {
+                                            const folder = folders.find(f => f.id === folderId);
+                                            if (!folder) return '';
+                                            const indentClass = depth > 0 ? `ml-4 border-l-2 border-emerald-900/30 pl-2` : '';
+                                            
+                                            const childFolders = folders.filter(f => f.parent_id === folderId);
+                                            const childPages = sortedPages.filter(p => pageAssignments[p.map_id] === folderId && !p.meta?.isMaster);
+                                            
+                                            const isExpanded = folder.isExpanded !== false;
+                                            
+                                            return `
+                                            <div class="flex flex-col gap-1 ${indentClass}" 
+                                                 ondragover="event.preventDefault(); event.stopPropagation(); this.classList.add('bg-emerald-900/20')"
+                                                 ondragleave="event.stopPropagation(); this.classList.remove('bg-emerald-900/20')"
+                                                 ondrop="event.stopPropagation(); this.classList.remove('bg-emerald-900/20'); SC.actionAssignToFolder(event, '${folderId}')">
+                                                <div class="flex items-center justify-between group bg-slate-900/40 border border-emerald-900/50 p-2 rounded hover:border-emerald-700/50 transition-colors" draggable="true" ondragstart="event.dataTransfer.setData('text/plain', 'folder:${folderId}')">
+                                                    <div class="flex items-center gap-2 cursor-pointer flex-1" onclick="SC.actionToggleFolder('${folderId}')">
+                                                        <span class="text-[10px] text-emerald-500">${isExpanded ? '▼' : '▶'}</span>
+                                                        <span class="text-xs font-bold text-emerald-400">📁 ${folder.name}</span>
+                                                    </div>
+                                                    <div class="opacity-0 group-hover:opacity-100 flex gap-1 transition-opacity">
+                                                        <button onclick="SC.actionRenameProjectFolder('${folderId}')" class="text-[9px] text-slate-400 hover:text-white px-1">✏️</button>
+                                                        <button onclick="SC.actionDeleteProjectFolder('${folderId}')" class="text-[9px] text-rose-400 hover:text-rose-300 px-1">🗑️</button>
+                                                    </div>
+                                                </div>
+                                                ${isExpanded ? `
+                                                <div class="flex flex-col gap-2 mt-1">
+                                                    ${childFolders.map(f => renderFolder(f.id, depth + 1)).join('')}
+                                                    ${childPages.map(p => renderPageItem(p, "ml-4 border-l border-emerald-900/30")).join('')}
+                                                </div>
+                                                ` : ''}
+                                            </div>
+                                            `;
+                                        };
+
+                                        const rootFolders = folders.filter(f => !f.parent_id);
+                                        const rootPages = sortedPages.filter(p => !pageAssignments[p.map_id] && !p.meta?.isMaster);
+                                        const masterPages = sortedPages.filter(p => p.meta?.isMaster);
+                                        
+                                        if (rootFolders.length === 0 && rootPages.length === 0 && masterPages.length === 0) {
+                                            return '<div class="text-center text-slate-600 text-xs py-10 italic border border-dashed border-slate-800 rounded-lg">No content found in this project.</div>';
+                                        }
+
+                                        setTimeout(() => {
+                                            const activePage = document.getElementById(`page-item-${state.map_id}`);
+                                            if (activePage) {
+                                                activePage.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                                            }
+                                        }, 100);
+
+                                        return `
+                                        <div class="flex flex-col gap-2 overflow-y-auto max-h-[350px] custom-scrollbar pr-1" id="pages-list-container"
+                                             ondragover="event.preventDefault(); this.classList.add('bg-slate-900/20')"
+                                             ondragleave="this.classList.remove('bg-slate-900/20')"
+                                             ondrop="this.classList.remove('bg-slate-900/20'); SC.actionAssignToFolder(event, '')">
+                                            ${masterPages.map(p => renderPageItem(p)).join('')}
+                                            ${rootFolders.map(f => renderFolder(f.id)).join('')}
+                                            ${rootPages.map(p => renderPageItem(p)).join('')}
+                                        </div>
+                                        `;
+                                    })() : ''}
                                 </div>
 
                                 <!-- Project Export/Import Panel -->
