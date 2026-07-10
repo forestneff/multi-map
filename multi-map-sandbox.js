@@ -3672,6 +3672,7 @@ ${innerHtml}
             page.meta.share_expires = shareExpires;
             
             if (this.kernel.state && this.kernel.state.map_id === mapId) {
+                if (!this.kernel.state.meta) this.kernel.state.meta = {};
                 this.kernel.state.meta.shared = true;
                 this.kernel.state.meta.share_token = token;
                 this.kernel.state.meta.share_expires = shareExpires;
@@ -5674,6 +5675,13 @@ ${innerHtml}
                                 page.meta.shared = true;
                                 page.meta.share_token = token;
                                 page.meta.share_expires = shareExpires;
+
+                                if (this.kernel.state && this.kernel.state.map_id === page.map_id) {
+                                    if (!this.kernel.state.meta) this.kernel.state.meta = {};
+                                    this.kernel.state.meta.shared = true;
+                                    this.kernel.state.meta.share_token = token;
+                                    this.kernel.state.meta.share_expires = shareExpires;
+                                }
                                 await this.kernel.saveConstellationToLibrary(page);
                                 
                                 this.render();

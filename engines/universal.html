@@ -134,6 +134,7 @@
             }
 
             const isMatch = activeHighlight && activeHighlight.nodeId === node.id;
+            const isProjDir = state.meta && (state.meta.isMaster === true || state.meta.title === "Project Directory");
 
             // --- FAST DOM DIFFING ---
             if (renderedNodeId === node.id && renderedNodeType === node.type) {
@@ -251,7 +252,6 @@
                 
                 // Sync Sharing section in fast DOM diffing
                 const isNodeRoot = node.type === 'root' || node.type.endsWith('-root') || (node.data && node.data.isCore);
-                const isProjDir = state.meta && (state.meta.isMaster === true || state.meta.title === "Project Directory");
                 if (isNodeRoot && !isProjDir) {
                     const inspectorShare = container.querySelector('#inspector-share-section');
                     if (inspectorShare) {
