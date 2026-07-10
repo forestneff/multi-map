@@ -103,7 +103,7 @@ class IframePhaseEngine extends PhaseEngineBase {
 
         if (!this.iframe) {
             this.iframe = document.createElement('iframe');
-            this.iframe.src = this.url;
+            this.iframe.src = this.url + (this.url.includes('?') ? '&' : '?') + 't=' + Date.now();
             this.iframe.className = "w-full h-full border-none";
         }
 
