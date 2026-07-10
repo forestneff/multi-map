@@ -145,8 +145,7 @@
                 $('map-meta').textContent = owner + exp;
 
                 // Load read-only Multi-Map structures
-                const Kernel = new MultiMapKernel();
-                Kernel.isReadOnly = true;
+                const Kernel = new MultiMapKernel(true);
                 Kernel.state = Kernel.ensureSchema(mapData);
                 Kernel.activeProjectId = mapData.meta?.project_id || 'shared_project';
 

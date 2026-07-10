@@ -41,10 +41,10 @@ class MultiMapKernel {
     static FREE_LIMIT = 500 * 1024 * 1024; // 500MB limit for Free tier
     static PRO_LIMIT = 1024 * 1024 * 1024; // 1GB limit for Pro tier
 
-    constructor() {
+    constructor(isReadOnly = false) {
         this.config = { autoSaveInterval: 2000, autoFocus: true, autoCollapseDepth: 3 };
         this.bridge = new HostBridge();
-        this.isReadOnly = false;
+        this.isReadOnly = isReadOnly;
         
         this.listeners = [];
         this.history = [];
@@ -2970,6 +2970,7 @@ class MultiMapKernel {
     }
 
     async syncWithFirestore(uid) {
+        if (this.isReadOnly) return;
         try {
             console.log("Syncing with Firestore for user:", uid);
             

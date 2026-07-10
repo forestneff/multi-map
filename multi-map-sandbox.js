@@ -2429,6 +2429,7 @@ ${innerHtml}
     }
 
     async actionGoToDirectory(nodeId) {
+        if (this.kernel.isReadOnly) return;
         let projectId = this.kernel.state.meta && this.kernel.state.meta.project_id;
         if (!projectId) projectId = this.kernel.activeProjectId;
         if (!projectId) return;
@@ -5044,7 +5045,7 @@ ${innerHtml}
             const nodeType = selectedNode.type;
             const isRoot = nodeType === 'root' || nodeType.endsWith('-root') || (selectedNode.data && selectedNode.data.isCore);
             const isProjDir = this.kernel.state.meta && this.kernel.state.meta.title === "Project Directory";
-            if (isRoot && !isProjDir) {
+            if (isRoot && !isProjDir && !this.kernel.isReadOnly) {
                 if (!options) options = [];
                 options.push({ text: 'Project Directory 🏠', action: () => this.actionGoToDirectory(selectedNode.id) });
             }
