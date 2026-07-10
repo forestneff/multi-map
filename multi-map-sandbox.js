@@ -5578,6 +5578,14 @@ ${innerHtml}
                 // Sharing block update handler
                 const updateShareSection = () => {
                     const shareSection = backdrop.querySelector('#settings-share-section');
+                    if (isMaster) {
+                        shareSection.innerHTML = `
+                            <div class="text-slate-500 text-center py-2 text-[10px] font-medium">
+                                The Project Directory itself cannot be shared. Please share individual pages.
+                            </div>
+                        `;
+                        return;
+                    }
                     const isLoggedIn = !!(window.FirebaseAuth?.currentUser);
                     
                     if (!isLoggedIn) {
