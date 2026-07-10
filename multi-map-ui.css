@@ -726,8 +726,9 @@ body.light-mode button.bg-purple-500 {
     }
     body.sandbox-page #ai-chat-container #ai-tooltip-bar {
         bottom: calc(1.5rem + 56px) !important;
-        left: 1.5rem !important;
         right: 5.75rem !important;
+        left: auto !important;
+        width: auto !important;
         max-width: calc(100vw - 7.25rem) !important;
     }
     body.sandbox-page #ai-chat-container #ai-chat-panel {
@@ -753,8 +754,9 @@ body.light-mode button.bg-purple-500 {
     }
     body.sandbox-page #sidebar.keyboard-visible ~ #ai-chat-container #ai-tooltip-bar {
         bottom: 1.5rem !important;
-        left: 1.5rem !important;
         right: 5.75rem !important;
+        left: auto !important;
+        width: auto !important;
         max-width: calc(100vw - 7.25rem) !important;
     }
     body.sandbox-page #sidebar.keyboard-visible ~ #ai-chat-container #ai-chat-panel {
