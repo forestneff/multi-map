@@ -249,6 +249,68 @@
                     setTimeout(() => titleEl.classList.remove('ring-2', 'ring-sky-500', 'shadow-[0_0_15px_rgba(56,189,248,0.5)]', 'animate-pulse'), 3000);
                 }
                 
+                // Sync Sharing section in fast DOM diffing
+                const isNodeRoot = node.type === 'root' || node.type.endsWith('-root') || (node.data && node.data.isCore);
+                if (isNodeRoot) {
+                    const inspectorShare = container.querySelector('#inspector-share-section');
+                    if (inspectorShare) {
+                        const isShared = state.meta && state.meta.shared;
+                        const token = state.meta && state.meta.share_token;
+                        const expires = state.meta && state.meta.share_expires;
+                        
+                        const renderShareHtml = () => {
+                            if (isShared) {
+                                const shareUrl = `${window.location.origin}/view.html?token=${token}`;
+                                return `
+                                    <div class="flex flex-col gap-2">
+                                        <div class="flex justify-between items-center">
+                                            <span class="text-teal-400 font-bold uppercase text-[9px] tracking-wider">🔗 Active Share Link</span>
+                                            ${expires ? `<span class="text-[9px] text-slate-500">Expires: ${new Date(expires).toLocaleDateString()}</span>` : '<span class="text-[9px] text-slate-500">Permanent</span>'}
+                                        </div>
+                                        <div class="flex flex-col gap-1.5">
+                                            <input readonly value="${shareUrl}" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-1.5 text-[10px] text-slate-400 font-mono outline-none">
+                                            <div class="flex gap-2">
+                                                <button onclick="navigator.clipboard.writeText('${shareUrl}').then(() => { const originalText = this.innerHTML; this.innerHTML = '✨ Copied!'; this.classList.remove('bg-teal-600','hover:bg-teal-500'); this.classList.add('bg-green-600'); setTimeout(() => { this.innerHTML = originalText; this.classList.remove('bg-green-600'); this.classList.add('bg-teal-600','hover:bg-teal-500'); }, 2000); })" class="flex-1 bg-teal-600 hover:bg-teal-500 text-white text-[10px] font-bold py-1.5 px-3 rounded-lg transition-colors flex items-center justify-center gap-1">
+                                                    <span>📋</span> Copy
+                                                </button>
+                                                <button onclick="notifyAction('REVOKE_SHARE_PAGE', '${state.map_id}')" class="flex-1 bg-rose-900/60 hover:bg-rose-800 text-rose-300 text-[10px] font-bold py-1.5 px-3 rounded-lg transition-colors flex items-center justify-center gap-1">
+                                                    <span>🚫</span> Revoke
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                `;
+                            } else {
+                                return `
+                                    <div class="flex flex-col gap-2">
+                                        <span class="text-slate-400 font-bold uppercase text-[9px] tracking-wider block">🔗 Share Map Publicly</span>
+                                        <div class="flex gap-2 items-center">
+                                            <select id="inspector-share-expiry" class="bg-slate-950 border border-slate-800 rounded-lg p-1.5 text-xs text-slate-200 outline-none flex-1 min-w-0">
+                                                <option value="1">No Expiry (Permanent)</option>
+                                                <option value="2">7 Days Expiry</option>
+                                                <option value="3">30 Days Expiry</option>
+                                                <option value="4">90 Days Expiry</option>
+                                            </select>
+                                            <button onclick="notifyAction('SHARE_PAGE', '${state.map_id}', document.getElementById('inspector-share-expiry').value)" class="bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-bold p-2 rounded-lg transition-colors shrink-0 uppercase tracking-wide flex items-center justify-center gap-1 shadow-md shadow-indigo-950/30" title="Publish Share Link">
+                                                <span>🚀</span> <span class="hidden sm:inline">Publish</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                `;
+                            }
+                        };
+                        
+                        const currentToken = inspectorShare.dataset.token || '';
+                        const currentShared = inspectorShare.dataset.shared === 'true';
+                        
+                        if (currentShared !== !!isShared || currentToken !== (token || '')) {
+                            inspectorShare.dataset.shared = !!isShared;
+                            inspectorShare.dataset.token = token || '';
+                            inspectorShare.innerHTML = renderShareHtml();
+                        }
+                    }
+                }
+
                 const actionsContainer = container.querySelector('#node-actions-container');
                 if (actionsContainer) {
                     const isLinking = state.session.linkingMode; // Assumes parent passes this in state!
@@ -583,6 +645,45 @@
                         <div class="flex flex-col gap-1">
                             <label class="text-[9px] font-bold text-slate-500 uppercase">Custom Payload (JSON)</label>
                             <textarea id="rm-payload" oninput="window.updateRootMetadata('${node.id}', 'custom_payload', this.value)" class="w-full bg-slate-900 border border-slate-700 text-cyan-400 p-2 rounded text-xs font-mono focus:border-sky-500 outline-none resize-none min-h-[60px]">${escapeHTML(node.root_metadata && node.root_metadata.custom_payload ? JSON.stringify(node.root_metadata.custom_payload, null, 2) : '{}')}</textarea>
+                        </div>
+
+                        <!-- Sharing Section inside Inspector -->
+                        <div class="h-px bg-slate-800/80 my-2"></div>
+                        <div id="inspector-share-section" class="flex flex-col gap-2 bg-slate-950/40 border border-slate-800/80 rounded-xl p-3" data-shared="${!!(state.meta && state.meta.shared)}" data-token="${(state.meta && state.meta.share_token) || ''}">
+                            ${state.meta && state.meta.shared ? `
+                                <div class="flex flex-col gap-2">
+                                    <div class="flex justify-between items-center">
+                                        <span class="text-teal-400 font-bold uppercase text-[9px] tracking-wider">🔗 Active Share Link</span>
+                                        ${state.meta.share_expires ? `<span class="text-[9px] text-slate-500">Expires: ${new Date(state.meta.share_expires).toLocaleDateString()}</span>` : '<span class="text-[9px] text-slate-500">Permanent</span>'}
+                                    </div>
+                                    <div class="flex flex-col gap-1.5">
+                                        <input readonly value="${window.location.origin}/view.html?token=${state.meta.share_token}" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-1.5 text-[10px] text-slate-400 font-mono outline-none">
+                                        <div class="flex gap-2">
+                                            <button onclick="navigator.clipboard.writeText('${window.location.origin}/view.html?token=${state.meta.share_token}').then(() => { const originalText = this.innerHTML; this.innerHTML = '✨ Copied!'; this.classList.remove('bg-teal-600','hover:bg-teal-500'); this.classList.add('bg-green-600'); setTimeout(() => { this.innerHTML = originalText; this.classList.remove('bg-green-600'); this.classList.add('bg-teal-600','hover:bg-teal-500'); }, 2000); })" class="flex-1 bg-teal-600 hover:bg-teal-500 text-white text-[10px] font-bold py-1.5 px-3 rounded-lg transition-colors flex items-center justify-center gap-1">
+                                                <span>📋</span> Copy
+                                            </button>
+                                            <button onclick="notifyAction('REVOKE_SHARE_PAGE', '${state.map_id}')" class="flex-1 bg-rose-900/60 hover:bg-rose-800 text-rose-300 text-[10px] font-bold py-1.5 px-3 rounded-lg transition-colors flex items-center justify-center gap-1">
+                                                <span>🚫</span> Revoke
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            ` : `
+                                <div class="flex flex-col gap-2">
+                                    <span class="text-slate-400 font-bold uppercase text-[9px] tracking-wider block">🔗 Share Map Publicly</span>
+                                    <div class="flex gap-2 items-center">
+                                        <select id="inspector-share-expiry" class="bg-slate-950 border border-slate-800 rounded-lg p-1.5 text-xs text-slate-200 outline-none flex-1 min-w-0">
+                                            <option value="1">No Expiry (Permanent)</option>
+                                            <option value="2">7 Days Expiry</option>
+                                            <option value="3">30 Days Expiry</option>
+                                            <option value="4">90 Days Expiry</option>
+                                        </select>
+                                        <button onclick="notifyAction('SHARE_PAGE', '${state.map_id}', document.getElementById('inspector-share-expiry').value)" class="bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-bold p-2 rounded-lg transition-colors shrink-0 uppercase tracking-wide flex items-center justify-center gap-1 shadow-md shadow-indigo-950/30" title="Publish Share Link">
+                                            <span>🚀</span> <span class="hidden sm:inline">Publish</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            `}
                         </div>
                     </div>
                     ` : ''}

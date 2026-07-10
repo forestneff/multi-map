@@ -53,6 +53,12 @@ class PhaseRegistrySystem {
                     else if (action === 'CREATE_SUBMAP_AND_LINK' && id && event.data.data) {
                         window.SC.actionSetPortalTarget(id, 'new');
                     }
+                    else if (action === 'SHARE_PAGE' && id) {
+                        window.SC.actionSharePageWithExpiry(id, event.data.data);
+                    }
+                    else if (action === 'REVOKE_SHARE_PAGE' && id) {
+                        window.SC.actionRevokeShare(id);
+                    }
                 }
             }
         });

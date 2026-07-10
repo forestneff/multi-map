@@ -3525,13 +3525,8 @@ ${innerHtml}
      */
     async actionSharePage(mapId) {
         const lib = this.kernel.getLibrary();
-        const page = lib.find(p => p.map_id === mapId);
+        const page = lib.find(p => p.map_id === mapId) || (this.kernel.state && this.kernel.state.map_id === mapId ? this.kernel.state : null);
         if (!page) return alert('Page not found in library.');
-
-        const user = window.FirebaseAuth?.currentUser;
-        if (!user) {
-            return alert('You must be signed in (even as a guest) to share maps.');
-        }
 
         // Expiry modal
         const expiryChoice = await this.showDialogModal({
@@ -3560,6 +3555,19 @@ ${innerHtml}
             }
         });
         if (!expiryChoice) return;
+        await this.actionSharePageWithExpiry(mapId, expiryChoice);
+    }
+
+    async actionSharePageWithExpiry(mapId, expiryChoice) {
+        const lib = this.kernel.getLibrary();
+        const page = lib.find(p => p.map_id === mapId) || (this.kernel.state && this.kernel.state.map_id === mapId ? this.kernel.state : null);
+        if (!page) return alert('Page not found in library.');
+
+        const user = window.FirebaseAuth?.currentUser;
+        if (!user) {
+            return alert('You must be signed in (even as a guest) to share maps.');
+        }
+
         const expiryDays = { '2': 7, '3': 30, '4': 90 }[expiryChoice] || null;
         const shareExpires = expiryDays
             ? new Date(Date.now() + expiryDays * 86400000).toISOString()
@@ -3577,7 +3585,7 @@ ${innerHtml}
         payload.owner_display = user.displayName || user.email || 'Anonymous';
 
         try {
-            const ref = window.Firestore.doc(window.FirebaseDb, 'shared_maps', token);
+            const ref = window.Firestore.doc(window.Firestore.openDb || window.FirebaseDb, 'shared_maps', token);
             await window.Firestore.setDoc(ref, payload);
 
             // Update the map's own metadata in the library
@@ -3585,6 +3593,8 @@ ${innerHtml}
             page.meta.share_token = token;
             page.meta.share_expires = shareExpires;
             await this.kernel.saveConstellationToLibrary(page);
+
+            this.render();
 
             const shareUrl = `${window.location.origin}/view.html?token=${token}`;
             this.showShareLinkPanel(shareUrl, page.meta?.title || 'Untitled');
@@ -3599,13 +3609,20 @@ ${innerHtml}
      */
     async actionRevokeShare(mapId) {
         const lib = this.kernel.getLibrary();
-        const page = lib.find(p => p.map_id === mapId);
+        const page = lib.find(p => p.map_id === mapId) || (this.kernel.state && this.kernel.state.map_id === mapId ? this.kernel.state : null);
         if (!page || !page.meta?.share_token) return;
 
-        if (!confirm(`Revoke the public link for "${page.meta?.title || 'Untitled'}"? The link will stop working immediately.`)) return;
+        const confirmRevoke = await this.actionConfirm({
+            title: "Revoke Share Link",
+            message: `Are you sure you want to revoke the public share link for "${page.meta?.title || 'Untitled'}"? The link will stop working immediately.`,
+            confirmText: "Revoke",
+            cancelText: "Keep Active",
+            isDestructive: true
+        });
+        if (!confirmRevoke) return;
 
         try {
-            const ref = window.Firestore.doc(window.FirebaseDb, 'shared_maps', page.meta.share_token);
+            const ref = window.Firestore.doc(window.Firestore.openDb || window.FirebaseDb, 'shared_maps', page.meta.share_token);
             await window.Firestore.deleteDoc(ref);
 
             page.meta.shared = false;
@@ -3614,9 +3631,11 @@ ${innerHtml}
             await this.kernel.saveConstellationToLibrary(page);
 
             this.render();
+            return true;
         } catch (e) {
             console.error(e);
             alert('Failed to revoke share: ' + e.message);
+            return false;
         }
     }
 
@@ -5496,28 +5515,9 @@ ${innerHtml}
                         };
                         
                         shareSection.querySelector('#settings-btn-revoke').onclick = async () => {
-                            const confirmRevoke = await this.actionConfirm({
-                                title: "Revoke Share Link",
-                                message: `Are you sure you want to revoke the public share link for "${page.meta?.title || 'Untitled'}"? The link will stop working immediately.`,
-                                confirmText: "Revoke",
-                                cancelText: "Keep Active",
-                                isDestructive: true
-                            });
-                            if (!confirmRevoke) return;
-                            
-                            try {
-                                const ref = window.Firestore.doc(window.Firestore.openDb || window.FirebaseDb, 'shared_maps', page.meta.share_token);
-                                await window.Firestore.deleteDoc(ref);
-                                
-                                page.meta.shared = false;
-                                page.meta.share_token = '';
-                                page.meta.share_expires = null;
-                                await this.kernel.saveConstellationToLibrary(page);
-                                this.render();
+                            const success = await this.actionRevokeShare(page.map_id);
+                            if (success) {
                                 updateShareSection();
-                            } catch (e) {
-                                console.error(e);
-                                alert('Failed to revoke share link: ' + e.message);
                             }
                         };
                     } else {

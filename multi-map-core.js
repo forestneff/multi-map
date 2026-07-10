@@ -607,21 +607,114 @@ class MultiMapKernel {
 
     async getOrCreateMasterMap(projectId) {
         const pages = await this.getPagesForProject(projectId);
-        
-        let masterMap = pages.find(p => p.meta && p.meta.isMaster === true);
-        
-        if (!masterMap) {
-            masterMap = pages.find(p => p.meta && p.meta.title === "Project Directory");
-            if (masterMap) {
+        const candidates = pages.filter(p => p.meta && (p.meta.isMaster === true || p.meta.title === "Project Directory"));
+
+        candidates.sort((a, b) => {
+            const aIsMaster = a.meta.isMaster === true;
+            const bIsMaster = b.meta.isMaster === true;
+            if (aIsMaster && !bIsMaster) return -1;
+            if (!aIsMaster && bIsMaster) return 1;
+
+            const aCreated = a.meta.created ? new Date(a.meta.created) : new Date(0);
+            const bCreated = b.meta.created ? new Date(b.meta.created) : new Date(0);
+            return aCreated - bCreated;
+        });
+
+        let masterMap = candidates[0];
+        let masterChanged = false;
+
+        if (masterMap) {
+            if (masterMap.meta.isMaster !== true) {
                 masterMap.meta.isMaster = true;
-                if (masterMap.meta.type === 'file-root') masterMap.meta.type = 'file';
+                masterChanged = true;
+            }
+            if (masterMap.meta.title !== "Project Directory") {
+                masterMap.meta.title = "Project Directory";
+                masterChanged = true;
+            }
+            if (masterMap.meta.type !== "file") {
+                masterMap.meta.type = "file";
+                masterChanged = true;
+            }
+
+            // Consolidate "ghost" directory pages
+            const ghosts = candidates.slice(1);
+            for (const ghost of ghosts) {
+                // Ensure page IDs of ghosts are synced into project page_ids
+                const projects = this.getProjects();
+                const proj = projects.find(p => p.project_id === projectId);
+                if (proj && ghost.nodes) {
+                    ghost.nodes.forEach(node => {
+                        if ((node.type === 'portal' || node.type === 'smart-portal') && node.content) {
+                            if (!proj.page_ids.includes(node.content)) {
+                                proj.page_ids.push(node.content);
+                            }
+                        }
+                    });
+                    await this.saveProject(proj);
+                }
+
+                // 1. Merge folder nodes & portal nodes from ghost
+                if (ghost.nodes) {
+                    masterMap.nodes = masterMap.nodes || [];
+                    ghost.nodes.forEach(node => {
+                        if (node.type === 'file-folder' && node.content) {
+                            const exists = masterMap.nodes.some(n => n.type === 'file-folder' && n.content === node.content);
+                            if (!exists) {
+                                masterMap.nodes.push(JSON.parse(JSON.stringify(node)));
+                                masterChanged = true;
+                            }
+                        } else if ((node.type === 'portal' || node.type === 'smart-portal') && node.content) {
+                            const exists = masterMap.nodes.some(n => (n.type === 'portal' || n.type === 'smart-portal') && n.content === node.content);
+                            if (!exists) {
+                                masterMap.nodes.push(JSON.parse(JSON.stringify(node)));
+                                masterChanged = true;
+                            }
+                        }
+                    });
+                }
+
+                // 2. Merge structural connections
+                if (ghost.connections && ghost.nodes && masterMap.nodes) {
+                    masterMap.connections = masterMap.connections || [];
+                    ghost.connections.forEach(conn => {
+                        if (conn.type === 'structural') {
+                            const ghostFromNode = ghost.nodes.find(n => n.id === conn.from);
+                            const ghostToNode = ghost.nodes.find(n => n.id === conn.to);
+                            if (ghostFromNode && ghostToNode) {
+                                const masterFromNode = masterMap.nodes.find(n => {
+                                    if (ghostFromNode.type === 'file-root') return n.type === 'file-root';
+                                    return n.content === ghostFromNode.content && n.type === ghostFromNode.type;
+                                });
+                                const masterToNode = masterMap.nodes.find(n => {
+                                    return n.content === ghostToNode.content && n.type === ghostToNode.type;
+                                });
+                                if (masterFromNode && masterToNode) {
+                                    const connExists = masterMap.connections.some(c => c.from === masterFromNode.id && c.to === masterToNode.id && c.type === 'structural');
+                                    if (!connExists) {
+                                        masterMap.connections.push({
+                                            id: this.generateId(),
+                                            from: masterFromNode.id,
+                                            to: masterToNode.id,
+                                            type: 'structural'
+                                        });
+                                        masterChanged = true;
+                                    }
+                                }
+                            }
+                        }
+                    });
+                }
+
+                // Delete ghost page
+                await this.deleteGhostPageInternal(projectId, ghost.map_id);
+            }
+
+            if (masterChanged) {
                 await this.savePage(projectId, masterMap.map_id, masterMap);
             }
-        } else if (masterMap.meta.type === 'file-root') {
-            masterMap.meta.type = 'file';
-            await this.savePage(projectId, masterMap.map_id, masterMap);
         }
-        
+
         if (!masterMap) {
             const masterMapId = this.generateId();
             masterMap = {
@@ -643,13 +736,13 @@ class MultiMapKernel {
                     layoutMode: 'organic'
                 }
             };
-            
+
             const projects = this.getProjects();
             const proj = projects.find(p => p.project_id === projectId);
             if (proj) {
                 proj.page_ids.push(masterMapId);
                 proj.updated_at = new Date().toISOString();
-                
+
                 if (this.isUsingCloudVault()) {
                     const uid = window.FirebaseAuth.currentUser.uid;
                     try {
@@ -671,6 +764,51 @@ class MultiMapKernel {
             }
         }
         return masterMap;
+    }
+
+    async deleteGhostPageInternal(projectId, pageId) {
+        if (this.isReadOnly) return;
+
+        // Remove from projects lists
+        const projects = this.getProjects();
+        const proj = projects.find(p => p.project_id === projectId);
+        if (proj) {
+            proj.page_ids = proj.page_ids.filter(id => id !== pageId);
+            if (proj.page_assignments) {
+                delete proj.page_assignments[pageId];
+            }
+            await this.saveProject(proj);
+        }
+
+        if (this.isUsingCloudVault()) {
+            const uid = window.FirebaseAuth.currentUser?.uid;
+            if (uid) {
+                try {
+                    const pageRef = window.Firestore.doc(window.FirebaseDb, "users", uid, "projects", projectId, "pages", pageId);
+                    await window.Firestore.deleteDoc(pageRef);
+                } catch (e) {
+                    console.error("Failed to delete ghost page from Firestore:", e);
+                }
+            }
+            if (this.firestorePagesByProject[projectId]) {
+                this.firestorePagesByProject[projectId] = this.firestorePagesByProject[projectId].filter(p => p.map_id !== pageId);
+            }
+        } else {
+            let lib = this.getLibrary().filter(x => x.map_id !== pageId);
+            this.saveLibrary(lib);
+        }
+
+        // Redirect active state if it was the ghost page
+        if (this.state && this.state.map_id === pageId) {
+            const masterId = this.findMasterMapIdSync(projectId);
+            if (masterId) {
+                const lib = this.getLibrary();
+                const master = lib.find(p => p.map_id === masterId) || (this.firestorePagesByProject[projectId]?.find(p => p.map_id === masterId));
+                if (master) {
+                    this.loadMapState(master, false);
+                }
+            }
+        }
     }
 
     async syncProjectMasterMap(projectId) {
@@ -1399,12 +1537,7 @@ class MultiMapKernel {
         }
 
         // Prune stale portals pointing to maps that no longer exist (for master maps)
-        const isMaster = state.meta && (
-            state.meta.isMaster === true ||
-            state.meta.title === "Project Directory" ||
-            state.meta.type === "file" ||
-            state.meta.type === "file-root"
-        );
+        const isMaster = state.meta && state.meta.isMaster === true;
         
         if (isMaster) {
             const lib = this.getLibrary();
@@ -2080,7 +2213,7 @@ class MultiMapKernel {
 
         if (!snapshot.meta.project_id) return false;
         
-        if (snapshot.meta.isMaster === true || snapshot.meta.title === "Project Directory") {
+        if (snapshot.meta.isMaster === true) {
             // Apply folder sync mutations to the snapshot BEFORE saving
             await this.syncFoldersFromMasterMap(snapshot);
             
@@ -2186,7 +2319,7 @@ class MultiMapKernel {
                 const allPages = this.getLibrary();
                 for (const page of allPages) {
                     if (page.map_id !== id && page.nodes) {
-                        const isMasterPage = page.meta && (page.meta.isMaster === true || page.meta.title === "Project Directory" || page.meta.type === "file-root" || page.meta.type === "file");
+                        const isMasterPage = page.meta && page.meta.isMaster === true;
                         let changed = false;
                         
                         if (isMasterPage) {
@@ -2278,7 +2411,7 @@ class MultiMapKernel {
             const allPages = this.getLibrary();
             for (const page of allPages) {
                 if (page.map_id !== id && page.nodes) {
-                    const isMasterPage = page.meta && (page.meta.isMaster === true || page.meta.title === "Project Directory" || page.meta.type === "file-root" || page.meta.type === "file");
+                    const isMasterPage = page.meta && page.meta.isMaster === true;
                     let changed = false;
                     
                     if (isMasterPage) {
@@ -2695,8 +2828,104 @@ class MultiMapKernel {
                     
                     await window.Firestore.setDoc(projRef, finalProj);
                     
-                    const projPages = migratedLib.filter(m => m && m.map_id && m.meta?.project_id === proj.project_id);
-                    
+                    let projPages = migratedLib.filter(m => m && m.map_id && m.meta?.project_id === proj.project_id);
+
+                    // Fetch existing page documents from Firestore for this project to check for existing master map
+                    let serverMaster = null;
+                    try {
+                        const pagesCol = window.Firestore.collection(window.FirebaseDb, "users", uid, "projects", proj.project_id, "pages");
+                        const pagesSnapshot = await window.Firestore.getDocs(pagesCol);
+                        const serverPages = [];
+                        pagesSnapshot.forEach(doc => serverPages.push(doc.data()));
+                        serverMaster = serverPages.find(p => p.meta && (p.meta.isMaster === true || p.meta.title === "Project Directory"));
+                    } catch (fetchErr) {
+                        console.warn("Failed to check server master map during migration", fetchErr);
+                    }
+
+                    const guestMaster = projPages.find(p => p.meta && (p.meta.isMaster === true || p.meta.title === "Project Directory"));
+
+                    if (serverMaster && guestMaster) {
+                        // Merge guestMaster folders & portals into serverMaster
+                        let serverMasterChanged = false;
+                        if (guestMaster.nodes) {
+                            serverMaster.nodes = serverMaster.nodes || [];
+                            guestMaster.nodes.forEach(node => {
+                                if (node.type === 'file-folder' && node.content) {
+                                    const exists = serverMaster.nodes.some(n => n.type === 'file-folder' && n.content === node.content);
+                                    if (!exists) {
+                                        serverMaster.nodes.push(JSON.parse(JSON.stringify(node)));
+                                        serverMasterChanged = true;
+                                    }
+                                } else if ((node.type === 'portal' || node.type === 'smart-portal') && node.content) {
+                                    const exists = serverMaster.nodes.some(n => (n.type === 'portal' || n.type === 'smart-portal') && n.content === node.content);
+                                    if (!exists) {
+                                        serverMaster.nodes.push(JSON.parse(JSON.stringify(node)));
+                                        serverMasterChanged = true;
+                                    }
+                                }
+                            });
+                        }
+                        if (guestMaster.connections && guestMaster.nodes && serverMaster.nodes) {
+                            serverMaster.connections = serverMaster.connections || [];
+                            guestMaster.connections.forEach(conn => {
+                                if (conn.type === 'structural') {
+                                    const guestFromNode = guestMaster.nodes.find(n => n.id === conn.from);
+                                    const guestToNode = guestMaster.nodes.find(n => n.id === conn.to);
+                                    if (guestFromNode && guestToNode) {
+                                        const serverFromNode = serverMaster.nodes.find(n => {
+                                            if (guestFromNode.type === 'file-root') return n.type === 'file-root';
+                                            return n.content === guestFromNode.content && n.type === guestFromNode.type;
+                                        });
+                                        const serverToNode = serverMaster.nodes.find(n => {
+                                            return n.content === guestToNode.content && n.type === guestToNode.type;
+                                        });
+                                        if (serverFromNode && serverToNode) {
+                                            const connExists = serverMaster.connections.some(c => c.from === serverFromNode.id && c.to === serverToNode.id && c.type === 'structural');
+                                            if (!connExists) {
+                                                serverMaster.connections.push({
+                                                    id: this.generateId(),
+                                                    from: serverFromNode.id,
+                                                    to: serverToNode.id,
+                                                    type: 'structural'
+                                                });
+                                                serverMasterChanged = true;
+                                            }
+                                        }
+                                    }
+                                }
+                            });
+                        }
+
+                        if (serverMasterChanged) {
+                            try {
+                                const serverMasterRef = window.Firestore.doc(window.FirebaseDb, "users", uid, "projects", proj.project_id, "pages", serverMaster.map_id);
+                                await window.Firestore.setDoc(serverMasterRef, serverMaster);
+                            } catch (saveErr) {
+                                console.error("Failed to save merged server master map:", saveErr);
+                            }
+                        }
+
+                        // Update active map ID if it pointed to guest master
+                        if (guestActiveMapId === guestMaster.map_id) {
+                            guestActiveMapId = serverMaster.map_id;
+                        }
+
+                        // Remove guest master from the list of page IDs to upload and from the project list
+                        finalProj.page_ids = finalProj.page_ids.filter(id => id !== guestMaster.map_id);
+                        if (!finalProj.page_ids.includes(serverMaster.map_id)) {
+                            finalProj.page_ids.push(serverMaster.map_id);
+                        }
+
+                        // Filter guestMaster out of projPages so we don't upload it
+                        projPages = projPages.filter(p => p.map_id !== guestMaster.map_id);
+                    } else if (guestMaster) {
+                        // Make sure guestMaster is set to isMaster: true and titled correctly
+                        guestMaster.meta = guestMaster.meta || {};
+                        guestMaster.meta.isMaster = true;
+                        guestMaster.meta.title = "Project Directory";
+                        guestMaster.meta.type = "file";
+                    }
+
                     for (const page of projPages) {
                         try {
                             if (!page.meta) page.meta = {};
@@ -2820,10 +3049,11 @@ class MultiMapKernel {
                     map_id: defaultMapId,
                     meta: { 
                         title: "Project Directory", 
-                        type: "file-root", 
+                        type: "file", 
                         created: new Date().toISOString(),
                         shared: false,
-                        project_id: defaultProjId
+                        project_id: defaultProjId,
+                        isMaster: true
                     },
                     nodes: [{ id: this.generateId(), type: "file-root", title: "Project Directory", data: { x: 0, y: 0, isCore: true } }],
                     connections: [],
@@ -2989,7 +3219,7 @@ class MultiMapKernel {
             nodesToExpand.forEach(n => {
                 if (n.data && n.data.collapsed) {
                     n.data.collapsed = false;
-                    if (n.type === 'file-folder' && this.state.meta && (this.state.meta.isMaster === true || this.state.meta.title === 'Project Directory' || this.state.meta.type === 'file-root')) {
+                    if (n.type === 'file-folder' && this.state.meta && this.state.meta.isMaster === true) {
                         const projId = this.state.meta.project_id || this.activeProjectId;
                         if (projId && n.content) {
                             this.updateProjectFolder(projId, n.content, { isExpanded: true }).catch(console.error);
