@@ -91,7 +91,7 @@
     <div id="view-content" class="hidden"></div>
 
     <script type="module">
-        import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+        import { doc, getDoc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
         import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 
         const $ = id => document.getElementById(id);
@@ -129,56 +129,92 @@
             if (!token) return showError('No share token provided in the URL.', '🔗');
 
             try {
-                const snap = await getDoc(doc(db, 'shared_maps', token));
-                if (!snap.exists()) return showError('This shared map does not exist or has been removed.', '🗑️');
+                const dbRef = doc(db, 'shared_maps', token);
+                let firstLoad = true;
+                let Kernel = null;
+                let Controller = null;
 
-                mapData = snap.data();
-                if (mapData.meta?.share_expires && new Date(mapData.meta.share_expires) < new Date()) {
-                    return showError('This shared link has expired.', '⏳');
-                }
+                onSnapshot(dbRef, (snap) => {
+                    if (!snap.exists()) {
+                        showError('This shared map does not exist or has been removed.', '🗑️');
+                        return;
+                    }
 
-                // Setup DOM titles and headers
-                document.title = (mapData.meta?.title || 'Shared Map') + ' — Multi-Map';
-                $('map-title').textContent = mapData.meta?.title || 'Untitled Map';
-                const owner = mapData.owner_display ? 'Shared by ' + mapData.owner_display : 'Public shared map';
-                const exp = mapData.meta?.share_expires ? ' · expires ' + new Date(mapData.meta.share_expires).toLocaleDateString() : '';
-                $('map-meta').textContent = owner + exp;
+                    mapData = snap.data();
+                    if (mapData.meta?.share_expires && new Date(mapData.meta.share_expires) < new Date()) {
+                        showError('This shared link has expired.', '⏳');
+                        return;
+                    }
 
-                // Load read-only Multi-Map structures
-                const Kernel = new MultiMapKernel(true);
-                Kernel.state = Kernel.ensureSchema(mapData);
-                Kernel.activeProjectId = mapData.meta?.project_id || 'shared_project';
+                    if (firstLoad) {
+                        firstLoad = false;
 
-                const Registry = new PhaseRegistrySystem();
-                Registry.init(Kernel);
+                        // Setup DOM titles and headers
+                        document.title = (mapData.meta?.title || 'Shared Map') + ' — Multi-Map';
+                        $('map-title').textContent = mapData.meta?.title || 'Untitled Map';
+                        const owner = mapData.owner_display ? 'Shared by ' + mapData.owner_display : 'Public shared map';
+                        const exp = mapData.meta?.share_expires ? ' · expires ' + new Date(mapData.meta.share_expires).toLocaleDateString() : '';
+                        $('map-meta').textContent = owner + exp;
 
-                // Setup Sandbox Controller
-                const Controller = new SandboxController(Kernel, Registry);
-                
-                // Bind Globals for sandbox handlers
-                window.Kernel = Kernel;
-                window.SC = Controller;
+                        // Load read-only Multi-Map structures
+                        Kernel = new MultiMapKernel(true);
+                        Kernel.state = Kernel.ensureSchema(mapData);
+                        Kernel.activeProjectId = mapData.meta?.project_id || 'shared_project';
 
-                // INITIATE AI ENGINE
-                window.AI = new MultiMapAI(Kernel, Controller);
+                        const Registry = new PhaseRegistrySystem();
+                        Registry.init(Kernel);
 
-                // Hide loading screen and display stage
-                $('loading-screen').style.display = 'none';
-                $('top-banner').style.display = 'flex';
-                $('top-banner').classList.remove('hidden');
-                $('stage').classList.remove('hidden');
+                        // Setup Sandbox Controller
+                        Controller = new SandboxController(Kernel, Registry);
+                        
+                        // Bind Globals for sandbox handlers
+                        window.Kernel = Kernel;
+                        window.SC = Controller;
 
-                // Render Map Canvas
-                Controller.render();
+                        // INITIATE AI ENGINE
+                        window.AI = new MultiMapAI(Kernel, Controller);
 
-                // Select root node initially if exists
-                if (Kernel.state.nodes.length > 0) {
-                    Kernel.selectNode(Kernel.state.nodes[0].id);
-                    Controller.render();
-                }
+                        // Hide loading screen and display stage
+                        $('loading-screen').style.display = 'none';
+                        $('top-banner').style.display = 'flex';
+                        $('top-banner').classList.remove('hidden');
+                        $('stage').classList.remove('hidden');
 
-                // Bind fork action
-                $('fork-btn').onclick = handleFork;
+                        // Render Map Canvas
+                        Controller.render();
+
+                        // Select root node initially if exists
+                        if (Kernel.state.nodes.length > 0) {
+                            Kernel.selectNode(Kernel.state.nodes[0].id);
+                            Controller.render();
+                        }
+
+                        // Bind fork action
+                        $('fork-btn').onclick = handleFork;
+                    } else {
+                        console.log("Real-time map update received.");
+                        
+                        // Keep current selection and viewport coordinates
+                        const prevSelectedId = Kernel.state.session?.selectedId;
+                        const prevViewport = Kernel.state.session?.viewport;
+
+                        Kernel.state = Kernel.ensureSchema(mapData);
+
+                        if (prevSelectedId && Kernel.state.nodes.some(n => n.id === prevSelectedId)) {
+                            Kernel.state.session.selectedId = prevSelectedId;
+                        }
+                        if (prevViewport) {
+                            Kernel.state.session.viewport = prevViewport;
+                        }
+
+                        Controller.render();
+                    }
+                }, (error) => {
+                    console.error("Real-time snapshot listener failed:", error);
+                    if (firstLoad) {
+                        showError('Could not load the shared map:\n' + error.message);
+                    }
+                });
 
             } catch (e) {
                 console.error(e);

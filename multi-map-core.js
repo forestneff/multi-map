@@ -2069,14 +2069,30 @@ class MultiMapKernel {
                 
                 const snapshot = JSON.parse(c);
                 
-                Promise.all([
+                const promises = [
                     window.Firestore.setDoc(mapRef, snapshot),
                     window.Firestore.setDoc(sessionRef, {
                         activeProjectId: this.activeProjectId,
                         activeMapId: mapId,
                         portalHistory: this.portalHistory
                     })
-                ]).then(() => {
+                ];
+
+                if (snapshot.meta && snapshot.meta.shared && snapshot.meta.share_token) {
+                    try {
+                        const shareRef = window.Firestore.doc(window.FirebaseDb, 'shared_maps', snapshot.meta.share_token);
+                        const sharePayload = JSON.parse(JSON.stringify(snapshot));
+                        delete sharePayload.session;
+                        sharePayload.owner_uid = uid;
+                        sharePayload.owner_display = window.FirebaseAuth.currentUser.displayName || window.FirebaseAuth.currentUser.email || 'Anonymous';
+                        
+                        promises.push(window.Firestore.setDoc(shareRef, sharePayload));
+                    } catch (shareErr) {
+                        console.warn("Failed to update shared map during cloud autosave:", shareErr);
+                    }
+                }
+                
+                Promise.all(promises).then(() => {
                     if (e) {
                         e.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Cloud';
                     }
@@ -2088,6 +2104,19 @@ class MultiMapKernel {
                 });
             } else {
                 localStorage.setItem("mm_core_state", c);
+                const snapshot = JSON.parse(c);
+                if (snapshot.meta && snapshot.meta.shared && snapshot.meta.share_token && window.FirebaseAuth?.currentUser) {
+                    const uid = window.FirebaseAuth.currentUser.uid;
+                    const shareRef = window.Firestore.doc(window.FirebaseDb, 'shared_maps', snapshot.meta.share_token);
+                    const sharePayload = JSON.parse(JSON.stringify(snapshot));
+                    delete sharePayload.session;
+                    sharePayload.owner_uid = uid;
+                    sharePayload.owner_display = window.FirebaseAuth.currentUser.displayName || window.FirebaseAuth.currentUser.email || 'Anonymous';
+                    
+                    window.Firestore.setDoc(shareRef, sharePayload).catch(err => {
+                        console.warn("Failed to update shared map during local autosave:", err);
+                    });
+                }
                 if (e) {
                     setTimeout(() => {
                         e.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Local';
@@ -2114,6 +2143,23 @@ class MultiMapKernel {
         if (this.state && this.state.map_id === snapshot.map_id) {
             if (!this.state.meta) this.state.meta = {};
             this.state.meta.project_id = destProjectId;
+        }
+
+        // Update shared map payload in Firestore if shared
+        if (snapshot.meta && snapshot.meta.shared && snapshot.meta.share_token && window.FirebaseAuth?.currentUser) {
+            try {
+                const uid = window.FirebaseAuth.currentUser.uid;
+                const shareRef = window.Firestore.doc(window.FirebaseDb, 'shared_maps', snapshot.meta.share_token);
+                
+                const sharePayload = JSON.parse(JSON.stringify(snapshot));
+                delete sharePayload.session;
+                sharePayload.owner_uid = uid;
+                sharePayload.owner_display = window.FirebaseAuth.currentUser.displayName || window.FirebaseAuth.currentUser.email || 'Anonymous';
+                
+                await window.Firestore.setDoc(shareRef, sharePayload);
+            } catch (shareErr) {
+                console.warn("Failed to update shared copy in Firestore:", shareErr);
+            }
         }
 
         let exists = false;

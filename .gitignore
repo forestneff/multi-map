@@ -12,10 +12,11 @@ legacy/
 tests/
 .agents/
 skills/how-todo/
+eg
 
 # Firebase backend — deploy via CLI, not git/DreamHost
 functions/
 firestore.rules
 firestore.indexes.json
 firebase.json
-
+
