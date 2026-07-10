@@ -745,6 +745,9 @@ class SandboxController {
                 { icon: '📝', action: 'Edit', title: 'Edit' },
                 { icon: '🔗', action: 'Link', title: linkTitle }
             ];
+            if (node.type === 'prompt-root') {
+                actions.push({ icon: '✍️', action: 'CopyPromptAsText', title: 'Copy as Text' });
+            }
             if (!isPortal) {
                 if (node.type === 'flow-decision') {
                     actions.push({ icon: '✔️', action: 'AddTrueBranch', title: 'Add True Branch' });
@@ -810,8 +813,7 @@ class SandboxController {
                     action: 'TriggerAI', 
                     title: node.content ? 'Trigger AI' : 'Set Target' 
                 });
-            }
-            else {
+            } else {
                 // Clip is only available for non-root, non-portal, non-web nodes
                 const canClip = !isNodeRoot && !node.type.startsWith('web-');
                 if (canClip) {
@@ -2614,6 +2616,81 @@ ${innerHtml}
         }
     }
 
+    compilePromptText(nodeId) {
+        const node = this.kernel.state.nodes.find(n => n.id === nodeId);
+        if (!node || node.type !== 'prompt-root') return null;
+
+        const descendants = new Set();
+        const gather = (id) => {
+            const n = this.kernel.state.nodes.find(x => x.id === id);
+            if (!n || descendants.has(n)) return;
+            descendants.add(n);
+            this.kernel.state.connections.filter(c => c.from === id).forEach(c => gather(c.to));
+        };
+        gather(node.id);
+
+        const order = ['prompt-role', 'prompt-context', 'prompt-goal', 'prompt-instruction', 'prompt-constraint', 'prompt-example', 'prompt-image', 'prompt-data-analytic', 'prompt-text-to-text', 'prompt-code-gen', 'prompt-chain'];
+        const grouped = {};
+        order.forEach(o => grouped[o] = []);
+
+        descendants.forEach(n => {
+            if (grouped[n.type]) grouped[n.type].push(n);
+        });
+
+        let compiledMd = "";
+        order.forEach(type => {
+            if (grouped[type].length > 0) {
+                const sectionName = type.split('-')[1].toUpperCase();
+                compiledMd += `### ${sectionName}\n\n`;
+                grouped[type].forEach(n => {
+                    const content = n.content || n.title || "";
+                    compiledMd += `${content}\n\n`;
+                });
+            }
+        });
+        return compiledMd;
+    }
+
+    async actionCopyPromptAsText(nodeId) {
+        const compiledMd = this.compilePromptText(nodeId);
+        if (!compiledMd) {
+            this.showToast("No prompt elements found connected to this root.", "error");
+            return;
+        }
+
+        try {
+            await (window.navigator || navigator).clipboard.writeText(compiledMd);
+            this.showToast("Prompt copied to clipboard!", "success");
+        } catch (e) {
+            console.error(e);
+            this.showToast("Failed to copy prompt to clipboard.", "error");
+        }
+    }
+
+    async actionDownloadPromptAsMd(nodeId) {
+        const compiledMd = this.compilePromptText(nodeId);
+        if (!compiledMd) {
+            this.showToast("No prompt elements found connected to this root.", "error");
+            return;
+        }
+
+        try {
+            const blob = new Blob([compiledMd], { type: 'text/markdown' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            const node = this.kernel.state.nodes.find(n => n.id === nodeId);
+            const title = (node && node.title ? node.title.replace(/[^a-zA-Z0-9_-]/g, '_') : 'prompt') + '.md';
+            a.href = url;
+            a.download = title;
+            a.click();
+            URL.revokeObjectURL(url);
+            this.showToast("Prompt downloaded as Markdown!", "success");
+        } catch (e) {
+            console.error(e);
+            this.showToast("Failed to download prompt.", "error");
+        }
+    }
+
     async actionPasteBranch(id) {
         if (this.kernel.state.meta && (this.kernel.state.meta.isMaster === true || this.kernel.state.meta.title === "Project Directory")) {
             this.showToast("Copy/paste actions are disabled in the Project Directory.", "error");
@@ -3589,10 +3666,16 @@ ${innerHtml}
             const ref = window.Firestore.doc(window.Firestore.openDb || window.FirebaseDb, 'shared_maps', token);
             await window.Firestore.setDoc(ref, payload);
 
-            // Update the map's own metadata in the library
+            // Update the map's own metadata in the library and active state
             page.meta.shared = true;
             page.meta.share_token = token;
             page.meta.share_expires = shareExpires;
+            
+            if (this.kernel.state && this.kernel.state.map_id === mapId) {
+                this.kernel.state.meta.shared = true;
+                this.kernel.state.meta.share_token = token;
+                this.kernel.state.meta.share_expires = shareExpires;
+            }
             await this.kernel.saveConstellationToLibrary(page);
 
             this.render();
@@ -3629,6 +3712,12 @@ ${innerHtml}
             page.meta.shared = false;
             page.meta.share_token = '';
             page.meta.share_expires = null;
+
+            if (this.kernel.state && this.kernel.state.map_id === mapId) {
+                this.kernel.state.meta.shared = false;
+                this.kernel.state.meta.share_token = '';
+                this.kernel.state.meta.share_expires = null;
+            }
             await this.kernel.saveConstellationToLibrary(page);
 
             this.render();
@@ -4926,6 +5015,14 @@ ${innerHtml}
                     options = [
                         { text: 'View Profile 👤', action: action }
                     ];
+                } else if (type === 'prompt-root') {
+                    action = () => this.actionCopyPromptAsText(selectedNode.id);
+                    text = 'Copy as Text';
+                    themeClasses = 'bg-amber-600 hover:bg-amber-500 border-amber-400 text-amber-100 hover:text-white shadow-[0_0_15px_rgba(217,119,6,0.4)]';
+                    options = [
+                        { text: 'Copy as Text ✍️', action: action },
+                        { text: 'Download as .md 💾', action: () => this.actionDownloadPromptAsMd(selectedNode.id) }
+                    ];
                 }
             } else {
                 if (type === 'portal' || type === 'smart-portal') {
@@ -5025,6 +5122,11 @@ ${innerHtml}
                     action = () => this.setView('prompt');
                     text = 'Run Chain';
                     themeClasses = 'bg-amber-600 hover:bg-amber-500 border-amber-400 text-amber-100 hover:text-white shadow-[0_0_15px_rgba(217,119,6,0.4)]';
+                    options = [
+                        { text: 'Run Chain ⛓️', action: action },
+                        { text: 'Copy as Text ✍️', action: () => this.actionCopyPromptAsText(selectedNode.id) },
+                        { text: 'Download as .md 💾', action: () => this.actionDownloadPromptAsMd(selectedNode.id) }
+                    ];
                 } else if (type === 'agent-root') {
                     action = () => this.setView('agent');
                     text = 'Configure Agent';
