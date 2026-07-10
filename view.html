@@ -23,7 +23,9 @@
     </style>
 </head>
 <body class="overflow-hidden bg-slate-950 select-none">
-    
+    <script>
+        if (localStorage.getItem('mm_theme') === 'light') document.body.classList.add('light-mode');
+    </script>
     <!-- Loading Screen -->
     <div id="loading-screen" class="fixed inset-0 display flex flex-col items-center justify-center gap-16 bg-slate-950 z-[200]">
         <div class="w-9 h-9 border-3 border-slate-800 border-t-sky-500 rounded-full animate-spin"></div>
@@ -65,8 +67,15 @@
 
         <!-- Fork & Return Actions -->
         <div class="flex items-center gap-2 shrink-0">
-            <a id="back-link" href="/" class="text-[10px] md:text-xs font-bold uppercase tracking-wider text-slate-400 hover:text-white px-3 py-2 border border-slate-800 hover:border-slate-700 bg-slate-900/40 rounded-lg transition-all">← Back</a>
-            <button id="fork-btn" class="text-[10px] md:text-xs font-bold uppercase tracking-wider bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg shadow-lg hover:shadow-blue-500/20 transition-all">Fork Map</button>
+            <button id="theme-toggle" class="p-2 text-slate-400 hover:text-white transition-all rounded-lg hover:bg-slate-800 border border-slate-800 flex items-center justify-center cursor-pointer bg-slate-900/40 text-[10px] md:text-xs h-[32px] w-[32px]" title="Toggle Theme">
+                <span id="theme-icon">🌙</span>
+            </button>
+            <a id="back-link" href="/" class="text-[10px] md:text-xs font-bold uppercase tracking-wider text-slate-400 hover:text-white px-3 py-2 border border-slate-800 hover:border-slate-700 bg-slate-900/40 rounded-lg transition-all flex items-center justify-center gap-1 h-[32px]" title="Back">
+                <span>←</span> <span class="hidden md:inline">Back</span>
+            </a>
+            <button id="fork-btn" class="text-[10px] md:text-xs font-bold uppercase tracking-wider bg-blue-600 hover:bg-blue-500 text-white px-3.5 py-2 rounded-lg shadow-lg hover:shadow-blue-500/20 transition-all flex items-center justify-center gap-1.5 h-[32px]" title="Fork Map">
+                <span>⑂</span> <span class="hidden md:inline">Fork Map</span>
+            </button>
         </div>
     </nav>
 
@@ -227,7 +236,7 @@
             if (!mapData) return;
 
             forkBtn.disabled = true;
-            forkBtn.textContent = 'Forking...';
+            forkBtn.innerHTML = '<span>⏳</span> <span class="hidden md:inline">Forking...</span>';
 
             const user = auth.currentUser;
             const isAuthenticated = user && !user.isAnonymous;
@@ -345,7 +354,7 @@
                     localStorage.setItem("mm_core_state", JSON.stringify(masterPageData || forkData));
                 }
 
-                forkBtn.textContent = '✅ Forked!';
+                forkBtn.innerHTML = '<span>✅</span> <span class="hidden md:inline">Forked!</span>';
                 forkBtn.style.backgroundColor = '#16a34a';
 
                 setTimeout(() => {
@@ -356,10 +365,40 @@
                 console.error(err);
                 alert('Fork failed: ' + err.message);
                 forkBtn.disabled = false;
-                forkBtn.textContent = 'Fork Map';
+                forkBtn.innerHTML = '<span>⑂</span> <span class="hidden md:inline">Fork Map</span>';
                 forkBtn.style.backgroundColor = '#2563eb';
             }
         }
+
+        function updateThemeUI() {
+            const isLight = document.body.classList.contains('light-mode');
+            const iconEl = $('theme-icon');
+            if (iconEl) {
+                iconEl.textContent = isLight ? '☀️' : '🌙';
+            }
+        }
+
+        // Bind theme toggle click
+        $('theme-toggle').onclick = () => {
+            const isLight = document.body.classList.toggle('light-mode');
+            localStorage.setItem('mm_theme', isLight ? 'light' : 'dark');
+            updateThemeUI();
+            
+            // Post STATE_UPDATE message to properties inspector iframe if it is mounted
+            const inspectorIframe = document.querySelector('iframe');
+            if (inspectorIframe && inspectorIframe.contentWindow && window.Kernel) {
+                const highlight = window.SC && window.SC.activeSearchHighlight ? window.SC.activeSearchHighlight : null;
+                inspectorIframe.contentWindow.postMessage({
+                    type: 'STATE_UPDATE',
+                    state: window.Kernel.state,
+                    highlight: highlight,
+                    theme: isLight ? 'light' : 'dark'
+                }, '*');
+            }
+        };
+
+        // Initialize theme UI
+        updateThemeUI();
     </script>
 </body>
 </html>
