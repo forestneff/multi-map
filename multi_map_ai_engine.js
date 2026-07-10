@@ -99,6 +99,16 @@ class MultiMapAI {
         panel.addEventListener('touchmove', e => e.stopPropagation(), { passive: false });
         panel.addEventListener('touchstart', e => e.stopPropagation(), { passive: false });
 
+        // Close chat window when clicking outside of it
+        document.addEventListener('click', (e) => {
+            if (this.isOpen) {
+                const toggleBtn = document.getElementById('ai-toggle-btn');
+                if (panel && !panel.contains(e.target) && toggleBtn && !toggleBtn.contains(e.target)) {
+                    this.toggleChat();
+                }
+            }
+        });
+
         const input = document.getElementById('ai-input');
         input.addEventListener('keydown', (e) => {
             if (this.autocompleteActive) {
