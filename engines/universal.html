@@ -649,7 +649,7 @@
                         </div>
 
                         <!-- Sharing Section inside Inspector -->
-                        ${!isProjDir ? `
+                        ${!(state.meta && (state.meta.isMaster === true || state.meta.title === "Project Directory")) ? `
                         <div class="h-px bg-slate-800/80 my-2"></div>
                         <div id="inspector-share-section" class="flex flex-col gap-2 bg-slate-950/40 border border-slate-800/80 rounded-xl p-3" data-shared="${!!(state.meta && state.meta.shared)}" data-token="${(state.meta && state.meta.share_token) || ''}">
                             ${state.meta && state.meta.shared ? `
