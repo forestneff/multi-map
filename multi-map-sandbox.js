@@ -649,7 +649,7 @@ class SandboxController {
         if (state.session.layoutMode === 'structured' && this._structuredCoords) {
             return this._structuredCoords.get(node.id) || { x: node.data.x, y: node.data.y };
         }
-        if (this.kernel.linkingMode) return { x: node.data.x, y: node.data.y };
+        if (this.kernel.linkingMode || this.parentSelectMode) return { x: node.data.x, y: node.data.y };
         
         const dist = (this._focalDistances && this._focalDistances.has(node.id)) ? this._focalDistances.get(node.id) : -1;
         if (dist <= 0 || !this._focalNodes || this._focalNodes.length === 0) return { x: node.data.x, y: node.data.y };
@@ -722,6 +722,14 @@ class SandboxController {
                 actions = [ { icon: '❌', action: 'CancelSelectParent', title: 'Cancel' } ];
             } else {
                 actions = [ { icon: '✅', action: 'ConfirmParent', title: 'Set as Parent' } ];
+            }
+        }
+        // Intercept menu if Linking Mode is active
+        else if (isLinking) {
+            if (node.id === this.kernel.linkingSourceId) {
+                actions = [ { icon: '❌', action: 'Link', title: 'Cancel Link' } ];
+            } else {
+                actions = [ { icon: '✅', action: 'Link', title: 'Confirm Link' } ];
             }
         }
         // Intercept menu if AI Import Mode is active and target is a Smart Portal
@@ -4355,6 +4363,20 @@ ${innerHtml}
             return false;
         };
 
+        const downstreamOfChild = (this.parentSelectMode && this.parentSelectSourceId)
+            ? this.kernel.getDownstreamNodes(this.parentSelectSourceId)
+            : new Set();
+
+        const isUnparentable = (nid) => {
+            if (!this.parentSelectMode) return false;
+            if (nid === this.parentSelectSourceId) return true;
+            const node = state.nodes.find(n => n.id === nid);
+            if (!node) return true;
+            if (node.type === 'portal' || node.type === 'smart-portal') return true;
+            if (downstreamOfChild.has(nid)) return true;
+            return false;
+        };
+
         const visibleNodes = new Set();
         state.nodes.forEach(n => visibleNodes.add(n.id));
 
@@ -4374,6 +4396,8 @@ ${innerHtml}
                 }
             }
         });
+
+
 
         let structuredCoords = null;
         if (state.session.layoutMode === 'structured') {
@@ -4440,14 +4464,18 @@ ${innerHtml}
                         l.setAttribute("marker-end", "url(#arrowhead)");
                     }
                     
-                    const isLinking = this.kernel.linkingMode;
+                    const isLinking = this.kernel.linkingMode || this.parentSelectMode;
                     const distS = distances.has(s.id) ? distances.get(s.id) : -1;
                     const distT = distances.has(t.id) ? distances.get(t.id) : -1;
                     
                     const onPathOrDownstreamS = pathNodes.has(s.id) || distances.has(s.id);
                     const onPathOrDownstreamT = pathNodes.has(t.id) || distances.has(t.id);
                     
-                    if (!isLinking && activeFocalId && (!onPathOrDownstreamS || !onPathOrDownstreamT)) {
+                    const isParentSelectUnrelated = this.parentSelectMode && (isUnparentable(s.id) || isUnparentable(t.id));
+
+                    if (isParentSelectUnrelated) {
+                        l.style.strokeOpacity = "0.2";
+                    } else if (!isLinking && activeFocalId && (!onPathOrDownstreamS || !onPathOrDownstreamT)) {
                         l.style.strokeOpacity = "0.2"; // Sibling branch edges are faded to 20%
                     } else if (!isLinking && (distS === -1 || distT === -1)) {
                         l.style.strokeOpacity = "0.48";
@@ -4488,15 +4516,35 @@ ${innerHtml}
             el.className = `node ${node.id === selId ? 'selected' : ''}`;
             el.dataset.type = node.type;
             
-            const isLinking = this.kernel.linkingMode;
+            const isLinking = this.kernel.linkingMode || this.parentSelectMode;
             const dist = distances.has(node.id) ? distances.get(node.id) : -1;
             let scale, color;
-            if (isLinking) {
+
+            const isNodeUnparentable = this.parentSelectMode && isUnparentable(node.id);
+            const isReparentingChild = this.parentSelectMode && node.id === this.parentSelectSourceId;
+
+            if (isReparentingChild) {
+                // Keep the reparented node itself clearly visible but make it unselectable as parent
+                scale = 1.0;
+                color = '#a855f7';
+                el.style.opacity = '0.75';
+                el.style.backgroundColor = `rgba(168, 85, 247, 0.15)`;
+                el.style.pointerEvents = 'none';
+            } else if (isNodeUnparentable) {
+                // Background/unrelated styling for unparentable nodes (faded to 20% opacity)
+                scale = 0.5;
+                color = '#475569';
+                el.style.opacity = '0.2';
+                el.style.backgroundColor = `rgba(30, 41, 59, 0.2)`;
+                el.style.pointerEvents = 'none';
+            } else if (this.kernel.linkingMode || (this.parentSelectMode && !isNodeUnparentable)) {
                 scale = 1.0;
                 color = '#38bdf8';
                 el.style.opacity = '1';
                 el.style.backgroundColor = `rgba(30, 41, 59, 0.95)`;
+                el.style.pointerEvents = 'auto';
             } else if (dist === -1) {
+                el.style.pointerEvents = 'auto';
                 // Background (upstream / unrelated) nodes
                 const isRoot = trueRootIds.has(node.id) && state.session.selectedId;
                 const isSibling = activeFocalId && !pathNodes.has(node.id);
@@ -4520,6 +4568,7 @@ ${innerHtml}
                     el.style.backgroundColor = `rgba(30, 41, 59, 0.7)`;
                 }
             } else {
+                el.style.pointerEvents = 'auto';
                 scale = Math.max(0.3, 1.4 * Math.pow(0.7, dist));
                 const layerColors = ['#ffffff', '#a855f7', '#3b82f6', '#22c55e', '#eab308', '#f97316', '#ef4444'];
                 color = layerColors[dist % layerColors.length];

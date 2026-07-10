@@ -63,12 +63,90 @@ class MultiMapKernel {
         this.migrateLocalGuestData();
 
         const rawState = this.loadFromStorage();
-        this.state = this.ensureSchema(rawState);
-        this.activeProjectId = this.state.meta.project_id || 'default_project';
-        this.lastSaveState = JSON.stringify(this.state);
+        
+        const isStateEmpty = (state) => {
+            if (!state) return true;
+            if (!state.nodes || state.nodes.length === 0) return true;
+            if (state.nodes.length === 1 && (!state.connections || state.connections.length === 0)) {
+                const root = state.nodes[0];
+                const isDefaultRoot = root.type === 'root' || root.type === 'file-root';
+                const isDefaultTitle = state.meta?.title === 'New Map' || state.meta?.title === 'New Submap';
+                if (isDefaultRoot && isDefaultTitle && !state.meta?.isMaster) {
+                    return true;
+                }
+            }
+            return false;
+        };
 
-        if (this.state.nodes.length === 0) {
-            this.addNode({ type: "root", title: "Root", data: { x: 0, y: 0, isCore: true } });
+        if (isStateEmpty(rawState)) {
+            // Find target project: current (saved in localStorage), first, or new if none
+            const projects = this.projects || [];
+            let targetProjId = 'default_project';
+            if (projects.length > 0) {
+                const lastActiveProjId = localStorage.getItem("mm_active_project_id");
+                const currentProj = projects.find(p => p.project_id === lastActiveProjId) || projects[0];
+                targetProjId = currentProj.project_id;
+            } else {
+                const defaultProj = {
+                    project_id: 'default_project',
+                    meta: { title: "Local Session", description: "Your local sandbox", color: "#8b5cf6" },
+                    folders: [],
+                    page_assignments: {},
+                    page_ids: []
+                };
+                this.projects = [defaultProj];
+                localStorage.setItem("mm_projects", JSON.stringify(this.projects));
+            }
+            
+            this.activeProjectId = targetProjId;
+            localStorage.setItem("mm_active_project_id", targetProjId);
+
+            // Load existing project directory/master map or the first page of this project
+            const pages = this.getPages(targetProjId);
+            let masterMap = pages.find(p => p.meta && p.meta.isMaster === true) || 
+                            pages.find(p => p.meta && p.meta.title === "Project Directory");
+            
+            if (masterMap) {
+                this.state = this.ensureSchema(masterMap);
+            } else if (pages.length > 0) {
+                this.state = this.ensureSchema(pages[0]);
+            } else {
+                // Create a new master project directory if no pages exist
+                const masterMapId = this.generateId();
+                masterMap = {
+                    map_id: masterMapId,
+                    meta: {
+                        title: "Project Directory",
+                        type: "file",
+                        created: new Date().toISOString(),
+                        shared: false,
+                        project_id: targetProjId,
+                        isMaster: true
+                    },
+                    nodes: [{ id: this.generateId(), type: "file-root", title: "Project Directory", data: { x: 0, y: 0, isCore: true } }],
+                    connections: [],
+                    session: { viewport: { x: window.innerWidth / 2, y: window.innerHeight / 2, scale: 1 }, selectedId: null, remoteTemplates: [], layoutMode: 'organic' }
+                };
+
+                const proj = this.projects.find(p => p.project_id === targetProjId);
+                if (proj) {
+                    if (!proj.page_ids) proj.page_ids = [];
+                    proj.page_ids.push(masterMapId);
+                    localStorage.setItem("mm_projects", JSON.stringify(this.projects));
+                }
+
+                const libRaw = localStorage.getItem("mm_constellation_lib");
+                const lib = libRaw ? JSON.parse(libRaw) : [];
+                lib.push(masterMap);
+                localStorage.setItem("mm_constellation_lib", JSON.stringify(lib));
+
+                this.state = this.ensureSchema(masterMap);
+            }
+            localStorage.setItem("mm_core_state", JSON.stringify(this.state));
+        } else {
+            this.state = this.ensureSchema(rawState);
+            this.activeProjectId = this.state.meta.project_id || 'default_project';
+            localStorage.setItem("mm_active_project_id", this.activeProjectId);
         }
 
         if (window.FirebaseAuth && window.FirebaseAuth.currentUser && !window.FirebaseAuth.currentUser.isAnonymous) {
@@ -93,9 +171,13 @@ class MultiMapKernel {
         const projects = this.getProjects();
         if (projects.length > 0) {
             this.activeProjectId = projects[0].project_id;
+            localStorage.setItem("mm_active_project_id", this.activeProjectId);
             const pages = this.getPages(this.activeProjectId);
-            if (pages.length > 0) {
-                this.loadMapState(pages[0]);
+            const masterMap = pages.find(p => p.meta && p.meta.isMaster === true) || 
+                              pages.find(p => p.meta && p.meta.title === "Project Directory") || 
+                              pages[0];
+            if (masterMap) {
+                this.loadMapState(masterMap);
             } else {
                 this.state = this.getEmptyState();
                 this.state.meta.project_id = this.activeProjectId;
@@ -2376,6 +2458,7 @@ class MultiMapKernel {
             : (this.activeProjectId || 'default_project');
 
         this.activeProjectId = projectId;
+        localStorage.setItem("mm_active_project_id", projectId);
 
         if (this.state && this.state.meta) {
             if (!this.state.meta.project_id) {
@@ -2479,8 +2562,29 @@ class MultiMapKernel {
             const libHelper = window.MultiMapLibrary || MultiMapLibrary;
             const { projects: localProjects, pages: localPages } = libHelper.loadLocalProjects();
             
-            let migratedProjects = [...localProjects];
-            let migratedLib = [...localPages];
+            // Filter out blank pages from localPages to avoid server pollution
+            const isBlankPage = (page) => {
+                if (!page) return true;
+                if (!page.nodes || page.nodes.length === 0) return true;
+                if (page.nodes.length === 1 && (!page.connections || page.connections.length === 0)) {
+                    const root = page.nodes[0];
+                    const isDefaultRoot = root.type === 'root' || root.type === 'file-root';
+                    const isDefaultTitle = page.meta?.title === 'New Map' || page.meta?.title === 'New Submap';
+                    if (isDefaultRoot && isDefaultTitle && !page.meta?.isMaster) {
+                        return true;
+                    }
+                }
+                return false;
+            };
+
+            let migratedLib = localPages.filter(p => !isBlankPage(p));
+            let migratedProjects = localProjects.map(proj => {
+                const copy = { ...proj };
+                if (copy.page_ids) {
+                    copy.page_ids = copy.page_ids.filter(id => migratedLib.some(p => p.map_id === id));
+                }
+                return copy;
+            });
             
             // Read active guest state map ID if it exists and make sure it has the latest edits
             const rawActiveState = localStorage.getItem("mm_core_state");
@@ -2489,24 +2593,26 @@ class MultiMapKernel {
             if (rawActiveState) {
                 try {
                     const activeState = JSON.parse(rawActiveState);
-                    guestActiveMapId = activeState.map_id;
-                    guestActiveProjectId = activeState.meta?.project_id || 'default_project';
-                    
-                    if (guestActiveMapId) {
-                        // Replace/Insert active state in the migration array to capture unsaved edits
-                        const idx = migratedLib.findIndex(m => m.map_id === guestActiveMapId);
-                        if (idx > -1) {
-                            migratedLib[idx] = activeState;
-                        } else {
-                            migratedLib.push(activeState);
-                        }
+                    if (!isBlankPage(activeState)) {
+                        guestActiveMapId = activeState.map_id;
+                        guestActiveProjectId = activeState.meta?.project_id || 'default_project';
                         
-                        // Ensure the project lists contain this map
-                        const activeProj = migratedProjects.find(p => p.project_id === guestActiveProjectId);
-                        if (activeProj) {
-                            if (!activeProj.page_ids) activeProj.page_ids = [];
-                            if (!activeProj.page_ids.includes(guestActiveMapId)) {
-                                activeProj.page_ids.push(guestActiveMapId);
+                        if (guestActiveMapId) {
+                            // Replace/Insert active state in the migration array to capture unsaved edits
+                            const idx = migratedLib.findIndex(m => m.map_id === guestActiveMapId);
+                            if (idx > -1) {
+                                migratedLib[idx] = activeState;
+                            } else {
+                                migratedLib.push(activeState);
+                            }
+                            
+                            // Ensure the project lists contain this map
+                            const activeProj = migratedProjects.find(p => p.project_id === guestActiveProjectId);
+                            if (activeProj) {
+                                if (!activeProj.page_ids) activeProj.page_ids = [];
+                                if (!activeProj.page_ids.includes(guestActiveMapId)) {
+                                    activeProj.page_ids.push(guestActiveMapId);
+                                }
                             }
                         }
                     }
@@ -2787,8 +2893,11 @@ class MultiMapKernel {
                     const currentProj = this.firestoreProjects.find(p => p.project_id === activeProjectId) || this.firestoreProjects[0];
                     if (currentProj) {
                         this.activeProjectId = currentProj.project_id;
+                        localStorage.setItem("mm_active_project_id", this.activeProjectId);
                         const projPages = this.firestorePagesByProject[this.activeProjectId] || [];
-                        activePage = projPages[0];
+                        activePage = projPages.find(p => p.meta && p.meta.isMaster === true) || 
+                                     projPages.find(p => p.meta && p.meta.title === "Project Directory") || 
+                                     projPages[0];
                     }
                 }
                 

@@ -62,9 +62,15 @@ onAuthStateChanged(auth, user => {
 
     if (user && !user.isAnonymous) {
         console.log("User logged in:", user.uid);
-        if (window.Kernel) {
-            window.Kernel.syncWithFirestore(user.uid);
-        }
+        // Verify user exists/token is valid (especially important when switching to local emulator)
+        user.getIdToken(true).then(() => {
+            if (window.Kernel) {
+                window.Kernel.syncWithFirestore(user.uid);
+            }
+        }).catch(err => {
+            console.error("Token verification failed, signing out:", err);
+            signOut(auth);
+        });
     } else {
         console.log("User logged out or anonymous guest");
         if (window.Kernel) {
