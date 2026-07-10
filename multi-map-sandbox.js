@@ -106,6 +106,24 @@ class SandboxController {
         window.addEventListener('beforeunload', logNavAway);
         window.addEventListener('pagehide', logNavAway);
 
+        window.addEventListener('focusin', () => {
+            const activeEl = document.activeElement;
+            const isInputFocused = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable);
+            const isMobile = window.innerWidth <= 768;
+            if (isMobile && isInputFocused && this.dom.sidebar) {
+                this.dom.sidebar.classList.add('keyboard-visible');
+            }
+        });
+        window.addEventListener('focusout', () => {
+            setTimeout(() => {
+                const activeEl = document.activeElement;
+                const isInputFocused = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable);
+                if (!isInputFocused && this.dom.sidebar) {
+                    this.dom.sidebar.classList.remove('keyboard-visible');
+                }
+            }, 50);
+        });
+
         window.addEventListener('copy', (e) => {
             const target = e.target;
             const isEditable = target.tagName === 'INPUT' || 
@@ -269,6 +287,7 @@ class SandboxController {
     }
 
     toggleSidebar() {
+        if (this.kernel.isReadOnly) return;
         if (this.dom.sidebar) {
             // Close Data Manager first
             this.dom.sidebar.classList.remove('data-manager-open');
@@ -451,6 +470,22 @@ class SandboxController {
         if (e.target.closest('#ai-chat-container')) return;
 
         if (e.target.closest('.node')) return;
+
+        // Double tap detection for mobile zoom
+        const now = Date.now();
+        this.lastTapTime = this.lastTapTime || 0;
+        if (this.lastTapTime && (now - this.lastTapTime < 300)) {
+            const lastPos = this.lastTapPos || { x: 0, y: 0 };
+            const dist = Math.hypot(e.clientX - lastPos.x, e.clientY - lastPos.y);
+            if (dist < 20) {
+                this.toggleViewportZoom(e.clientX, e.clientY);
+                this.lastTapTime = 0;
+                return;
+            }
+        }
+        this.lastTapTime = now;
+        this.lastTapPos = { x: e.clientX, y: e.clientY };
+
         this.activePointers.set(e.pointerId, e);
         if (this.activePointers.size === 1) {
             this.isDragging = true;
@@ -458,6 +493,32 @@ class SandboxController {
             this.lastMouse = { x: e.clientX, y: e.clientY };
             this.clickStart = { x: e.clientX, y: e.clientY };
         }
+    }
+
+    toggleViewportZoom(clientX, clientY) {
+        const vp = this.kernel.state.session.viewport;
+        const rect = this.dom.viewport.getBoundingClientRect();
+        const targetX = clientX - rect.left;
+        const targetY = clientY - rect.top;
+
+        // Calculate world coordinates of tap
+        const worldX = (targetX - vp.x) / vp.scale;
+        const worldY = (targetY - vp.y) / vp.scale;
+
+        let newScale = 1.0;
+        if (vp.scale < 1.25) {
+            newScale = 1.6;
+        } else {
+            newScale = 1.0;
+        }
+
+        // Apply new scale centered on the tapped location
+        vp.scale = newScale;
+        vp.x = targetX - (worldX * newScale);
+        vp.y = targetY - (worldY * newScale);
+
+        this.updateTransform();
+        this.render();
     }
 
     handlePointerMove(e) {
@@ -618,6 +679,7 @@ class SandboxController {
 
 
     showRadialMenu(node) {
+        if (this.kernel.isReadOnly) return;
         this.activeRadialNodeId = node.id;
         const menu = this.dom.radialMenu;
         menu.style.display = 'block';
@@ -1329,10 +1391,32 @@ class SandboxController {
                 return;
             }
         }
-        if (isCmdOrCtrl && e.key.toLowerCase() === 'v') {
-            e.preventDefault();
-            this.actionPasteBranch(selectedId);
-            return;
+        
+        if (this.kernel.isReadOnly) {
+            if (isCmdOrCtrl && e.key.toLowerCase() === 'v') {
+                e.preventDefault();
+                return;
+            }
+            if (e.key === 'Tab') {
+                e.preventDefault();
+                return;
+            }
+            if (e.key === 'Delete') {
+                e.preventDefault();
+                return;
+            }
+            if (e.key === 'Enter') {
+                if (this.isSmartOptionsOpen && this.smartButtonOptions && this.smartButtonOptions.length > 0) {
+                    // Fall through to original Enter options trigger
+                } else {
+                    e.preventDefault();
+                    const btn = document.getElementById('btn-smart-action');
+                    if (btn && !btn.classList.contains('hidden')) {
+                        btn.click();
+                    }
+                    return;
+                }
+            }
         }
 
         if (e.key === 'Tab') {
@@ -3441,18 +3525,34 @@ ${innerHtml}
             return alert('You must be signed in (even as a guest) to share maps.');
         }
 
-        // Expiry prompt
-        const expiryChoice = prompt(
-            `Share "${page.meta?.title || 'Untitled'}":\n` +
-            `Choose link expiry:\n` +
-            `  1. No expiry\n` +
-            `  2. 7 days\n` +
-            `  3. 30 days\n` +
-            `  4. 90 days\n` +
-            `Enter 1–4:`, '1'
-        );
+        // Expiry modal
+        const expiryChoice = await this.showDialogModal({
+            title: `Share "${page.meta?.title || 'Untitled'}"`,
+            contentHtml: `
+                <div class="flex flex-col gap-3">
+                    <p class="text-slate-400">Choose link expiry duration:</p>
+                    <select id="mm-share-expiry-select" class="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-xs text-slate-300 outline-none focus:border-indigo-500">
+                        <option value="1">No expiry (infinite)</option>
+                        <option value="2">7 days</option>
+                        <option value="3">30 days</option>
+                        <option value="4">90 days</option>
+                    </select>
+                </div>
+            `,
+            actionsHtml: `
+                <button id="mm-share-cancel" class="cancel-btn px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-white font-bold transition-all">Cancel</button>
+                <button id="mm-share-confirm" class="confirm-btn px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded text-white font-bold transition-all shadow-md">Create Link</button>
+            `,
+            onRender: (backdrop, close) => {
+                backdrop.querySelector('.cancel-btn').onclick = () => close(null);
+                backdrop.querySelector('.confirm-btn').onclick = () => {
+                    const sel = backdrop.querySelector('#mm-share-expiry-select');
+                    close(sel.value);
+                };
+            }
+        });
         if (!expiryChoice) return;
-        const expiryDays = { '2': 7, '3': 30, '4': 90 }[expiryChoice.trim()] || null;
+        const expiryDays = { '2': 7, '3': 30, '4': 90 }[expiryChoice] || null;
         const shareExpires = expiryDays
             ? new Date(Date.now() + expiryDays * 86400000).toISOString()
             : null;
@@ -3652,14 +3752,11 @@ ${innerHtml}
         }
     }
 
-    actionSetActiveProject(projId) {
+    async actionSetActiveProject(projId) {
         this.kernel.activeProjectId = projId;
-        const pages = this.kernel.getPages(projId);
-        if (pages.length > 0) {
-            const hasActivePage = pages.some(p => p.map_id === this.kernel.state.map_id);
-            if (!hasActivePage) {
-                this.kernel.loadMapState(pages[0]);
-            }
+        const masterMap = await this.kernel.getOrCreateMasterMap(projId);
+        if (masterMap) {
+            this.kernel.loadMapState(masterMap);
         } else {
             this.kernel.state = this.kernel.getEmptyState();
             this.kernel.state.meta.project_id = projId;
@@ -4551,6 +4648,12 @@ ${innerHtml}
                 if(e.target.closest('.radial-btn') || e.target.closest('.moon-btn')) return; 
                 e.stopPropagation();
 
+                if (this.kernel.isReadOnly) {
+                    this.kernel.selectNode(node.id);
+                    this.hideRadialMenu(true);
+                    return;
+                }
+
                 // Alt+Click integration for changing parent
                 if (e.altKey) {
                     if (this.parentSelectMode) {
@@ -4707,107 +4810,157 @@ ${innerHtml}
         // Scaffold options & default action
         if (selectedNode && this.viewMode === 'map') {
             const type = selectedNode.type;
-            if (type === 'portal' || type === 'smart-portal') {
-                const hasTarget = !!selectedNode.content;
-                const isSmart = type === 'smart-portal';
-                const rootMeta = selectedNode.content ? this.kernel.getRootMetadata(selectedNode.content) : null;
-                const isPromptPortal = rootMeta && (rootMeta.portal_behavior === 'execute_prompt' || (this.kernel.hasRootType && this.kernel.hasRootType(selectedNode.content, 'prompt-root')) || (this.kernel.isPromptMap && this.kernel.isPromptMap(selectedNode.content)));
-                const isWebPortal = selectedNode.content && this.kernel.hasRootType && this.kernel.hasRootType(selectedNode.content, 'web-root');
-                const isAgentPortal = selectedNode.content && this.kernel.hasRootType && this.kernel.hasRootType(selectedNode.content, 'agent-root');
-                const isPersonPortal = selectedNode.content && this.kernel.hasRootType && this.kernel.hasRootType(selectedNode.content, 'person-root');
-                
-                options = [];
-                if (isSmart || isPromptPortal) {
-                    options.push({ text: 'Trigger AI ✨', action: () => this.actionTriggerAI(selectedNode.id) });
-                }
-                
-                if (hasTarget) {
-                    if (isWebPortal) {
-                        options.push({ text: 'Launch Web App 🚀', action: () => { this.actionEnterPortal(selectedNode.id); this.setView('web'); } });
-                    } else if (isAgentPortal) {
-                        options.push({ text: 'Configure Agent ⚙️', action: () => { this.actionEnterPortal(selectedNode.id); this.setView('agent'); } });
-                    } else if (isPersonPortal) {
-                        options.push({ text: 'View Profile 👤', action: () => { this.actionEnterPortal(selectedNode.id); this.setView('person'); } });
+            if (this.kernel.isReadOnly) {
+                if (type === 'portal' || type === 'smart-portal') {
+                    const hasTarget = !!selectedNode.content;
+                    const isWebPortal = selectedNode.content && this.kernel.hasRootType && this.kernel.hasRootType(selectedNode.content, 'web-root');
+                    const isPersonPortal = selectedNode.content && this.kernel.hasRootType && this.kernel.hasRootType(selectedNode.content, 'person-root');
+                    
+                    if (hasTarget) {
+                        options = [];
+                        if (isWebPortal) {
+                            options.push({ text: 'Preview Page 👁️', action: () => { this.actionEnterPortal(selectedNode.id); this.actionPreviewWebPage(selectedNode.content); } });
+                        } else if (isPersonPortal) {
+                            options.push({ text: 'View Profile 👤', action: () => { this.actionEnterPortal(selectedNode.id); this.setView('person'); } });
+                        }
+                        options.push({ text: 'Enter Portal ➔', action: () => this.actionEnterPortal(selectedNode.id) });
+                        
+                        action = () => this.actionEnterPortal(selectedNode.id);
+                        text = 'Enter Portal';
+                        themeClasses = 'bg-emerald-600 hover:bg-emerald-500 border-emerald-400 text-emerald-100 hover:text-white shadow-[0_0_15px_rgba(16,185,129,0.4)]';
                     }
-                    options.push({ text: 'Enter Portal ➔', action: () => this.actionEnterPortal(selectedNode.id) });
-                    const isSyncPortal = selectedNode.data && selectedNode.data.isSyncPortal === true;
-                    if (!isSyncPortal) {
-                        options.push({ text: 'Configure Portal ⚙️', action: () => this.actionSetPortalTarget(selectedNode.id) });
-                    }
-                } else {
-                    options.push({ text: 'Set Target 🎯', action: () => this.actionEnterPortal(selectedNode.id) });
-                }
-                
-                if (isSmart || isPromptPortal) {
-                    action = () => this.actionTriggerAI(selectedNode.id);
-                    text = 'Trigger AI';
-                    themeClasses = 'bg-indigo-600 hover:bg-indigo-500 border-indigo-400 text-indigo-100 hover:text-white shadow-[0_0_15px_rgba(79,70,229,0.4)]';
-                } else if (hasTarget && isWebPortal) {
-                    action = () => { this.actionEnterPortal(selectedNode.id); this.setView('web'); };
-                    text = 'Launch Web App';
+                } else if (type === 'web-root') {
+                    action = () => this.actionPreviewWebPage(selectedNode.id);
+                    text = 'Preview Page';
                     themeClasses = 'bg-sky-600 hover:bg-sky-500 border-sky-400 text-sky-100 hover:text-white shadow-[0_0_15px_rgba(14,165,233,0.4)]';
-                } else if (hasTarget && isAgentPortal) {
-                    action = () => { this.actionEnterPortal(selectedNode.id); this.setView('agent'); };
-                    text = 'Configure Agent';
-                    themeClasses = 'bg-rose-600 hover:bg-rose-500 border-rose-400 text-rose-100 hover:text-white shadow-[0_0_15px_rgba(225,29,72,0.4)]';
-                } else if (hasTarget && isPersonPortal) {
-                    action = () => { this.actionEnterPortal(selectedNode.id); this.setView('person'); };
+                    options = [
+                        { text: 'Preview Page 👁️', action: action }
+                    ];
+                } else if (type === 'web-link') {
+                    action = () => this.actionOpenWebLink(selectedNode.id);
+                    text = 'Open Link';
+                    themeClasses = 'bg-sky-600 hover:bg-sky-500 border-sky-400 text-sky-100 hover:text-white shadow-[0_0_15px_rgba(14,165,233,0.4)]';
+                    options = [
+                        { text: 'Open Link 🔗', action: action }
+                    ];
+                } else if (type.startsWith('web-')) {
+                    action = () => this.actionPreviewWebPage(selectedNode.id);
+                    text = 'Preview Element';
+                    themeClasses = 'bg-sky-600 hover:bg-sky-500 border-sky-400 text-sky-100 hover:text-white shadow-[0_0_15px_rgba(14,165,233,0.4)]';
+                    options = [
+                        { text: 'Preview Element 👁️', action: action }
+                    ];
+                } else if (type === 'person-root') {
+                    action = () => this.setView('person');
                     text = 'View Profile';
                     themeClasses = 'bg-indigo-600 hover:bg-indigo-500 border-indigo-400 text-indigo-100 hover:text-white shadow-[0_0_15px_rgba(79,70,229,0.4)]';
-                } else {
-                    action = () => this.actionEnterPortal(selectedNode.id);
-                    text = hasTarget ? 'Enter Portal' : 'Set Target';
-                    themeClasses = hasTarget 
-                        ? 'bg-emerald-600 hover:bg-emerald-500 border-emerald-400 text-emerald-100 hover:text-white shadow-[0_0_15px_rgba(16,185,129,0.4)]'
-                        : 'bg-purple-600 hover:bg-purple-500 border-purple-400 text-purple-100 hover:text-white shadow-[0_0_15px_rgba(168,85,247,0.4)]';
+                    options = [
+                        { text: 'View Profile 👤', action: action }
+                    ];
                 }
-            } else if (type === 'person-root') {
-                action = () => this.setView('person');
-                text = 'View Profile';
-                themeClasses = 'bg-indigo-600 hover:bg-indigo-500 border-indigo-400 text-indigo-100 hover:text-white shadow-[0_0_15px_rgba(79,70,229,0.4)]';
-                options = [
-                    { text: 'View Profile 👤', action: () => this.setView('person') },
-                    { text: 'Export CV 📄', action: () => alert('Exporting profile CV...') }
-                ];
-            } else if (type === 'link-root') {
-                action = () => this.actionTriggerLinktreeImport(selectedNode.id);
-                text = 'Import';
-                themeClasses = 'bg-emerald-600 hover:bg-emerald-500 border-emerald-400 text-emerald-100 hover:text-white shadow-[0_0_15px_rgba(16,185,129,0.4)]';
-                options = [
-                    { text: 'Import 🌳', action: action }
-                ];
-            } else if (type === 'web-root') {
-                action = () => this.setView('web');
-                text = 'Visual Editor';
-                themeClasses = 'bg-sky-600 hover:bg-sky-500 border-sky-400 text-sky-100 hover:text-white shadow-[0_0_15px_rgba(14,165,233,0.4)]';
-                options = [
-                    { text: 'Visual Editor 🌐', action: () => this.setView('web') },
-                    { text: 'Preview Page 👁️', action: () => this.actionPreviewWebPage(selectedNode.id) },
-                    { text: 'Download Code 💾', action: () => this.actionDownloadWebCode(selectedNode.id) }
-                ];
-            } else if (type === 'web-link') {
-                action = () => this.actionOpenWebLink(selectedNode.id);
-                text = 'Open Link';
-                themeClasses = 'bg-sky-600 hover:bg-sky-500 border-sky-400 text-sky-100 hover:text-white shadow-[0_0_15px_rgba(14,165,233,0.4)]';
-                options = [
-                    { text: 'Open Link 🔗', action: action }
-                ];
-            } else if (type.startsWith('web-')) {
-                action = () => this.actionDownloadWebCode(selectedNode.id);
-                text = 'Download Code';
-                themeClasses = 'bg-sky-600 hover:bg-sky-500 border-sky-400 text-sky-100 hover:text-white shadow-[0_0_15px_rgba(14,165,233,0.4)]';
-                options = [
-                    { text: 'Download Code 💾', action: () => this.actionDownloadWebCode(selectedNode.id) },
-                    { text: 'Preview Element 👁️', action: () => this.actionPreviewWebPage(selectedNode.id) }
-                ];
-            } else if (type === 'prompt-root') {
-                action = () => this.setView('prompt');
-                text = 'Run Chain';
-                themeClasses = 'bg-amber-600 hover:bg-amber-500 border-amber-400 text-amber-100 hover:text-white shadow-[0_0_15px_rgba(217,119,6,0.4)]';
-            } else if (type === 'agent-root') {
-                action = () => this.setView('agent');
-                text = 'Configure Agent';
-                themeClasses = 'bg-rose-600 hover:bg-rose-500 border-rose-400 text-rose-100 hover:text-white shadow-[0_0_15px_rgba(225,29,72,0.4)]';
+            } else {
+                if (type === 'portal' || type === 'smart-portal') {
+                    const hasTarget = !!selectedNode.content;
+                    const isSmart = type === 'smart-portal';
+                    const rootMeta = selectedNode.content ? this.kernel.getRootMetadata(selectedNode.content) : null;
+                    const isPromptPortal = rootMeta && (rootMeta.portal_behavior === 'execute_prompt' || (this.kernel.hasRootType && this.kernel.hasRootType(selectedNode.content, 'prompt-root')) || (this.kernel.isPromptMap && this.kernel.isPromptMap(selectedNode.content)));
+                    const isWebPortal = selectedNode.content && this.kernel.hasRootType && this.kernel.hasRootType(selectedNode.content, 'web-root');
+                    const isAgentPortal = selectedNode.content && this.kernel.hasRootType && this.kernel.hasRootType(selectedNode.content, 'agent-root');
+                    const isPersonPortal = selectedNode.content && this.kernel.hasRootType && this.kernel.hasRootType(selectedNode.content, 'person-root');
+                    
+                    options = [];
+                    if (isSmart || isPromptPortal) {
+                        options.push({ text: 'Trigger AI ✨', action: () => this.actionTriggerAI(selectedNode.id) });
+                    }
+                    
+                    if (hasTarget) {
+                        if (isWebPortal) {
+                            options.push({ text: 'Launch Web App 🚀', action: () => { this.actionEnterPortal(selectedNode.id); this.setView('web'); } });
+                        } else if (isAgentPortal) {
+                            options.push({ text: 'Configure Agent ⚙️', action: () => { this.actionEnterPortal(selectedNode.id); this.setView('agent'); } });
+                        } else if (isPersonPortal) {
+                            options.push({ text: 'View Profile 👤', action: () => { this.actionEnterPortal(selectedNode.id); this.setView('person'); } });
+                        }
+                        options.push({ text: 'Enter Portal ➔', action: () => this.actionEnterPortal(selectedNode.id) });
+                        const isSyncPortal = selectedNode.data && selectedNode.data.isSyncPortal === true;
+                        if (!isSyncPortal) {
+                            options.push({ text: 'Configure Portal ⚙️', action: () => this.actionSetPortalTarget(selectedNode.id) });
+                        }
+                    } else {
+                        options.push({ text: 'Set Target 🎯', action: () => this.actionEnterPortal(selectedNode.id) });
+                    }
+                    
+                    if (isSmart || isPromptPortal) {
+                        action = () => this.actionTriggerAI(selectedNode.id);
+                        text = 'Trigger AI';
+                        themeClasses = 'bg-indigo-600 hover:bg-indigo-500 border-indigo-400 text-indigo-100 hover:text-white shadow-[0_0_15px_rgba(79,70,229,0.4)]';
+                    } else if (hasTarget && isWebPortal) {
+                        action = () => { this.actionEnterPortal(selectedNode.id); this.setView('web'); };
+                        text = 'Launch Web App';
+                        themeClasses = 'bg-sky-600 hover:bg-sky-500 border-sky-400 text-sky-100 hover:text-white shadow-[0_0_15px_rgba(14,165,233,0.4)]';
+                    } else if (hasTarget && isAgentPortal) {
+                        action = () => { this.actionEnterPortal(selectedNode.id); this.setView('agent'); };
+                        text = 'Configure Agent';
+                        themeClasses = 'bg-rose-600 hover:bg-rose-500 border-rose-400 text-rose-100 hover:text-white shadow-[0_0_15px_rgba(225,29,72,0.4)]';
+                    } else if (hasTarget && isPersonPortal) {
+                        action = () => { this.actionEnterPortal(selectedNode.id); this.setView('person'); };
+                        text = 'View Profile';
+                        themeClasses = 'bg-indigo-600 hover:bg-indigo-500 border-indigo-400 text-indigo-100 hover:text-white shadow-[0_0_15px_rgba(79,70,229,0.4)]';
+                    } else {
+                        action = () => this.actionEnterPortal(selectedNode.id);
+                        text = hasTarget ? 'Enter Portal' : 'Set Target';
+                        themeClasses = hasTarget 
+                            ? 'bg-emerald-600 hover:bg-emerald-500 border-emerald-400 text-emerald-100 hover:text-white shadow-[0_0_15px_rgba(16,185,129,0.4)]'
+                            : 'bg-purple-600 hover:bg-purple-500 border-purple-400 text-purple-100 hover:text-white shadow-[0_0_15px_rgba(168,85,247,0.4)]';
+                    }
+                } else if (type === 'person-root') {
+                    action = () => this.setView('person');
+                    text = 'View Profile';
+                    themeClasses = 'bg-indigo-600 hover:bg-indigo-500 border-indigo-400 text-indigo-100 hover:text-white shadow-[0_0_15px_rgba(79,70,229,0.4)]';
+                    options = [
+                        { text: 'View Profile 👤', action: () => this.setView('person') },
+                        { text: 'Export CV 📄', action: () => alert('Exporting profile CV...') }
+                    ];
+                } else if (type === 'link-root') {
+                    action = () => this.actionTriggerLinktreeImport(selectedNode.id);
+                    text = 'Import';
+                    themeClasses = 'bg-emerald-600 hover:bg-emerald-500 border-emerald-400 text-emerald-100 hover:text-white shadow-[0_0_15px_rgba(16,185,129,0.4)]';
+                    options = [
+                        { text: 'Import 🌳', action: action }
+                    ];
+                } else if (type === 'web-root') {
+                    action = () => this.setView('web');
+                    text = 'Visual Editor';
+                    themeClasses = 'bg-sky-600 hover:bg-sky-500 border-sky-400 text-sky-100 hover:text-white shadow-[0_0_15px_rgba(14,165,233,0.4)]';
+                    options = [
+                        { text: 'Visual Editor 🌐', action: () => this.setView('web') },
+                        { text: 'Preview Page 👁️', action: () => this.actionPreviewWebPage(selectedNode.id) },
+                        { text: 'Download Code 💾', action: () => this.actionDownloadWebCode(selectedNode.id) }
+                    ];
+                } else if (type === 'web-link') {
+                    action = () => this.actionOpenWebLink(selectedNode.id);
+                    text = 'Open Link';
+                    themeClasses = 'bg-sky-600 hover:bg-sky-500 border-sky-400 text-sky-100 hover:text-white shadow-[0_0_15px_rgba(14,165,233,0.4)]';
+                    options = [
+                        { text: 'Open Link 🔗', action: action }
+                    ];
+                } else if (type.startsWith('web-')) {
+                    action = () => this.actionDownloadWebCode(selectedNode.id);
+                    text = 'Download Code';
+                    themeClasses = 'bg-sky-600 hover:bg-sky-500 border-sky-400 text-sky-100 hover:text-white shadow-[0_0_15px_rgba(14,165,233,0.4)]';
+                    options = [
+                        { text: 'Download Code 💾', action: () => this.actionDownloadWebCode(selectedNode.id) },
+                        { text: 'Preview Element 👁️', action: () => this.actionPreviewWebPage(selectedNode.id) }
+                    ];
+                } else if (type === 'prompt-root') {
+                    action = () => this.setView('prompt');
+                    text = 'Run Chain';
+                    themeClasses = 'bg-amber-600 hover:bg-amber-500 border-amber-400 text-amber-100 hover:text-white shadow-[0_0_15px_rgba(217,119,6,0.4)]';
+                } else if (type === 'agent-root') {
+                    action = () => this.setView('agent');
+                    text = 'Configure Agent';
+                    themeClasses = 'bg-rose-600 hover:bg-rose-500 border-rose-400 text-rose-100 hover:text-white shadow-[0_0_15px_rgba(225,29,72,0.4)]';
+                }
             }
         }
 

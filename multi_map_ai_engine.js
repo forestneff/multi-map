@@ -484,7 +484,7 @@ class MultiMapAI {
                 
                 <div class="flex gap-2 justify-end mt-1">
                     <button id="${formId}-cancel" class="px-3 py-1.5 border border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-900 rounded-lg text-[10px] font-bold uppercase transition-all cursor-pointer bg-transparent">Cancel</button>
-                    <button id="${formId}-submit" class="px-3 py-1.5 bg-indigo-650 hover:bg-indigo-500 text-white rounded-lg text-[10px] font-bold uppercase transition-all shadow shadow-indigo-900/50 cursor-pointer border-none">Submit</button>
+                    <button id="${formId}-submit" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-[10px] font-bold uppercase transition-all shadow shadow-indigo-900/50 cursor-pointer border-none">Submit</button>
                 </div>
             </div>
         `;
@@ -818,7 +818,10 @@ class MultiMapAI {
 
         try {
             let jsonString = '';
-            const contextStr = this.buildContextString();
+            let contextStr = this.buildContextString();
+            if (this.kernel.isReadOnly) {
+                contextStr += "\n\nIMPORTANT: You are in READ-ONLY mode. The user is viewing a shared, read-only map. You can answer questions about the map, explain nodes, or summarize its content, but you CANNOT generate new projects, map states, or apply edits. If the user asks to edit, add nodes, expand, or generate a new map, politely explain that they must click the 'Fork Map' button at the top of the page to copy this map to their workspace first.";
+            }
             const contextualPrompt = text + (contextStr ? "\n\n" + contextStr : "");
             let mode = 'generate';
             let aiResult;
@@ -851,6 +854,15 @@ class MultiMapAI {
             } catch (err) {
                 console.error("Raw AI Output:", jsonString);
                 throw new Error("Invalid JSON structure returned by AI.");
+            }
+
+            if (this.kernel.isReadOnly) {
+                if (document.getElementById('ai-loading')) {
+                    document.getElementById('ai-loading').remove();
+                }
+                const msg = aiData.message || "I generated a layout response, but you are currently in a read-only view. Please click 'Fork Map' at the top of the page to copy this map to your own workspace and edit or generate new maps.";
+                this.addMessage('system', msg);
+                return;
             }
 
             if (aiData.type === "multimap_project" || (aiData.project && aiData.pages)) {

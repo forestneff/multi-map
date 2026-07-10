@@ -44,6 +44,7 @@ class MultiMapKernel {
     constructor() {
         this.config = { autoSaveInterval: 2000, autoFocus: true, autoCollapseDepth: 3 };
         this.bridge = new HostBridge();
+        this.isReadOnly = false;
         
         this.listeners = [];
         this.history = [];
@@ -295,6 +296,7 @@ class MultiMapKernel {
     }
 
     async createProject(title, description = "", icon = "📁", color = "#8b5cf6", autoSwitch = true) {
+        if (this.isReadOnly) return null;
         if (!this.checkStorageLimit(2048)) return null;
 
         const projectId = this.generateId();
@@ -388,6 +390,7 @@ class MultiMapKernel {
     }
 
     async savePage(projectId, pageId, pageData) {
+        if (this.isReadOnly) return;
         if (this.isUsingCloudVault()) {
             const uid = window.FirebaseAuth.currentUser.uid;
             try {
@@ -409,6 +412,7 @@ class MultiMapKernel {
     }
 
     async saveProject(projData) {
+        if (this.isReadOnly) return;
         projData.updated_at = new Date().toISOString();
         if (this.isUsingCloudVault()) {
             const uid = window.FirebaseAuth.currentUser.uid;
@@ -608,24 +612,32 @@ class MultiMapKernel {
         let changed = false;
 
         const validPageIds = new Set(nonMasterPages.map(p => p.map_id));
+        const seenPageIds = new Set();
         masterMap.nodes = masterMap.nodes.filter(n => {
             if (n.type === 'portal' || n.type === 'smart-portal') {
-                if (n.content && !validPageIds.has(n.content)) {
-                    changed = true;
-                    masterMap.connections = masterMap.connections.filter(c => c.from !== n.id && c.to !== n.id);
-                    return false;
+                if (n.content) {
+                    if (!validPageIds.has(n.content) || seenPageIds.has(n.content)) {
+                        changed = true;
+                        masterMap.connections = masterMap.connections.filter(c => c.from !== n.id && c.to !== n.id);
+                        return false;
+                    }
+                    seenPageIds.add(n.content);
                 }
             }
             return true;
         });
 
         const validFolderIds = new Set(folders.map(f => f.id));
+        const seenFolderIds = new Set();
         masterMap.nodes = masterMap.nodes.filter(n => {
             if (n.type === 'file-folder') {
-                if (n.content && !validFolderIds.has(n.content)) {
-                    changed = true;
-                    masterMap.connections = masterMap.connections.filter(c => c.from !== n.id && c.to !== n.id);
-                    return false;
+                if (n.content) {
+                    if (!validFolderIds.has(n.content) || seenFolderIds.has(n.content)) {
+                        changed = true;
+                        masterMap.connections = masterMap.connections.filter(c => c.from !== n.id && c.to !== n.id);
+                        return false;
+                    }
+                    seenFolderIds.add(n.content);
                 }
             }
             return true;
@@ -874,6 +886,7 @@ class MultiMapKernel {
     }
 
     async deleteProject(projectId) {
+        if (this.isReadOnly) return;
         const projects = this.getProjects();
         if (projects.length <= 1) {
             alert("Cannot delete the only remaining project. Create another project first.");
@@ -1404,6 +1417,7 @@ class MultiMapKernel {
     }
 
     deleteNode(id) {
+        if (this.isReadOnly) return;
         const n = this.state.nodes.find(x => x.id === id);
         if (n && (n.type === 'root' || n.type.endsWith('-root') || (n.data && n.data.isCore))) {
             alert("The root node of a map cannot be deleted.");
@@ -1438,6 +1452,7 @@ class MultiMapKernel {
     }
 
     addNode(data, pid = null) {
+        if (this.isReadOnly) return null;
         data = data || {};
         
         // SINGLETON PERSON CHECK
@@ -1493,6 +1508,7 @@ class MultiMapKernel {
     }
 
     addConnection(f, t, connType = 'structural') {
+        if (this.isReadOnly) return { success: false };
         if (f === t || this.state.connections.find(c => c.from === f && c.to === t)) return { success: false };
         let s, tg;
         if (typeof MultiMapSchema !== 'undefined') {
@@ -1509,6 +1525,7 @@ class MultiMapKernel {
     }
 
     updateNode(id, up) { 
+        if (this.isReadOnly) return;
         const n = this.state.nodes.find(x => x.id === id); 
         if (!n) return; 
         
@@ -1818,6 +1835,7 @@ class MultiMapKernel {
     loadFromStorage() { try { const data = localStorage.getItem("mm_core_state"); return data ? JSON.parse(data) : null; } catch (e) { return null; } }
     
     checkAutoSave() {
+        if (this.isReadOnly) return;
         const c = JSON.stringify(this.state);
         if (c !== this.lastSaveState) {
             this.lastSaveState = c;
@@ -2070,6 +2088,7 @@ class MultiMapKernel {
     }
 
     async deleteFromLibrary(id) {
+        if (this.isReadOnly) return;
         if (this.isUsingCloudVault()) {
             const uid = window.FirebaseAuth.currentUser.uid;
             try {

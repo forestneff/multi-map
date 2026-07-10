@@ -337,27 +337,74 @@ body.light-mode .no-scrollbar::-webkit-scrollbar-thumb:hover {
 
 @media (max-width: 768px) {
     #sidebar {
-        position: absolute;
-        top: 0;
+        position: fixed;
         bottom: 0;
         left: 0;
+        right: 0;
+        top: auto;
+        height: 56px;
+        width: 100vw;
+        max-width: 100vw;
+        flex-direction: column-reverse; /* Put the rail at the very bottom */
         z-index: 48;
-        box-shadow: 5px 0 20px rgba(0, 0, 0, 0.5);
+        box-shadow: 0 -5px 20px rgba(0, 0, 0, 0.5);
+        border-right: none;
+        border-top: 1px solid #1e293b;
+        background: #0f172a;
+        overflow: visible;
+        transition: height 0.3s ease;
     }
 
     #sidebar.open {
-        width: 312px;
-        max-width: 100vw;
-    }
-
-    #sidebar.data-manager-open {
+        height: 60vh; /* Slide up to show inspector */
         width: 100vw;
         max-width: 100vw;
     }
 
-    /* Prevents the Rail from overlapping the Web Architect or spatial canvas */
+    #sidebar.data-manager-open {
+        height: 85vh; /* Slide up more for data manager */
+        width: 100vw;
+        max-width: 100vw;
+    }
+
+    /* Narrow Tool Rail (now a horizontal bottom bar) */
+    #phase-selection-area {
+        width: 100% !important;
+        height: 56px !important;
+        flex-direction: row !important;
+        justify-content: space-around !important;
+        align-items: center !important;
+        padding: 0 1rem !important;
+        border-right: none !important;
+        border-top: 1px solid #1e293b !important;
+        background: #020617 !important;
+    }
+
+    /* Phase selector buttons inside the bottom bar */
+    .phase-btn {
+        width: 2.25rem !important;
+        height: 2.25rem !important;
+        border-radius: 0.5rem !important;
+    }
+
+    /* Expandable panels inside the bottom bar container */
+    #sidebar-content, #sidebar-data-manager {
+        position: absolute;
+        top: 0;
+        bottom: 56px;
+        left: 0;
+        right: 0;
+        width: 100vw !important;
+        height: auto !important;
+        border-left: none !important;
+        border-right: none !important;
+        background: #0f172a !important;
+    }
+
+    /* Viewport adjustments */
     #viewport {
-        margin-left: 56px;
+        margin-left: 0 !important;
+        margin-bottom: 0 !important;
     }
 }
 
@@ -628,4 +675,86 @@ body.light-mode #profile-drawer input[type="number"] {
 /* Ensure AI chatbox occludes radial menu */
 #ai-chat-panel {
     z-index: 100 !important;
+}
+
+/* Hide scrollbar utility for horizontal scrollable containers */
+.scrollbar-none::-webkit-scrollbar {
+    display: none;
+}
+.scrollbar-none {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+}
+
+/* Light mode overrides for the mobile bottom bar */
+body.light-mode #phase-selection-area {
+    background-color: #f8fafc !important;
+    border-color: #cbd5e1 !important;
+}
+body.light-mode #sidebar-action-toggles {
+    border-color: #cbd5e1 !important;
+}
+body.light-mode #sidebar-action-toggles button:hover,
+body.light-mode #phase-buttons-scroll-container button:hover {
+    background-color: #e2e8f0 !important;
+}
+
+/* Force white text for primary action buttons in light mode to prevent unreadable contrast */
+body.light-mode button.bg-sky-600,
+body.light-mode button.bg-sky-500,
+body.light-mode button.bg-indigo-600,
+body.light-mode button.bg-indigo-500,
+body.light-mode button.bg-emerald-600,
+body.light-mode button.bg-emerald-500,
+body.light-mode button.bg-rose-600,
+body.light-mode button.bg-rose-500,
+body.light-mode button.bg-purple-600,
+body.light-mode button.bg-purple-500 {
+    color: #ffffff !important;
+}
+
+/* Adjust active phase buttons inside bottom bar on mobile screens */
+@media (max-width: 768px) {
+    .phase-btn.active {
+        box-shadow: inset 0 -4px 0 0 var(--glow-primary) !important;
+        border-radius: 0.5rem !important;
+    }
+
+    /* Mobile-only position overrides for the AI widget elements on the sandbox page */
+    body.sandbox-page #ai-chat-container #ai-radial-wrapper {
+        bottom: calc(1.5rem + 56px) !important;
+    }
+    body.sandbox-page #ai-chat-container #ai-tooltip-bar {
+        bottom: calc(1.5rem + 56px) !important;
+        right: 1.5rem !important;
+        left: 1.5rem !important;
+        max-width: calc(100vw - 3rem) !important;
+    }
+    body.sandbox-page #ai-chat-container #ai-chat-panel {
+        bottom: calc(5.5rem + 56px) !important;
+        right: 1.5rem !important;
+        left: 1.5rem !important;
+        max-width: calc(100vw - 3rem) !important;
+    }
+
+    /* When keyboard is active, hide bottom bar and lower AI widgets to default bottom */
+    body.sandbox-page #sidebar.keyboard-visible #phase-selection-area {
+        display: none !important;
+    }
+    body.sandbox-page #sidebar.keyboard-visible {
+        display: none !important;
+        height: 0 !important;
+    }
+    body.sandbox-page #sidebar.keyboard-visible ~ #viewport {
+        margin-bottom: 0 !important;
+    }
+    body.sandbox-page #sidebar.keyboard-visible ~ #ai-chat-container #ai-radial-wrapper {
+        bottom: 1.5rem !important;
+    }
+    body.sandbox-page #sidebar.keyboard-visible ~ #ai-chat-container #ai-tooltip-bar {
+        bottom: 1.5rem !important;
+    }
+    body.sandbox-page #sidebar.keyboard-visible ~ #ai-chat-container #ai-chat-panel {
+        bottom: 5.5rem !important;
+    }
 }

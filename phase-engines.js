@@ -319,8 +319,7 @@ class DataPhaseEngine extends PhaseEngineBase {
                                         const activeProject = projects.find(p => p.project_id === activeProjId);
                                         const folders = activeProject?.folders || [];
                                         const pageAssignments = activeProject?.page_assignments || {};
-                                        
-                                        const renderPageItem = (page, indentClass = "") => {
+                                         const renderPageItem = (page, indentClass = "") => {
                                             const isCurrentPage = page.map_id === state.map_id;
                                             const meta = page.meta || {};
                                             const title = meta.title || "Untitled Page";
@@ -340,7 +339,19 @@ class DataPhaseEngine extends PhaseEngineBase {
                                             const leftBarClasses = isMaster ? 'bg-purple-500' : 'bg-sky-500';
                                             const leftBarOpacity = (isMaster || isCurrentPage) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100';
 
-                                            const activeBadge = isCurrentPage ? `<span class="text-[8px] bg-${accentColor}-950/60 border border-${accentColor}-600 text-${accentColor}-400 px-1.5 py-0.5 rounded-full shrink-0 uppercase tracking-widest font-extrabold">● Active</span>` : '';
+                                            const typeIcons = {
+                                                'web': '🌐',
+                                                'person': '👤',
+                                                'prompt': '💬',
+                                                'agent': '🤖',
+                                                'file': '📁',
+                                                'generic': '📄'
+                                            };
+                                            const typeIcon = typeIcons[type] || '📄';
+
+                                            const activeBadge = isCurrentPage 
+                                                ? `<span class="text-[8px] bg-${accentColor}-950/60 border border-${accentColor}-600 text-${accentColor}-400 px-1.5 py-0.5 rounded-full shrink-0 uppercase tracking-widest font-extrabold sm:inline-block hidden">● Active</span><span class="text-[9px] text-${accentColor}-400 shrink-0 sm:hidden block font-bold" title="Active Space">●</span>` 
+                                                : '';
                                             const loadBtn = isCurrentPage 
                                                 ? `<button onclick="SC.actionCloseDataManager()" class="flex-1 bg-${accentColor}-950/40 hover:bg-${accentColor}-900/40 text-${accentColor}-450 hover:text-${accentColor}-350 text-[9px] py-1 rounded font-bold border border-${accentColor}-900/50 cursor-pointer transition-all shadow" title="Close Data Manager">Active Space</button>`
                                                 : `<button onclick="SC.actionLoadFromLibrary('${page.map_id}')" class="flex-1 bg-slate-900 hover:bg-${accentColor}-600 text-white text-[9px] py-1 rounded font-bold transition-all border border-slate-800/80 shadow">Load</button>`;
@@ -349,8 +360,8 @@ class DataPhaseEngine extends PhaseEngineBase {
 
                                             return `
                                             <div id="page-item-${page.map_id}" class="bg-slate-950/70 border rounded-xl overflow-hidden group relative transition-all shrink-0 ${cardClasses} ${indentClass}" 
-                                                 draggable="true" 
-                                                 ondragstart="event.dataTransfer.setData('text/plain', 'page:${page.map_id}')">
+                                                  draggable="true" 
+                                                  ondragstart="event.dataTransfer.setData('text/plain', 'page:${page.map_id}')">
                                                 <div class="absolute left-0 top-0 bottom-0 w-1 ${leftBarClasses} rounded-l-xl ${leftBarOpacity} transition-opacity"></div>
                                                 
                                                 <div class="p-3 flex flex-col gap-2">
@@ -359,10 +370,15 @@ class DataPhaseEngine extends PhaseEngineBase {
                                                             <span title="Storage Target" class="shrink-0">${storageIcon}</span>
                                                             <span class="truncate ${isMaster ? 'text-purple-300 font-extrabold' : ''}">${title}</span>
                                                             ${activeBadge}
-                                                            <span class="text-[8px] border px-1.5 py-0.5 rounded-full shrink-0 uppercase tracking-widest ${typeBadgeColor}">${type}</span>
-                                                            ${meta.shared ? '<span class="text-[8px] bg-teal-900/50 border border-teal-700/50 text-teal-400 px-1.5 py-0.5 rounded-full shrink-0 uppercase tracking-widest">🔗 shared</span>' : ''}
+                                                            <span class="text-[8px] border px-1.5 py-0.5 rounded-full shrink-0 uppercase tracking-widest ${typeBadgeColor} sm:inline-block hidden">${type}</span>
+                                                            <span class="text-[10px] shrink-0 sm:hidden block" title="Page Type: ${type}">${typeIcon}</span>
+                                                            ${meta.shared ? `
+                                                                <span class="text-[8px] bg-teal-900/50 border border-teal-700/50 text-teal-400 px-1.5 py-0.5 rounded-full shrink-0 uppercase tracking-widest sm:inline-block hidden">🔗 shared</span>
+                                                                <span class="text-teal-400 text-[10px] shrink-0 sm:hidden block" title="Shared Page">🔗</span>
+                                                            ` : ''}
                                                         </div>
-                                                        <span class="text-[9px] text-slate-500 bg-slate-900/60 px-1.5 py-0.5 rounded border border-slate-800/60 shrink-0">${nodeCount} nodes</span>
+                                                        <span class="text-[9px] text-slate-500 bg-slate-900/60 px-1.5 py-0.5 rounded border border-slate-800/60 shrink-0 sm:inline-block hidden">${nodeCount} nodes</span>
+                                                        <span class="text-[9px] text-slate-400 shrink-0 sm:hidden block" title="${nodeCount} nodes">⬡ ${nodeCount}</span>
                                                     </div>
                                                     
                                                     <div class="flex gap-1.5 ${isCurrentPage ? 'opacity-100' : 'opacity-60 group-hover:opacity-100'} transition-opacity">

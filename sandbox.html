@@ -19,7 +19,7 @@
     <script src="multi_map_ai_engine.js"></script>
 </head>
 
-<body class="overflow-hidden bg-slate-950 select-none">
+<body class="overflow-hidden bg-slate-950 select-none sandbox-page">
     <script>
         if (localStorage.getItem('mm_theme') === 'light') document.body.classList.add('light-mode');
     </script>
@@ -27,25 +27,6 @@
         class="h-14 border-b border-slate-800 bg-slate-900/50 flex justify-between items-center px-2 md:px-4 z-50 relative backdrop-blur w-full gap-2 md:gap-4">
         <!-- Identity & Status -->
         <div class="flex items-center gap-2 md:gap-3 shrink-0">
-            <!-- Universal Hamburger Menu -->
-            <button id="btn-sidebar-toggle"
-                class="p-1 md:p-1.5 text-slate-400 hover:text-white transition-colors rounded hover:bg-slate-800"
-                onclick="SC.toggleSidebar()" title="Toggle Inspector">
-                <svg class="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16">
-                    </path>
-                </svg>
-            </button>
-
-            <!-- Data Manager Button -->
-            <button id="btn-data-manager"
-                class="p-1 md:p-1.5 text-slate-400 hover:text-white transition-colors rounded hover:bg-slate-800"
-                onclick="SC.toggleDataManager()" title="Toggle Data Manager">
-                <svg class="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2 1.5 3 3 3h10c1.5 0 3-1 3-3V7m-9 5h4m-4-4h4"></path>
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7c0-2 1.5-3 3-3h10c1.5 0 3 1 3 3M4 7l8 3 8-3"></path>
-                </svg>
-            </button>
 
             <!-- M-M Home Link -->
             <a href="index.html"
@@ -122,29 +103,37 @@
         <div id="sidebar"
             class="border-r border-slate-800 flex z-40 bg-slate-900/95 backdrop-blur-md shrink-0 transition-all duration-300 overflow-hidden">
 
-            <!-- Narrow Tool Rail (Always visible) -->
+            <!-- Narrow Tool Rail (Always visible, scrollable bottom bar on mobile) -->
             <div id="phase-selection-area"
                 class="w-[56px] shrink-0 flex flex-col items-center py-4 gap-2 bg-slate-950 border-r border-slate-800 z-10 shadow-lg h-full">
-                <button id="btn-phase-map"
-                    class="phase-btn w-12 h-12 rounded-xl hover:bg-slate-800 text-xl transition-all active flex items-center justify-center"
-                    onclick="SC.setView('map')" title="Map Phase">🗺️</button>
-                <button id="btn-phase-orbital"
-                    class="phase-btn w-12 h-12 rounded-xl hover:bg-slate-800 text-xl transition-all flex items-center justify-center"
-                    onclick="SC.setView('orbital')" title="Orbital Focus">🔮</button>
-                <button id="btn-phase-web"
-                    class="phase-btn w-12 h-12 rounded-xl hover:bg-slate-800 text-xl transition-all flex items-center justify-center"
-                    onclick="SC.setView('web')" title="Web Architect">🌐</button>
-                <button id="btn-phase-prompt"
-                    class="phase-btn w-12 h-12 rounded-xl hover:bg-slate-800 text-xl transition-all flex items-center justify-center"
-                    onclick="SC.setView('prompt')" title="Prompt Engine">💬</button>
-                <button id="btn-phase-agent"
-                    class="phase-btn w-12 h-12 rounded-xl hover:bg-slate-800 text-xl transition-all flex items-center justify-center"
-                    onclick="SC.setView('agent')" title="Agent Config">🤖</button>
-                <button id="btn-phase-person"
-                    class="phase-btn w-12 h-12 rounded-xl hover:bg-slate-800 text-xl transition-all flex items-center justify-center"
-                    onclick="SC.setView('person')" title="Person Profile">👤</button>
+                
+                <!-- 1. Sidebar Toggles (Top on desktop, Rightmost on mobile) -->
+                <div id="sidebar-action-toggles" class="order-last md:order-first flex flex-row md:flex-col items-center gap-2 pb-0 md:pb-3 border-l border-slate-800 md:border-l-0 md:border-b ml-auto md:ml-0 pl-2 md:pl-0 shrink-0">
+                    <button class="w-10 h-10 rounded-xl hover:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-white transition-all text-lg cursor-pointer border-none bg-transparent" onclick="SC.toggleSidebar()" title="Toggle Inspector">☰</button>
+                    <button class="w-10 h-10 rounded-xl hover:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-white transition-all text-lg cursor-pointer border-none bg-transparent" onclick="SC.toggleDataManager()" title="Toggle Data Manager">📁</button>
+                </div>
 
-                <div class="w-8 h-px bg-slate-800 my-2"></div>
+                <!-- 2. Phase buttons scrollable container (Left on mobile, below toggles on desktop) -->
+                <div id="phase-buttons-scroll-container" class="order-first md:order-last flex flex-row md:flex-col gap-2 items-center overflow-x-auto md:overflow-visible flex-1 w-full scrollbar-none py-1 md:py-2 px-2 md:px-0">
+                    <button id="btn-phase-map"
+                        class="phase-btn w-10 h-10 md:w-12 md:h-12 shrink-0 rounded-xl hover:bg-slate-800 text-xl transition-all active flex items-center justify-center cursor-pointer border-none bg-transparent"
+                        onclick="SC.setView('map')" title="Map Phase">🗺️</button>
+                    <button id="btn-phase-orbital"
+                        class="phase-btn w-10 h-10 md:w-12 md:h-12 shrink-0 rounded-xl hover:bg-slate-800 text-xl transition-all flex items-center justify-center cursor-pointer border-none bg-transparent"
+                        onclick="SC.setView('orbital')" title="Orbital Focus">🔮</button>
+                    <button id="btn-phase-web"
+                        class="phase-btn w-10 h-10 md:w-12 md:h-12 shrink-0 rounded-xl hover:bg-slate-800 text-xl transition-all flex items-center justify-center cursor-pointer border-none bg-transparent"
+                        onclick="SC.setView('web')" title="Web Architect">🌐</button>
+                    <button id="btn-phase-prompt"
+                        class="phase-btn w-10 h-10 md:w-12 md:h-12 shrink-0 rounded-xl hover:bg-slate-800 text-xl transition-all flex items-center justify-center cursor-pointer border-none bg-transparent"
+                        onclick="SC.setView('prompt')" title="Prompt Engine">💬</button>
+                    <button id="btn-phase-agent"
+                        class="phase-btn w-10 h-10 md:w-12 md:h-12 shrink-0 rounded-xl hover:bg-slate-800 text-xl transition-all flex items-center justify-center cursor-pointer border-none bg-transparent"
+                        onclick="SC.setView('agent')" title="Agent Config">🤖</button>
+                    <button id="btn-phase-person"
+                        class="phase-btn w-10 h-10 md:w-12 md:h-12 shrink-0 rounded-xl hover:bg-slate-800 text-xl transition-all flex items-center justify-center cursor-pointer border-none bg-transparent"
+                        onclick="SC.setView('person')" title="Person Profile">👤</button>
+                </div>
 
             </div>
 

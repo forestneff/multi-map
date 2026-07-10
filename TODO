@@ -11,7 +11,7 @@
 ### [ ] Phase 1: The Data & Identity Layer
 - Agent Context: firestore.rules, multi-map-core.js (data manager), multi-map-library.js, auth.js, Firebase Admin functions.
 
-### [ ] 1. Project Directory Cleanup & Data Integrity
+### [x] 1. Project Directory Cleanup & Data Integrity
 - Intent: Enforce a strict single-directory rule per project to ensure database cleanliness and prevent recursive navigation issues.
 - Details:
   - Run a migration/cleanup script to identify and repair legacy projects with multiple directories or directories pointing to other projects.
@@ -21,7 +21,7 @@
 ### [ ] 2. Refine Map Sharing & Read-Only Views
 - Intent: Refine the existing map-sharing system and polish the read-only `view.html` experience.
 - Details:
-  - Improve the `view.html` page to provide a seamless read-only map mode (stripping out inspector panels and editing event listeners, but keeping limitted smart button and navigation features from multi-map-core.js).
+  - Improve the `view.html` page to provide a seamless read-only map mode (stripping out inspector panels and editing event listeners, but keeping limited smart button and navigation features from multi-map-core.js).
   - Ensure shared maps show a robust "Fork to my workspace" button for authenticated visitors. When forked, full content of original map/project will need to be imported as a fresh project for a fully functional workspace.
   - Add expiry options for shared links (7 / 30 / 90 days).
   - *Cross-Reference:* This system will be heavily revisited and integrated with Cloud Storage Vaults (Task 4), P2P Federation pointers (Task 7), and Colab-Root Shared Spaces (Task 12).
