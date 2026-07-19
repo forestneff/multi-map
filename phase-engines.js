@@ -20,6 +20,7 @@ class PhaseRegistrySystem {
         this.register(new IframePhaseEngine(kernel, 'prompt', 'engines/prompt-engine.html'));
         this.register(new IframePhaseEngine(kernel, 'agent', 'engines/agent-config.html'));
         this.register(new IframePhaseEngine(kernel, 'person', 'engines/person.html'));
+        this.register(new IframePhaseEngine(kernel, 'file', 'engines/file-explorer.html'));
         
         this.register(new DataPhaseEngine(kernel)); 
         
@@ -43,6 +44,7 @@ class PhaseRegistrySystem {
                     else if (action === 'SAVE_CONSTELLATION' && id) window.SC.actionSaveConstellation(id);
                     else if (action === 'DELETE' && id) window.SC.actionDelete(id);
                     else if (action === 'ENTER_PORTAL' && id) window.SC.actionEnterPortal(id);
+                    else if (action === 'OPEN_FILE_TAB' && id) window.SC.actionOpenFileInNewTab(id);
                     else if (action === 'TRIGGER_AI' && id) window.SC.actionTriggerAI(id);
                     else if (action === 'APPLY_TEMPLATE' && id && event.data.data) {
                         window.SC.actionApplyTemplateToNode(id, event.data.data);
@@ -58,6 +60,9 @@ class PhaseRegistrySystem {
                     }
                     else if (action === 'REVOKE_SHARE_PAGE' && id) {
                         window.SC.actionRevokeShare(id);
+                    }
+                    else if (action === 'MOUNT_DIRECTORY' && id) {
+                        window.SC.actionMountDirectory(id);
                     }
                 }
             }

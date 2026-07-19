@@ -3,6 +3,73 @@
  * Features: Template-to-Node Application, Profile Singleton, CMS Data Syncing.
  */
 
+var FileHandleStore = {
+    dbName: 'MultiMapFileHandles',
+    storeName: 'handles',
+    
+    getDB() {
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open(this.dbName, 1);
+            request.onupgradeneeded = (e) => {
+                const db = e.target.result;
+                if (!db.objectStoreNames.contains(this.storeName)) {
+                    db.createObjectStore(this.storeName);
+                }
+            };
+            request.onsuccess = (e) => resolve(e.target.result);
+            request.onerror = (e) => reject(e.target.error);
+        });
+    },
+    
+    async get(key) {
+        try {
+            const db = await this.getDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(this.storeName, 'readonly');
+                const store = tx.objectStore(this.storeName);
+                const request = store.get(key);
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+            });
+        } catch (e) {
+            console.error("FileHandleStore get failed:", e);
+            return null;
+        }
+    },
+    
+    async set(key, val) {
+        try {
+            const db = await this.getDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(this.storeName, 'readwrite');
+                const store = tx.objectStore(this.storeName);
+                const request = store.put(val, key);
+                request.onsuccess = () => resolve();
+                request.onerror = () => reject(request.error);
+            });
+        } catch (e) {
+            console.error("FileHandleStore set failed:", e);
+        }
+    },
+    
+    async delete(key) {
+        try {
+            const db = await this.getDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(this.storeName, 'readwrite');
+                const store = tx.objectStore(this.storeName);
+                const request = store.delete(key);
+                request.onsuccess = () => resolve();
+                request.onerror = () => reject(request.error);
+            });
+        } catch (e) {
+            console.error("FileHandleStore delete failed:", e);
+        }
+    }
+};
+if (typeof window !== 'undefined') window.FileHandleStore = FileHandleStore;
+if (typeof global !== 'undefined') global.FileHandleStore = FileHandleStore;
+
 class HostBridge {
     constructor() { 
         this.pushUrl = "http://localhost:8000/api/push"; 
@@ -296,11 +363,12 @@ class MultiMapKernel {
         const pages = this.getAllPages();
         const map = pages.find(p => p.map_id === mapId);
         if (!map || !map.nodes) return false;
-        const root = map.nodes.find(n => n.type && (n.type === 'web-root' || n.type === 'root' || n.type === 'person-root' || n.type === 'agent-root' || n.type === 'prompt-root'));
+        const root = map.nodes.find(n => n.type && (n.type === 'web-root' || n.type === 'root' || n.type === 'person-root' || n.type === 'agent-root' || n.type === 'prompt-root' || n.type === 'file-root'));
         if (targetType === 'web-root') return root && root.type === 'web-root';
         if (targetType === 'prompt-root') return root && root.type === 'prompt-root';
         if (targetType === 'agent-root') return root && root.type === 'agent-root';
         if (targetType === 'person-root') return root && root.type === 'person-root';
+        if (targetType === 'file-root') return root && root.type === 'file-root';
         return root && root.type === targetType;
     }
 
@@ -1003,6 +1071,7 @@ class MultiMapKernel {
 
     async syncFoldersFromMasterMap(mapState) {
         if (!mapState || !mapState.meta || !mapState.meta.project_id) return;
+        if (mapState.meta.isMaster !== true && mapState.meta.title !== "Project Directory") return;
         const projectId = mapState.meta.project_id;
         const proj = this.getProjects().find(p => p.project_id === projectId);
         if (!proj) return;
@@ -1065,10 +1134,46 @@ class MultiMapKernel {
             changed = true;
         }
 
-        const portalNodes = mapState.nodes.filter(n => n.type === 'portal' || n.type === 'smart-portal');
-        portalNodes.forEach(node => {
-            const pageId = node.content;
-            if (!pageId) return;
+        const pageNodes = mapState.nodes.filter(n => n.type === 'file-document' || n.type === 'portal' || n.type === 'smart-portal');
+        for (let i = 0; i < pageNodes.length; i++) {
+            const node = pageNodes[i];
+            let pageId = node.content;
+            if (!pageId) {
+                pageId = this.generateId();
+                node.content = pageId;
+                
+                const newPage = {
+                    map_id: pageId,
+                    meta: { 
+                        title: node.title || "New Space", 
+                        type: "generic", 
+                        created: new Date().toISOString(), 
+                        shared: false,
+                        project_id: projectId
+                    },
+                    nodes: [{ id: this.generateId(), type: 'root', title: 'Root', data: { x: 0, y: 0, isCore: true } }],
+                    connections: [],
+                    session: { viewport: { x: window.innerWidth / 2, y: window.innerHeight / 2, scale: 1 }, selectedId: null, remoteTemplates: [], layoutMode: 'organic' }
+                };
+                
+                if (!proj.page_ids.includes(pageId)) {
+                    proj.page_ids.push(pageId);
+                }
+                
+                if (this.isUsingCloudVault()) {
+                    const uid = window.FirebaseAuth.currentUser.uid;
+                    const pageRef = window.Firestore.doc(window.FirebaseDb, "users", uid, "projects", projectId, "pages", pageId);
+                    await window.Firestore.setDoc(pageRef, newPage);
+                    if (!this.firestorePagesByProject[projectId]) this.firestorePagesByProject[projectId] = [];
+                    this.firestorePagesByProject[projectId].push(newPage);
+                } else {
+                    let lib = this.getLibrary();
+                    lib.push(newPage);
+                    this.saveLibrary(lib);
+                }
+                changed = true;
+            }
+
             const incomingConns = mapState.connections.filter(c => c.to === node.id && c.type === 'structural');
             let parentConn = incomingConns.find(c => {
                 const n = mapState.nodes.find(node => node.id === c.from);
@@ -1097,7 +1202,7 @@ class MultiMapKernel {
                     changed = true;
                 }
             }
-        });
+        }
         
         if (changed) {
             await this.saveProject(proj);
@@ -1614,6 +1719,68 @@ class MultiMapKernel {
         return result;
     }
 
+    findFileRootNode(nodeId) {
+        let currId = nodeId;
+        let visited = new Set();
+        while (currId) {
+            if (visited.has(currId)) break;
+            visited.add(currId);
+            const n = this.state.nodes.find(x => x.id === currId);
+            if (!n) break;
+            if (n.type === 'file-root') return n;
+            
+            // Go to parent connection
+            const conn = this.state.connections.find(c => c.to === currId && c.type === 'structural');
+            if (!conn) break;
+            currId = conn.from;
+        }
+        return null;
+    }
+
+    async getDirectoryHandleForNode(nodeId) {
+        const node = this.state.nodes.find(n => n.id === nodeId);
+        if (!node) return null;
+        if (node.type === 'file-root') {
+            const handle = await FileHandleStore.get(node.id);
+            return handle;
+        }
+        
+        // Find parent connection
+        const conn = this.state.connections.find(c => c.to === node.id && c.type === 'structural');
+        if (!conn) return null;
+        
+        const parentHandle = await this.getDirectoryHandleForNode(conn.from);
+        if (!parentHandle) return null;
+        
+        if (node.type === 'file-folder') {
+            try {
+                return await parentHandle.getDirectoryHandle(node.title);
+            } catch (e) {
+                console.error(`Failed to get sub-directory handle for [${node.title}]:`, e);
+                return null;
+            }
+        }
+        return null;
+    }
+
+    async getFileHandleForNode(nodeId) {
+        const node = this.state.nodes.find(n => n.id === nodeId);
+        if (!node || node.type !== 'file-document') return null;
+        
+        const conn = this.state.connections.find(c => c.to === node.id && c.type === 'structural');
+        if (!conn) return null;
+        
+        const parentHandle = await this.getDirectoryHandleForNode(conn.from);
+        if (!parentHandle) return null;
+        
+        try {
+            return await parentHandle.getFileHandle(node.title);
+        } catch (e) {
+            console.error(`Failed to get file handle for [${node.title}]:`, e);
+            return null;
+        }
+    }
+
     async toggleCollapse(nodeId) {
         const node = this.state.nodes.find(n => n.id === nodeId);
         if (node) { 
@@ -1624,6 +1791,16 @@ class MultiMapKernel {
                 const projId = this.state.meta.project_id || this.activeProjectId;
                 if (projId) {
                     await this.updateProjectFolder(projId, node.content, { isExpanded: !node.data.collapsed });
+                }
+            }
+
+            // Lazy load folder children from local OS directory if expanded
+            if (!node.data.collapsed && (node.type === 'file-folder' || node.type === 'file-root')) {
+                const rootNode = this.findFileRootNode(node.id);
+                if (rootNode && rootNode.root_metadata && rootNode.root_metadata.source === 'local_os') {
+                    if (window.SC && window.SC.expandLocalOSFolder) {
+                        await window.SC.expandLocalOSFolder(node.id);
+                    }
                 }
             }
             
@@ -1739,10 +1916,100 @@ class MultiMapKernel {
         return { success: true };
     }
 
+    syncTitlesFromPayload(nodeId, newTitle) {
+        if (!newTitle) return;
+        
+        let targetMap = this.state;
+        let node = this.state.nodes.find(n => n.id === nodeId);
+        if (!node) {
+            const lib = this.getLibrary();
+            const foundPage = lib.find(p => p.nodes.some(x => x.id === nodeId));
+            if (foundPage) {
+                targetMap = foundPage;
+                node = foundPage.nodes.find(x => x.id === nodeId);
+            }
+        }
+        if (!node) return;
+
+        if (node.title !== newTitle) {
+            node.title = newTitle;
+            if (targetMap !== this.state) {
+                const projId = targetMap.meta.project_id || this.activeProjectId || 'default_project';
+                this.savePage(projId, targetMap.map_id, targetMap);
+            }
+        }
+        
+        if (targetMap.meta && targetMap.meta.title !== newTitle) {
+            targetMap.meta.title = newTitle;
+            if (targetMap !== this.state) {
+                const projId = targetMap.meta.project_id || this.activeProjectId || 'default_project';
+                this.savePage(projId, targetMap.map_id, targetMap);
+            }
+        }
+        
+        const mapId = targetMap.map_id;
+        if (mapId) {
+            const lib = this.getLibrary();
+            let changedLib = false;
+            lib.forEach(page => {
+                let changedPage = false;
+                page.nodes.forEach(n => {
+                    if ((n.type === 'portal' || n.type === 'smart-portal' || n.type === 'file-document') && n.content === mapId) {
+                        if (n.title !== newTitle) {
+                            n.title = newTitle;
+                            changedPage = true;
+                        }
+                    }
+                });
+                if (changedPage) {
+                    changedLib = true;
+                    if (this.isUsingCloudVault()) {
+                        this.savePage(page.meta.project_id || this.activeProjectId || 'default_project', page.map_id, page);
+                    }
+                }
+            });
+            if (changedLib && !this.isUsingCloudVault()) {
+                this.saveLibrary(lib);
+            }
+        }
+    }
+
     updateNode(id, up) { 
         if (this.isReadOnly) return;
-        const n = this.state.nodes.find(x => x.id === id); 
+        let targetMap = this.state;
+        let n = this.state.nodes.find(x => x.id === id); 
+        
+        if (!n) {
+            const lib = this.getLibrary();
+            const foundPage = lib.find(p => p.nodes.some(x => x.id === id));
+            if (foundPage) {
+                targetMap = foundPage;
+                n = foundPage.nodes.find(x => x.id === id);
+            }
+        }
         if (!n) return; 
+
+        // If the title of a root node is updated, synchronize page and portal titles
+        const isRootType = (type) => type && (type.endsWith('-root') || type === 'root');
+        const hasParent = targetMap.connections.some(c => c.to === id && c.type === 'structural');
+        const isRootNode = n.data && (n.data.isCore || (!hasParent && isRootType(n.type)));
+
+        if (up.title && isRootNode && n.title !== up.title) {
+            this.syncTitlesFromPayload(id, up.title);
+        }
+
+        // If root metadata updates directory name, synchronize titles
+        if (up.root_metadata && up.root_metadata.directory_name && (!n.root_metadata || n.root_metadata.directory_name !== up.root_metadata.directory_name)) {
+            this.syncTitlesFromPayload(id, up.root_metadata.directory_name);
+        }
+
+        if (targetMap !== this.state) {
+            Object.keys(up).forEach(k => { if (k === 'x' || k === 'y') n.data[k] = up[k]; else n[k] = up[k]; });
+            const projId = targetMap.meta.project_id || this.activeProjectId || 'default_project';
+            this.savePage(projId, targetMap.map_id, targetMap);
+            this.notify();
+            return;
+        }
         
         if (up.type === 'person-root') {
             const existingPerson = this.state.nodes.find(x => x.type === 'person-root' && x.id !== id);
@@ -1751,11 +2018,6 @@ class MultiMapKernel {
                 return;
             }
         }
-
-        // If the core/root node's type is being updated, automatically sync the map's metadata type
-        const isRootType = (type) => type && (type.endsWith('-root') || type === 'root');
-        const hasParent = this.state.connections.some(c => c.to === id && c.type === 'structural');
-        const isRootNode = n.data && (n.data.isCore || (!hasParent && isRootType(n.type)));
 
         if (up.type && isRootNode && isRootType(up.type) && up.type !== n.type) {
             if (typeof MultiMapSchema !== 'undefined' && MultiMapSchema.mapTypes) {

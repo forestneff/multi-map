@@ -66,7 +66,10 @@
                 "tags": [],
                 "portal_behavior": "standard",
                 "static_layout": false,
-                "custom_payload": {}
+                "custom_payload": {},
+                "source": "local_os | internal_project",
+                "is_mounted": false,
+                "directory_name": ""
             }
         }
     ],

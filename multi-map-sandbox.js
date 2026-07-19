@@ -63,10 +63,31 @@ class SandboxController {
         
         setTimeout(() => this.actionLoadRemoteTemplates(), 200);
 
-        this.kernel.subscribe(this.render.bind(this));
+        this.kernel.subscribe((state) => {
+            this.handleStateChange(state);
+            this.render();
+        });
         
         this.animate();
         this.render();
+    }
+
+    handleStateChange(state) {
+        const selectedId = state.session && state.session.selectedId;
+        if (selectedId && selectedId !== this._previousSelectedId) {
+            this._previousSelectedId = selectedId;
+            const node = state.nodes.find(n => n.id === selectedId);
+            if (node && (node.type === 'file-root' || node.type === 'file-folder')) {
+                const rootNode = this.kernel.findFileRootNode(node.id);
+                if (rootNode && rootNode.root_metadata && rootNode.root_metadata.source === 'local_os') {
+                    this.expandLocalOSFolder(node.id).catch(err => {
+                        console.warn("Auto lazy-loading local folder failed:", err);
+                    });
+                }
+            }
+        } else if (!selectedId) {
+            this._previousSelectedId = null;
+        }
     }
 
     ensureDomElements() {
@@ -1666,19 +1687,27 @@ class SandboxController {
     async actionEnterPortal(id) {
         const tgt = id || this.kernel.state.session.selectedId;
         const node = this.kernel.state.nodes.find(n => n.id === tgt);
-        if (node && (node.type === 'portal' || node.type === 'smart-portal')) {
-            const lib = this.kernel.getLibrary();
-            const existingMap = lib.find(m => m.map_id === node.content);
-            if (existingMap) {
-                // Navigate directly to existing page
-                this.kernel.enterPortal(existingMap);
-                const mapType = this.kernel.state.meta && this.kernel.state.meta.type ? this.kernel.state.meta.type : 'generic';
+        if (node) {
+            if (node.type === 'file-root') {
                 this.setView('map');
                 this.actionCloseDataManager();
                 this.render();
-            } else {
-                // Open selection modal to choose existing or create new
-                this.actionSetPortalTarget(tgt);
+                return;
+            }
+            if (node.type === 'portal' || node.type === 'smart-portal' || node.type === 'file-document') {
+                const lib = this.kernel.getLibrary();
+                const existingMap = lib.find(m => m.map_id === node.content);
+                if (existingMap) {
+                    // Navigate directly to existing page
+                    this.kernel.enterPortal(existingMap);
+                    const mapType = this.kernel.state.meta && this.kernel.state.meta.type ? this.kernel.state.meta.type : 'generic';
+                    this.setView('map');
+                    this.actionCloseDataManager();
+                    this.render();
+                } else {
+                    // Open selection modal to choose existing or create new
+                    this.actionSetPortalTarget(tgt);
+                }
             }
         }
     }
@@ -1696,6 +1725,156 @@ class SandboxController {
     async actionViewPersonPortal(id) {
         await this.actionEnterPortal(id);
         this.setView('person');
+    }
+
+    async actionOpenFileInNewTab(id) {
+        const tgt = id || this.kernel.state.session.selectedId;
+        const node = this.kernel.state.nodes.find(n => n.id === tgt);
+        if (!node || node.type !== 'file-document') return;
+        
+        try {
+            const handle = await this.kernel.getFileHandleForNode(node.id);
+            if (!handle) {
+                alert("This file is not mounted locally or is not a local OS file.");
+                return;
+            }
+            
+            // Verify read permissions
+            const opt = { mode: 'read' };
+            if ((await handle.queryPermission(opt)) !== 'granted') {
+                if ((await handle.requestPermission(opt)) !== 'granted') {
+                    alert("Permission denied to read this file.");
+                    return;
+                }
+            }
+            
+            const file = await handle.getFile();
+            const url = URL.createObjectURL(file);
+            window.open(url, '_blank');
+        } catch(e) {
+            console.error("Open file in tab failed:", e);
+            alert("Failed to open file: " + e.message);
+        }
+    }
+
+    async actionMountDirectory(id) {
+        const tgt = id || this.kernel.state.session.selectedId;
+        const node = this.kernel.state.nodes.find(n => n.id === tgt);
+        if (!node || node.type !== 'file-root') return;
+        
+        try {
+            const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+            await FileHandleStore.set(node.id, handle);
+            
+            node.root_metadata = node.root_metadata || {};
+            node.root_metadata.source = 'local_os';
+            node.root_metadata.is_mounted = true;
+            node.root_metadata.directory_name = handle.name;
+            
+            this.kernel.syncTitlesFromPayload(node.id, handle.name);
+            
+            // Expand the folder automatically
+            node.data.collapsed = false;
+            
+            this.kernel.saveCurrentMapToLibrary();
+            
+            // Parse entries
+            await this.expandLocalOSFolder(node.id);
+            this.render();
+            this.showToast("Directory mounted successfully!", "success");
+        } catch(e) {
+            console.error("Mount directory failed:", e);
+            if (e.name !== 'AbortError') {
+                alert("Failed to mount directory: " + e.message);
+            }
+        }
+    }
+
+    async expandLocalOSFolder(nodeId) {
+        const node = this.kernel.state.nodes.find(n => n.id === nodeId);
+        if (!node || (node.type !== 'file-root' && node.type !== 'file-folder')) return;
+        
+        let handle;
+        try {
+            handle = await this.kernel.getDirectoryHandleForNode(node.id);
+        } catch(e) {
+            console.error("Failed to get handle:", e);
+            return;
+        }
+        if (!handle) return;
+        
+        // Verify/Request permission
+        const permission = await this.verifyFSReadWritePermission(handle);
+        if (!permission) return;
+        
+        // Read top level children
+        const entries = [];
+        try {
+            for await (const entry of handle.values()) {
+                entries.push(entry);
+            }
+        } catch(e) {
+            console.error("Error reading directory values:", e);
+            return;
+        }
+        
+        // Filter child nodes of this node
+        const childrenConns = this.kernel.state.connections.filter(c => c.from === node.id && c.type === 'structural');
+        const childrenNodes = childrenConns.map(c => this.kernel.state.nodes.find(n => n.id === c.to)).filter(n => n);
+        
+        let changed = false;
+        for (const entry of entries) {
+            const isDir = entry.kind === 'directory';
+            const type = isDir ? 'file-folder' : 'file-document';
+            
+            // Check if node already exists
+            const exists = childrenNodes.some(n => n.title === entry.name && n.type === type);
+            if (!exists) {
+                const childNode = this.kernel.addNode({
+                    type: type,
+                    title: entry.name,
+                    content: entry.name
+                }, node.id);
+                this.kernel.addConnection(node.id, childNode.id);
+                changed = true;
+            }
+        }
+        
+        if (changed) {
+            this.kernel.saveCurrentMapToLibrary();
+            this.render();
+        }
+    }
+
+    async verifyFSReadWritePermission(fileHandle) {
+        try {
+            const opts = { mode: 'readwrite' };
+            if ((await fileHandle.queryPermission(opts)) === 'granted') {
+                return true;
+            }
+            if ((await fileHandle.requestPermission(opts)) === 'granted') {
+                return true;
+            }
+        } catch(e) {
+            console.error("verifyFSReadWritePermission error:", e);
+        }
+        return false;
+    }
+    
+    showToast(message, type = 'info') {
+        const toast = document.createElement('div');
+        toast.className = `fixed bottom-4 right-4 px-4 py-2.5 rounded-xl text-white text-xs font-bold shadow-2xl transition-all duration-500 transform translate-y-10 opacity-0 z-[9999] ${
+            type === 'success' ? 'bg-emerald-600' : type === 'error' ? 'bg-rose-600' : 'bg-slate-800'
+        }`;
+        toast.textContent = message;
+        document.body.appendChild(toast);
+        setTimeout(() => {
+            toast.classList.remove('translate-y-10', 'opacity-0');
+        }, 100);
+        setTimeout(() => {
+            toast.classList.add('translate-y-10', 'opacity-0');
+            setTimeout(() => toast.remove(), 500);
+        }, 3000);
     }
 
     getWebLinkUrl(node, state) {
@@ -4358,8 +4537,36 @@ ${innerHtml}
             this.dom.viewMap.style.display = 'none';
             this.dom.viewContent.style.display = 'block';
             const eng = this.registry.get(this.viewMode);
-            if (eng) eng.render(this.dom.viewContent, this.kernel.state);
+            if (eng) {
+                let stateToRender = this.kernel.state;
+                const selId = this.kernel.state.session.selectedId;
+                const selNode = this.kernel.state.nodes.find(n => n.id === selId);
+                
+                // Determine if we should render a targeted portal submap instead of the current map
+                if (selNode && (selNode.type === 'portal' || selNode.type === 'smart-portal' || selNode.type === 'file-document') && selNode.content) {
+                    const targetRootType = this.getRootTypeForPhase(this.viewMode);
+                    if (targetRootType && this.kernel.hasRootType(selNode.content, targetRootType)) {
+                        const lib = this.kernel.getLibrary();
+                        const targetMap = lib.find(p => p.map_id === selNode.content);
+                        if (targetMap) {
+                            stateToRender = targetMap;
+                        }
+                    }
+                }
+                eng.render(this.dom.viewContent, stateToRender);
+            }
         }
+    }
+
+    getRootTypeForPhase(phase) {
+        const mapping = {
+            'web': 'web-root',
+            'prompt': 'prompt-root',
+            'agent': 'agent-root',
+            'person': 'person-root',
+            'file': 'file-root'
+        };
+        return mapping[phase] || null;
     }
 
     renderMap(state) {
@@ -4890,35 +5097,59 @@ ${innerHtml}
         if (type === 'web-root' || type.startsWith('web-')) return 'rgba(14,165,233,0.5)'; // sky
         if (type === 'prompt-root')                       return 'rgba(217,119,6,0.5)';   // amber
         if (type === 'agent-root')                        return 'rgba(225,29,72,0.5)';   // rose
+        if (type === 'file-document')                     return 'rgba(16,185,129,0.5)';  // emerald
         return null;
     }
 
     updatePhaseButtons() {
         if (!this.kernel || !this.kernel.state) return;
-        const currentMapType = (this.kernel.state.meta && this.kernel.state.meta.type) ? this.kernel.state.meta.type : 'generic';
-        const portalNodes = this.kernel.state.nodes.filter(n => n.type === 'portal' || n.type === 'smart-portal');
         
-        const lib = this.kernel.getLibrary();
-        const targetMapTypes = new Set();
-        portalNodes.forEach(n => {
-            const targetMap = lib.find(m => m.map_id === n.content);
-            if (targetMap && targetMap.meta && targetMap.meta.type) {
-                targetMapTypes.add(targetMap.meta.type);
+        const selectedId = this.kernel.state.session.selectedId;
+        const selectedNode = this.kernel.state.nodes.find(n => n.id === selectedId);
+        
+        const phaseToRootType = {
+            'web': 'web-root',
+            'prompt': 'prompt-root',
+            'agent': 'agent-root',
+            'person': 'person-root',
+            'file': 'file-root'
+        };
+        
+        Object.entries(phaseToRootType).forEach(([phase, rootType]) => {
+            const btn = document.getElementById(`btn-phase-${phase}`);
+            if (btn) {
+                // 1. Current map contains that phase's root
+                const hasRootInMap = this.kernel.state.nodes.some(n => n.type === rootType);
+                
+                // 2. OR contains a portal to a page of that phase's root and that portal is currently focused
+                let portalHasRoot = false;
+                if (selectedNode && (selectedNode.type === 'portal' || selectedNode.type === 'smart-portal' || selectedNode.type === 'file-document') && selectedNode.content) {
+                    if (this.kernel.hasRootType(selectedNode.content, rootType)) {
+                        portalHasRoot = true;
+                    }
+                }
+                
+                const shouldShow = hasRootInMap || portalHasRoot;
+                btn.style.display = shouldShow ? 'flex' : 'none';
             }
         });
-
-        const typesToCheck = ['web', 'prompt', 'agent', 'person'];
-        typesToCheck.forEach(type => {
-            const btn = document.getElementById(`btn-phase-${type}`);
-            if (btn) {
-                const shouldShow = currentMapType === type || targetMapTypes.has(type);
-                if (shouldShow) {
-                    btn.style.display = 'flex';
-                } else {
-                    btn.style.display = 'none';
+        
+        // Auto-revert to map view if current viewMode is a phase engine that is no longer available
+        if (this.viewMode !== 'map' && this.viewMode !== 'orbital') {
+            const rootType = phaseToRootType[this.viewMode];
+            if (rootType) {
+                const hasRootInMap = this.kernel.state.nodes.some(n => n.type === rootType);
+                let portalHasRoot = false;
+                if (selectedNode && (selectedNode.type === 'portal' || selectedNode.type === 'smart-portal' || selectedNode.type === 'file-document') && selectedNode.content) {
+                    if (this.kernel.hasRootType(selectedNode.content, rootType)) {
+                        portalHasRoot = true;
+                    }
+                }
+                if (!hasRootInMap && !portalHasRoot) {
+                    this.setView('map');
                 }
             }
-        });
+        }
     }
 
     hasSmartAction() {
@@ -4927,7 +5158,7 @@ ${innerHtml}
         const canExit = this.kernel.portalHistory && this.kernel.portalHistory.length > 0;
         if (selectedNode && this.viewMode === 'map') {
             const type = selectedNode.type;
-            if (['portal', 'smart-portal', 'person-root', 'web-root', 'prompt-root', 'agent-root'].includes(type) || type.startsWith('web-')) {
+            if (['portal', 'smart-portal', 'person-root', 'web-root', 'prompt-root', 'agent-root', 'file-document'].includes(type) || type.startsWith('web-')) {
                 return true;
             }
             
@@ -5040,13 +5271,17 @@ ${innerHtml}
                         options.push({ text: 'Trigger AI ✨', action: () => this.actionTriggerAI(selectedNode.id) });
                     }
                     
+                    const isFilePortal = selectedNode.content && this.kernel.hasRootType && this.kernel.hasRootType(selectedNode.content, 'file-root');
+
                     if (hasTarget) {
                         if (isWebPortal) {
-                            options.push({ text: 'Launch Web App 🚀', action: () => { this.actionEnterPortal(selectedNode.id); this.setView('web'); } });
+                            options.push({ text: 'Launch Web App 🚀', action: () => this.setView('web') });
                         } else if (isAgentPortal) {
-                            options.push({ text: 'Configure Agent ⚙️', action: () => { this.actionEnterPortal(selectedNode.id); this.setView('agent'); } });
+                            options.push({ text: 'Configure Agent ⚙️', action: () => this.setView('agent') });
                         } else if (isPersonPortal) {
-                            options.push({ text: 'View Profile 👤', action: () => { this.actionEnterPortal(selectedNode.id); this.setView('person'); } });
+                            options.push({ text: 'View Profile 👤', action: () => this.setView('person') });
+                        } else if (isFilePortal) {
+                            options.push({ text: 'Explore Files 📁', action: () => this.setView('file') });
                         }
                         options.push({ text: 'Enter Portal ➔', action: () => this.actionEnterPortal(selectedNode.id) });
                         const isSyncPortal = selectedNode.data && selectedNode.data.isSyncPortal === true;
@@ -5062,16 +5297,20 @@ ${innerHtml}
                         text = 'Trigger AI';
                         themeClasses = 'bg-indigo-600 hover:bg-indigo-500 border-indigo-400 text-indigo-100 hover:text-white shadow-[0_0_15px_rgba(79,70,229,0.4)]';
                     } else if (hasTarget && isWebPortal) {
-                        action = () => { this.actionEnterPortal(selectedNode.id); this.setView('web'); };
+                        action = () => this.setView('web');
                         text = 'Launch Web App';
                         themeClasses = 'bg-sky-600 hover:bg-sky-500 border-sky-400 text-sky-100 hover:text-white shadow-[0_0_15px_rgba(14,165,233,0.4)]';
                     } else if (hasTarget && isAgentPortal) {
-                        action = () => { this.actionEnterPortal(selectedNode.id); this.setView('agent'); };
+                        action = () => this.setView('agent');
                         text = 'Configure Agent';
                         themeClasses = 'bg-rose-600 hover:bg-rose-500 border-rose-400 text-rose-100 hover:text-white shadow-[0_0_15px_rgba(225,29,72,0.4)]';
                     } else if (hasTarget && isPersonPortal) {
-                        action = () => { this.actionEnterPortal(selectedNode.id); this.setView('person'); };
+                        action = () => this.setView('person');
                         text = 'View Profile';
+                        themeClasses = 'bg-indigo-600 hover:bg-indigo-500 border-indigo-400 text-indigo-100 hover:text-white shadow-[0_0_15px_rgba(79,70,229,0.4)]';
+                    } else if (hasTarget && isFilePortal) {
+                        action = () => this.setView('file');
+                        text = 'Explore Files';
                         themeClasses = 'bg-indigo-600 hover:bg-indigo-500 border-indigo-400 text-indigo-100 hover:text-white shadow-[0_0_15px_rgba(79,70,229,0.4)]';
                     } else {
                         action = () => this.actionEnterPortal(selectedNode.id);
@@ -5132,6 +5371,18 @@ ${innerHtml}
                     action = () => this.setView('agent');
                     text = 'Configure Agent';
                     themeClasses = 'bg-rose-600 hover:bg-rose-500 border-rose-400 text-rose-100 hover:text-white shadow-[0_0_15px_rgba(225,29,72,0.4)]';
+                } else if (type === 'file-document') {
+                    const fileRoot = this.kernel.state.nodes.find(x => x.type === 'file-root');
+                    const isLocalOS = fileRoot && fileRoot.root_metadata && fileRoot.root_metadata.source === 'local_os';
+                    
+                    if (isLocalOS) {
+                        action = () => this.actionOpenFileInNewTab(selectedNode.id);
+                        text = 'Open in New Tab';
+                        themeClasses = 'bg-indigo-600 hover:bg-indigo-500 border-indigo-400 text-indigo-100 hover:text-white shadow-[0_0_15px_rgba(79,70,229,0.4)]';
+                        options = [
+                            { text: 'Open in New Tab ↗️', action: action }
+                        ];
+                    }
                 }
             }
         }

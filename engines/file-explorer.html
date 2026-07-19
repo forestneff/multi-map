@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>File Explorer Engine</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { margin: 0; padding: 0; background: #0b0f19; color: #e2e8f0; font-family: 'Inter', sans-serif; overflow: hidden; height: 100vh; }
+        .glass { background: rgba(30, 41, 59, 0.45); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.08); }
+        .glass:hover { border-color: rgba(255, 255, 255, 0.15); }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.3); }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.3); border-radius: 9999px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.5); }
+        .tree-item:hover { background: rgba(255, 255, 255, 0.04); }
+        .tree-item.active { background: rgba(99, 102, 241, 0.2); border-left: 3px solid #6366f1; }
+    </style>
+</head>
+<body class="flex flex-col h-screen overflow-hidden">
+    <!-- Top Nav bar inside engine -->
+    <div class="h-12 border-b border-slate-800/80 px-6 flex justify-between items-center bg-slate-900/60 shrink-0 select-none">
+        <div class="flex items-center gap-2">
+            <span class="text-lg">📁</span>
+            <h1 class="text-sm font-bold tracking-wider text-slate-200 uppercase">File Explorer Workspace</h1>
+        </div>
+        <div id="mount-status-indicator" class="text-xs font-mono text-slate-500">
+            Source: <span class="text-slate-400">Loading...</span>
+        </div>
+    </div>
+
+    <!-- Main Workspace Container -->
+    <div class="flex flex-1 min-h-0">
+        <!-- Left Pane: Tree View -->
+        <div class="w-72 border-r border-slate-800/80 flex flex-col bg-slate-950/20 shrink-0">
+            <div class="p-3 border-b border-slate-800/80 bg-slate-900/10 flex justify-between items-center select-none">
+                <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Directory Tree</span>
+                <button id="btn-refresh" class="text-xs text-slate-400 hover:text-white transition-colors">🔄 Refresh</button>
+            </div>
+            <div id="tree-container" class="flex-1 overflow-y-auto custom-scrollbar p-2">
+                <!-- Tree nodes will render here -->
+                <div class="text-center py-8 text-xs text-slate-500 italic">
+                    Loading structure...
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Pane: Preview / Edit Window -->
+        <div class="flex-1 flex flex-col bg-slate-900/20 relative min-w-0">
+            <!-- File/Page Path Header -->
+            <div id="preview-header" class="h-11 border-b border-slate-800/80 px-6 flex justify-between items-center bg-slate-900/40 shrink-0 select-none hidden">
+                <div class="flex items-center gap-2 truncate">
+                    <span id="preview-icon" class="text-sm">📄</span>
+                    <span id="preview-title" class="text-xs font-mono text-slate-300 truncate">/path/to/file.txt</span>
+                </div>
+                <div id="preview-actions" class="flex items-center gap-2">
+                    <!-- Dynamic save/enter button -->
+                </div>
+            </div>
+
+            <!-- Content Workspace -->
+            <div id="preview-body" class="flex-1 overflow-y-auto custom-scrollbar p-6 flex flex-col relative min-w-0">
+                <!-- Default empty state -->
+                <div class="flex-1 flex flex-col items-center justify-center text-slate-500 gap-4 select-none">
+                    <span class="text-6xl">📁</span>
+                    <div class="text-lg font-bold text-slate-400">No File or Folder Selected</div>
+                    <p class="text-xs text-slate-500 max-w-sm text-center">Select an item from the directory tree on the left to preview or edit its contents.</p>
+                </div>
+            </div>
+
+            <!-- Locked Overlay -->
+            <div id="locked-overlay" class="absolute inset-0 bg-[#0b0f19]/90 backdrop-blur-md flex flex-col items-center justify-center gap-4 z-50 hidden select-none">
+                <span class="text-5xl">🔒</span>
+                <h3 class="text-lg font-bold text-white">Local Directory Locked</h3>
+                <p class="text-xs text-slate-400 max-w-xs text-center leading-relaxed">Browser security requires explicit permission to access files in this mounted local directory for this session.</p>
+                <button id="btn-unlock" class="mt-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-lg transition-all duration-300 transform hover:scale-[1.02]">
+                    Grant Access & Unlock 📁
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- IndexedDB helper matching core -->
+    <script>
+        const FileHandleStore = {
+            dbName: 'MultiMapFileHandles',
+            storeName: 'handles',
+            getDB() {
+                return new Promise((resolve, reject) => {
+                    const request = indexedDB.open(this.dbName, 1);
+                    request.onupgradeneeded = (e) => {
+                        const db = e.target.result;
+                        if (!db.objectStoreNames.contains(this.storeName)) {
+                            db.createObjectStore(this.storeName);
+                        }
+                    };
+                    request.onsuccess = (e) => resolve(e.target.result);
+                    request.onerror = (e) => reject(e.target.error);
+                });
+            },
+            async get(key) {
+                try {
+                    const db = await this.getDB();
+                    return new Promise((resolve, reject) => {
+                        const tx = db.transaction(this.storeName, 'readonly');
+                        const store = tx.objectStore(this.storeName);
+                        const request = store.get(key);
+                        request.onsuccess = () => resolve(request.result);
+                        request.onerror = () => reject(request.error);
+                    });
+                } catch (e) { return null; }
+            }
+        };
+    </script>
+
+    <!-- Runtime Engine Logic -->
+    <script>
+        let currentState = null;
+        let rootNode = null;
+        let rootHandle = null;
+
+        // Tree structure cache
+        const treeCache = {
+            expanded: {}, // path -> boolean
+            handles: {}   // path -> handle
+        };
+
+        // Active selected item
+        let activePath = null;
+        let activeType = null; // 'file' or 'folder' or 'page'
+
+        // Listen for updates from parent
+        window.addEventListener('message', (event) => {
+            if (event.data && event.data.type === 'STATE_UPDATE') {
+                currentState = event.data.state;
+                initWorkspace();
+            }
+        });
+
+        // Event listener for keys / navigation back to canvas
+        window.addEventListener('keydown', (e) => {
+            const target = e.target;
+            const isEditable = target.tagName === 'INPUT' || 
+                               target.tagName === 'TEXTAREA' || 
+                               target.isContentEditable || 
+                               target.closest('[contenteditable="true"]');
+            
+            if (e.key === 'Enter' && isEditable) {
+                if (target.tagName === 'INPUT') {
+                    target.blur();
+                    e.preventDefault();
+                    e.stopPropagation();
+                } else if (target.tagName === 'TEXTAREA') {
+                    e.stopPropagation();
+                }
+                return;
+            }
+
+            if (e.key === 'Escape' || !isEditable) {
+                if (['Escape', 'Tab', 'Enter', ' ', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Delete'].includes(e.key)) {
+                    if (e.key !== 'Escape') e.preventDefault();
+                    window.parent.postMessage({
+                        type: 'mm-keydown',
+                        key: e.key,
+                        shiftKey: e.shiftKey,
+                        ctrlKey: e.ctrlKey,
+                        metaKey: e.metaKey
+                    }, '*');
+                }
+            }
+        });
+
+        async function initWorkspace() {
+            if (!currentState) return;
+
+            // Find default or selected file-root node
+            const selected = currentState.nodes.find(n => n.id === currentState.session.selectedId);
+            if (selected && selected.type === 'file-root') {
+                rootNode = selected;
+            } else {
+                rootNode = currentState.nodes.find(n => n.type === 'file-root');
+            }
+
+            if (!rootNode) {
+                renderNoRootState();
+                return;
+            }
+
+            const meta = rootNode.root_metadata || {};
+            const source = meta.source || 'internal_project';
+            const statusInd = document.getElementById('mount-status-indicator');
+
+            if (source === 'local_os') {
+                statusInd.innerHTML = `Source: <span class="text-indigo-400 font-bold">Local OS (${escapeHTML(meta.directory_name || 'Folder')})</span>`;
+                
+                // Get handle from IndexedDB
+                rootHandle = await FileHandleStore.get(rootNode.id);
+                if (!rootHandle) {
+                    renderUnmountedState();
+                    return;
+                }
+
+                // Verify permissions
+                const permissionOpts = { mode: 'readwrite' };
+                const verified = (await rootHandle.queryPermission(permissionOpts)) === 'granted';
+                if (!verified) {
+                    showLockOverlay();
+                    return;
+                }
+
+                hideLockOverlay();
+                treeCache.handles[''] = rootHandle;
+                await loadTreeStructure();
+            } else {
+                statusInd.innerHTML = `Source: <span class="text-sky-400 font-bold">Internal Project Pages</span>`;
+                hideLockOverlay();
+                loadInternalProjectStructure();
+            }
+        }
+
+        function showLockOverlay() {
+            const overlay = document.getElementById('locked-overlay');
+            overlay.classList.remove('hidden');
+            document.getElementById('btn-unlock').onclick = async () => {
+                try {
+                    const granted = (await rootHandle.requestPermission({ mode: 'readwrite' })) === 'granted';
+                    if (granted) {
+                        hideLockOverlay();
+                        initWorkspace();
+                    }
+                } catch (e) {
+                    alert("Permission request failed: " + e.message);
+                }
+            };
+        }
+
+        function hideLockOverlay() {
+            document.getElementById('locked-overlay').classList.add('hidden');
+        }
+
+        // --- Render Views ---
+
+        function renderNoRootState() {
+            document.body.innerHTML = `
+                <div class="flex flex-col items-center justify-center min-h-screen text-slate-500 gap-4 select-none">
+                    <span class="text-6xl">📁</span>
+                    <div class="text-lg font-bold text-slate-400">No File Root Found</div>
+                    <p class="text-xs text-slate-500 max-w-sm text-center leading-relaxed">To use this workspace, please create a node of type "File Directory" (file-root) in your canvas first.</p>
+                </div>
+            `;
+        }
+
+        function renderUnmountedState() {
+            document.getElementById('tree-container').innerHTML = `
+                <div class="flex flex-col items-center justify-center py-12 text-slate-500 gap-3 text-center px-4 select-none">
+                    <span class="text-3xl">📂</span>
+                    <div class="text-xs font-bold text-slate-400">No Folder Mounted</div>
+                    <p class="text-[10px] text-slate-500 leading-relaxed">Select the Root node in the canvas and mount a folder in the Inspector.</p>
+                </div>
+            `;
+            renderEmptyPreview("Mount a directory to explore files.");
+        }
+
+        function renderEmptyPreview(msg) {
+            document.getElementById('preview-header').classList.add('hidden');
+            document.getElementById('preview-body').innerHTML = `
+                <div class="flex-1 flex flex-col items-center justify-center text-slate-500 gap-4 select-none">
+                    <span class="text-6xl">📁</span>
+                    <div class="text-lg font-bold text-slate-400">No File Selected</div>
+                    <p class="text-xs text-slate-500 max-w-sm text-center">${msg || 'Select an item from the tree on the left to preview.'}</p>
+                </div>
+            `;
+        }
+
+        // --- Internal Project Loader ---
+
+        function loadInternalProjectStructure() {
+            const pages = currentState.session.library || [];
+            const activeProjId = currentState.session.activeProjectId || 'default_project';
+            const projPages = pages.filter(p => p.meta?.project_id === activeProjId);
+
+            const treeContainer = document.getElementById('tree-container');
+            treeContainer.innerHTML = '';
+
+            if (projPages.length === 0) {
+                treeContainer.innerHTML = `
+                    <div class="text-center py-8 text-xs text-slate-500 italic">
+                        No pages in this project.
+                    </div>
+                `;
+                return;
+            }
+
+            // Render root workspace header
+            const rootEl = document.createElement('div');
+            rootEl.className = 'tree-item flex items-center gap-2 p-2 rounded-lg text-xs font-bold text-slate-350 cursor-pointer mb-2';
+            rootEl.innerHTML = `<span>🏠</span> <span class="truncate">Workspace Pages</span>`;
+            treeContainer.appendChild(rootEl);
+
+            projPages.forEach(p => {
+                const el = document.createElement('div');
+                const pathKey = `page:${p.map_id}`;
+                el.className = `tree-item flex items-center justify-between p-2 rounded-lg text-xs font-mono text-slate-400 cursor-pointer transition-colors ${activePath === pathKey ? 'active text-white' : ''}`;
+                el.innerHTML = `
+                    <div class="flex items-center gap-2 truncate">
+                        <span>📄</span>
+                        <span class="truncate">${escapeHTML(p.meta.title)}</span>
+                    </div>
+                    <span class="text-[9px] text-slate-600 bg-slate-950/60 px-1.5 py-0.5 rounded font-sans uppercase">${escapeHTML(p.meta.type || 'generic')}</span>
+                `;
+                el.onclick = () => selectPageItem(p, pathKey);
+                treeContainer.appendChild(el);
+            });
+        }
+
+        function selectPageItem(page, pathKey) {
+            activePath = pathKey;
+            activeType = 'page';
+            
+            // Re-render tree highlights
+            document.querySelectorAll('.tree-item').forEach(el => el.classList.remove('active', 'text-white'));
+            initWorkspace(); // Refreshes left pane highlights
+
+            // Render Preview details
+            const header = document.getElementById('preview-header');
+            header.classList.remove('hidden');
+            document.getElementById('preview-icon').textContent = '📄';
+            document.getElementById('preview-title').textContent = page.meta.title;
+
+            const actions = document.getElementById('preview-actions');
+            actions.innerHTML = `
+                <button onclick="enterWorkspacePage('${page.map_id}')" class="px-3.5 py-1.5 bg-purple-600 hover:bg-purple-500 text-white text-[11px] font-bold rounded-lg shadow-md transition-all uppercase tracking-wider">
+                    Enter Space ➔
+                </button>
+            `;
+
+            const body = document.getElementById('preview-body');
+            body.innerHTML = `
+                <div class="glass border border-slate-800/80 rounded-2xl p-6 max-w-xl mx-auto mt-8 flex flex-col gap-6 relative overflow-hidden shadow-2xl">
+                    <div class="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-purple-500 to-indigo-500"></div>
+                    <div class="flex items-center gap-4">
+                        <span class="text-5xl">🌌</span>
+                        <div>
+                            <h2 class="text-xl font-black text-white">${escapeHTML(page.meta.title)}</h2>
+                            <p class="text-[10px] text-slate-400 font-mono mt-1 uppercase tracking-widest">Type: ${escapeHTML(page.meta.type || 'generic')}</p>
+                        </div>
+                    </div>
+                    
+                    <div class="border-t border-slate-800/80 pt-4 flex flex-col gap-3">
+                        <div class="flex justify-between items-center text-xs">
+                            <span class="text-slate-500">Total Nodes:</span>
+                            <span class="font-mono text-slate-300 font-bold">${page.nodes?.length || 0}</span>
+                        </div>
+                        <div class="flex justify-between items-center text-xs">
+                            <span class="text-slate-500">Total Connections:</span>
+                            <span class="font-mono text-slate-300 font-bold">${page.connections?.length || 0}</span>
+                        </div>
+                        <div class="flex justify-between items-center text-xs">
+                            <span class="text-slate-500">Created:</span>
+                            <span class="font-mono text-slate-300 text-[10px]">${escapeHTML(page.meta.created || 'N/A')}</span>
+                        </div>
+                    </div>
+
+                    <button onclick="enterWorkspacePage('${page.map_id}')" class="mt-4 w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-lg transition-all transform hover:scale-[1.01] uppercase tracking-wider">
+                        Navigate to Canvas Map
+                    </button>
+                </div>
+            `;
+        }
+
+        function enterWorkspacePage(mapId) {
+            window.parent.postMessage({
+                type: 'ACTION',
+                action: 'ENTER_PORTAL',
+                id: currentState.nodes.find(n => n.content === mapId)?.id || rootNode.id
+            }, '*');
+        }
+
+        // --- Local OS File System Loader ---
+
+        async function loadTreeStructure() {
+            const container = document.getElementById('tree-container');
+            container.innerHTML = '';
+
+            const list = document.createElement('div');
+            list.className = 'flex flex-col gap-0.5';
+
+            // Load top root directory items
+            await buildTreeBranch('', list, 0);
+            container.appendChild(list);
+        }
+
+        async function buildTreeBranch(parentPath, containerEl, depth) {
+            const handle = treeCache.handles[parentPath];
+            if (!handle) return;
+
+            const entries = [];
+            try {
+                for await (const entry of handle.values()) {
+                    entries.push(entry);
+                }
+            } catch (e) {
+                console.error("Error reading directory branch:", e);
+                return;
+            }
+
+            // Sort directories first, then files
+            entries.sort((a, b) => {
+                if (a.kind === b.kind) return a.name.localeCompare(b.name);
+                return a.kind === 'directory' ? -1 : 1;
+            });
+
+            for (const entry of entries) {
+                const path = parentPath ? `${parentPath}/${entry.name}` : entry.name;
+                treeCache.handles[path] = entry;
+
+                const isDir = entry.kind === 'directory';
+                const isExpanded = !!treeCache.expanded[path];
+
+                const row = document.createElement('div');
+                row.className = 'flex flex-col';
+
+                const item = document.createElement('div');
+                const paddingLeft = depth * 12 + 8;
+                const activeClass = activePath === path ? 'active text-white' : '';
+
+                item.className = `tree-item flex items-center gap-2 p-2 rounded-lg text-xs font-mono text-slate-400 cursor-pointer transition-colors ${activeClass}`;
+                item.style.paddingLeft = `${paddingLeft}px`;
+
+                const icon = isDir ? (isExpanded ? '📂' : '📁') : '📄';
+                item.innerHTML = `
+                    <span class="select-none text-xs shrink-0">${icon}</span>
+                    <span class="truncate">${escapeHTML(entry.name)}</span>
+                `;
+
+                item.onclick = async (e) => {
+                    e.stopPropagation();
+                    if (isDir) {
+                        treeCache.expanded[path] = !treeCache.expanded[path];
+                        await loadTreeStructure(); // Simple full re-draw is safe
+                    } else {
+                        await selectFileItem(entry, path);
+                    }
+                };
+
+                row.appendChild(item);
+
+                if (isDir && isExpanded) {
+                    const subContainer = document.createElement('div');
+                    subContainer.className = 'flex flex-col';
+                    await buildTreeBranch(path, subContainer, depth + 1);
+                    row.appendChild(subContainer);
+                }
+
+                containerEl.appendChild(row);
+            }
+        }
+
+        async function selectFileItem(fileHandle, path) {
+            activePath = path;
+            activeType = 'file';
+            
+            // Re-render highlights
+            document.querySelectorAll('.tree-item').forEach(el => el.classList.remove('active', 'text-white'));
+            
+            const header = document.getElementById('preview-header');
+            header.classList.remove('hidden');
+            document.getElementById('preview-icon').textContent = '📄';
+            document.getElementById('preview-title').textContent = path;
+
+            const actions = document.getElementById('preview-actions');
+            actions.innerHTML = '';
+
+            const body = document.getElementById('preview-body');
+            body.innerHTML = `
+                <div class="flex-1 flex justify-center items-center">
+                    <div class="text-xs text-slate-500 animate-pulse">Reading file data...</div>
+                </div>
+            `;
+
+            try {
+                const file = await fileHandle.getFile();
+                const ext = file.name.split('.').pop().toLowerCase();
+                const isText = ['txt', 'md', 'js', 'json', 'css', 'html', 'py', 'ts', 'yaml', 'yml', 'rs', 'sh', 'bat', 'go'].includes(ext) || file.type.startsWith('text/');
+                const isImage = ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'ico'].includes(ext) || file.type.startsWith('image/');
+
+                const url = URL.createObjectURL(file);
+                
+                if (isText) {
+                    const text = await file.text();
+                    
+                    // Add "Open in New Tab" button
+                    const openBtn = document.createElement('button');
+                    openBtn.className = "px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[11px] font-bold rounded-lg shadow-md transition-all uppercase tracking-wider flex items-center gap-1.5 border border-slate-700";
+                    openBtn.innerHTML = "↗️ Open in New Tab";
+                    openBtn.onclick = () => window.open(url, '_blank');
+                    actions.appendChild(openBtn);
+                    
+                    const saveBtn = document.createElement('button');
+                    saveBtn.id = "btn-save-file";
+                    saveBtn.className = "px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-bold rounded-lg shadow-md transition-all uppercase tracking-wider flex items-center gap-1.5";
+                    saveBtn.innerHTML = "💾 Save File";
+                    actions.appendChild(saveBtn);
+
+                    body.innerHTML = `
+                        <div class="flex-1 flex flex-col min-h-0 bg-slate-950/60 border border-slate-800/80 rounded-2xl overflow-hidden shadow-2xl relative">
+                            <textarea id="file-editor" class="flex-1 w-full bg-transparent text-slate-100 p-6 font-mono text-xs leading-relaxed outline-none border-none resize-none focus:ring-0 custom-scrollbar" spellcheck="false">${escapeHTML(text)}</textarea>
+                        </div>
+                    `;
+
+                    saveBtn.onclick = async () => {
+                        saveBtn.disabled = true;
+                        saveBtn.innerHTML = 'Saving...';
+                        try {
+                            const newContent = document.getElementById('file-editor').value;
+                            const writable = await fileHandle.createWritable();
+                            await writable.write(newContent);
+                            await writable.close();
+                            saveBtn.innerHTML = '💾 Saved!';
+                            setTimeout(() => {
+                                saveBtn.innerHTML = '💾 Save File';
+                                saveBtn.disabled = false;
+                            }, 1500);
+                        } catch (e) {
+                            alert("Failed to save changes: " + e.message);
+                            saveBtn.innerHTML = '💾 Save File';
+                            saveBtn.disabled = false;
+                        }
+                    };
+
+                } else if (isImage) {
+                    // Add "Open in New Tab" button
+                    const openBtn = document.createElement('button');
+                    openBtn.className = "px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[11px] font-bold rounded-lg shadow-md transition-all uppercase tracking-wider flex items-center gap-1.5 border border-slate-700";
+                    openBtn.innerHTML = "↗️ Open in New Tab";
+                    openBtn.onclick = () => window.open(url, '_blank');
+                    actions.appendChild(openBtn);
+
+                    body.innerHTML = `
+                        <div class="flex-1 flex items-center justify-center overflow-hidden p-4">
+                            <div class="glass border border-slate-800/60 p-4 rounded-3xl max-w-full max-h-full flex items-center justify-center shadow-2xl">
+                                <img src="${url}" class="max-w-full max-h-[70vh] rounded-xl object-contain shadow-inner" alt="${escapeHTML(file.name)}" />
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    body.innerHTML = `
+                        <div class="glass border border-slate-800/80 rounded-2xl p-6 max-w-md mx-auto mt-16 flex flex-col items-center gap-6 relative overflow-hidden shadow-2xl">
+                            <div class="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-amber-500 to-orange-500"></div>
+                            <span class="text-5xl">📦</span>
+                            <div class="text-center">
+                                <h3 class="text-sm font-bold text-white font-mono">${escapeHTML(file.name)}</h3>
+                                <p class="text-[10px] text-slate-500 mt-1 uppercase font-semibold">Binary / Non-Editable Resource</p>
+                            </div>
+                            <div class="border-t border-slate-800/80 w-full pt-4 flex flex-col gap-2.5 text-xs text-slate-400 font-mono">
+                                <div class="flex justify-between">
+                                    <span class="text-slate-500">Size:</span>
+                                    <span>${(file.size / 1024).toFixed(2)} KB</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-slate-500">Modified:</span>
+                                    <span class="text-[10px]">${new Date(file.lastModified).toLocaleString()}</span>
+                                </div>
+                            </div>
+                            <button id="btn-body-open-tab" class="mt-4 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-bold rounded-xl shadow-md border border-slate-700 transition-all uppercase tracking-wider flex items-center gap-2">
+                                ↗️ Open in New Tab
+                            </button>
+                        </div>
+                    `;
+                    document.getElementById('btn-body-open-tab').onclick = () => window.open(url, '_blank');
+                }
+            } catch(e) {
+                body.innerHTML = `
+                    <div class="flex-1 flex flex-col items-center justify-center text-rose-500 gap-2 select-none">
+                        <span class="text-4xl">⚠️</span>
+                        <div class="text-sm font-bold">Failed to Read File</div>
+                        <p class="text-xs text-rose-600 max-w-xs text-center">${escapeHTML(e.message)}</p>
+                    </div>
+                `;
+            }
+
+            // Sync tree selection
+            initWorkspace();
+        }
+
+        // --- Common Helpers ---
+
+        function escapeHTML(str) {
+            if (str === null || str === undefined) return '';
+            const d = document.createElement('div');
+            d.textContent = String(str);
+            return d.innerHTML;
+        }
+
+        // Refresh triggers full read
+        document.getElementById('btn-refresh').onclick = () => {
+            initWorkspace();
+        };
+    </script>
+</body>
+</html>

@@ -109,8 +109,18 @@
                 
                 <!-- 1. Sidebar Toggles (Top on desktop, Rightmost on mobile) -->
                 <div id="sidebar-action-toggles" class="order-last md:order-first flex flex-row md:flex-col items-center gap-2 pb-0 md:pb-3 border-l border-slate-800 md:border-l-0 md:border-b ml-auto md:ml-0 pl-2 md:pl-0 shrink-0">
-                    <button class="w-10 h-10 rounded-xl hover:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-white transition-all text-lg cursor-pointer border-none bg-transparent" onclick="SC.toggleSidebar()" title="Toggle Inspector">☰</button>
-                    <button class="w-10 h-10 rounded-xl hover:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-white transition-all text-lg cursor-pointer border-none bg-transparent" onclick="SC.toggleDataManager()" title="Toggle Data Manager">📁</button>
+                    <button class="w-10 h-10 rounded-xl hover:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-white transition-all cursor-pointer border-none bg-transparent" onclick="SC.toggleSidebar()" title="Toggle Inspector">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 pointer-events-none">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            <circle cx="17" cy="17" r="3" stroke="currentColor" stroke-width="1.5" fill="none" />
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M19 19l3.5 3.5" />
+                        </svg>
+                    </button>
+                    <button class="w-10 h-10 rounded-xl hover:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-white transition-all cursor-pointer border-none bg-transparent" onclick="SC.toggleDataManager()" title="Toggle Data Manager">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 pointer-events-none">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
+                        </svg>
+                    </button>
                 </div>
 
                 <!-- 2. Phase buttons scrollable container (Left on mobile, below toggles on desktop) -->
@@ -133,6 +143,9 @@
                     <button id="btn-phase-person"
                         class="phase-btn w-10 h-10 md:w-12 md:h-12 shrink-0 rounded-xl hover:bg-slate-800 text-xl transition-all flex items-center justify-center cursor-pointer border-none bg-transparent"
                         onclick="SC.setView('person')" title="Person Profile">👤</button>
+                    <button id="btn-phase-file"
+                        class="phase-btn w-10 h-10 md:w-12 md:h-12 shrink-0 rounded-xl hover:bg-slate-800 text-xl transition-all flex items-center justify-center cursor-pointer border-none bg-transparent"
+                        onclick="SC.setView('file')" title="File Explorer">📁</button>
                 </div>
 
             </div>

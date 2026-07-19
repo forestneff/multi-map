@@ -34,6 +34,7 @@
         let currentState = null;
         let renderedNodeId = '';
         let renderedNodeType = '';
+        let renderedMetaHash = '';
         let activeHighlight = null; // Passed from parent if needed
 
         function escapeHTML(str) {
@@ -137,7 +138,12 @@
             const isProjDir = state.meta && (state.meta.isMaster === true || state.meta.title === "Project Directory");
 
             // --- FAST DOM DIFFING ---
-            if (renderedNodeId === node.id && renderedNodeType === node.type) {
+            const metadataHash = JSON.stringify({
+                root_metadata: node.root_metadata || {},
+                content: node.content || '',
+                title: node.title || ''
+            });
+            if (renderedNodeId === node.id && renderedNodeType === node.type && renderedMetaHash === metadataHash) {
                 const titleEl = container.querySelector('#edit-title');
                 if (titleEl && document.activeElement !== titleEl) titleEl.value = node.title;
                 
@@ -351,6 +357,7 @@
 
             renderedNodeId = node.id;
             renderedNodeType = node.type;
+            renderedMetaHash = metadataHash;
             const isLinking = state.session.linkingMode;
             
             let linkBtnClass = "p-2 bg-slate-800 hover:bg-sky-600 rounded text-slate-300 hover:text-white transition-colors border-2 border-transparent flex justify-center items-center";
@@ -566,12 +573,65 @@
                     }
                 });
                 contentAreaHtml += `</div>`;
+            } else if (node.type === 'file-root') {
+                const meta = node.root_metadata || {};
+                const source = meta.source || 'internal_project';
+                const isMounted = meta.is_mounted === true;
+                const dirName = meta.directory_name || '';
+
+                contentAreaHtml = `
+                    <div class="flex flex-col gap-3 mt-1">
+                        <div class="flex flex-col gap-1">
+                            <label class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">File System Source</label>
+                            <select onchange="window.updateRootMetadata('${node.id}', 'source', this.value)" class="w-full bg-slate-800 border border-slate-700 p-2 rounded text-xs text-white outline-none focus:border-sky-500 transition-all duration-300">
+                                <option value="internal_project" ${source === 'internal_project' ? 'selected' : ''}>Internal Project Pages</option>
+                                <option value="local_os" ${source === 'local_os' ? 'selected' : ''}>Local OS Directory</option>
+                            </select>
+                        </div>
+                        
+                        ${source === 'local_os' ? `
+                            <div class="flex flex-col gap-2 bg-slate-950/40 border border-slate-800/80 rounded-xl p-3 mt-1">
+                                <div class="text-[10px] text-slate-400 flex justify-between items-center">
+                                    <span>STATUS:</span>
+                                    <span class="${isMounted ? 'text-emerald-400 font-black' : 'text-amber-400 font-black'} uppercase">
+                                        ${isMounted ? 'Mounted' : 'Not Mounted'}
+                                    </span>
+                                </div>
+                                ${isMounted ? `
+                                    <div class="text-[10px] text-slate-500 font-mono break-all bg-slate-950/50 p-1.5 rounded border border-slate-800">
+                                        Folder: ${escapeHTML(dirName)}
+                                    </div>
+                                ` : ''}
+                                <button onclick="notifyAction('MOUNT_DIRECTORY', '${node.id}')" class="mt-1 w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded shadow transition-colors">
+                                    ${isMounted ? 'Change Directory 📁' : 'Mount OS Directory 📁'}
+                                </button>
+                            </div>
+                        ` : `
+                            <div class="text-[10px] text-slate-500 italic p-2 border border-dashed border-slate-800 rounded">
+                                Pages created inside this project will automatically sync onto this Master map.
+                            </div>
+                        `}
+                    </div>
+                `;
             } else if (node.type === 'file-folder') {
                 contentAreaHtml = `
                     <div class="flex flex-col h-full bg-slate-900/50 border border-slate-800 rounded-lg p-3 text-center justify-center items-center gap-2">
                         <span class="text-3xl">📁</span>
-                        <span class="text-slate-400 text-xs">Project Directory Folder</span>
-                        <span class="text-slate-600 text-[10px] font-mono mt-2">ID: ${escapeHTML(node.content || 'Pending Sync')}</span>
+                        <span class="text-slate-400 text-xs">Directory Folder</span>
+                        <span class="text-slate-600 text-[10px] font-mono mt-2">${escapeHTML(node.title)}</span>
+                    </div>
+                `;
+            } else if (node.type === 'file-document') {
+                const fileRoot = state.nodes.find(n => n.type === 'file-root');
+                const isLocalOS = fileRoot && fileRoot.root_metadata && fileRoot.root_metadata.source === 'local_os';
+                contentAreaHtml = `
+                    <div class="flex flex-col h-full bg-slate-900/50 border border-slate-800 rounded-lg p-3 text-center justify-center items-center gap-2">
+                        <span class="text-3xl">📄</span>
+                        <span class="text-slate-400 text-xs">Document</span>
+                        <span class="text-slate-600 text-[10px] font-mono mt-2">${escapeHTML(node.title)}</span>
+                        ${isLocalOS ? `
+                            <button onclick="notifyAction('OPEN_FILE_TAB', '${node.id}')" class="mt-3 w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded shadow transition-colors">Open in New Tab ↗️</button>
+                        ` : ''}
                     </div>
                 `;
             } else {
