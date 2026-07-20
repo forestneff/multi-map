@@ -98,12 +98,83 @@ onAuthStateChanged(auth, user => {
 window.Auth = {
     isAdmin: false,
     currentView: 'login',
-    
+    googleAccessToken: localStorage.getItem('mm_google_access_token') || null,
+    googleAuthorizedScopes: (() => {
+        try { return JSON.parse(localStorage.getItem('mm_google_authorized_scopes') || '[]'); } catch(e) { return []; }
+    })(),
+
     setView: function(view) {
         this.currentView = view;
         this.renderProfile(document.getElementById('profile-content'));
     },
-    
+
+    handleScopeToggle: async function(checkbox, scope) {
+        if (checkbox.checked) {
+            checkbox.disabled = true;
+            try {
+                await this.requestGoogleScope(scope);
+            } catch (err) {
+                checkbox.checked = false;
+                alert("Authorization failed: " + err.message);
+            } finally {
+                checkbox.disabled = false;
+            }
+        } else {
+            this.googleAuthorizedScopes = this.googleAuthorizedScopes.filter(s => s !== scope);
+            localStorage.setItem('mm_google_authorized_scopes', JSON.stringify(this.googleAuthorizedScopes));
+            if (this.googleAuthorizedScopes.length === 0) {
+                this.googleAccessToken = null;
+                localStorage.removeItem('mm_google_access_token');
+            }
+            this.renderProfile(document.getElementById('profile-content'));
+        }
+    },
+
+    requestGoogleScope: async function(scope) {
+        if (this.googleAuthorizedScopes.includes(scope) && this.googleAccessToken) {
+            return this.googleAccessToken;
+        }
+
+        const provider = new GoogleAuthProvider();
+        provider.addScope(scope);
+        this.googleAuthorizedScopes.forEach(s => {
+            if (s !== scope) provider.addScope(s);
+        });
+
+        try {
+            const result = await signInWithPopup(auth, provider);
+            const credential = GoogleAuthProvider.credentialFromResult(result);
+            if (credential && credential.accessToken) {
+                this.googleAccessToken = credential.accessToken;
+                localStorage.setItem('mm_google_access_token', credential.accessToken);
+                if (!this.googleAuthorizedScopes.includes(scope)) {
+                    this.googleAuthorizedScopes.push(scope);
+                }
+                localStorage.setItem('mm_google_authorized_scopes', JSON.stringify(this.googleAuthorizedScopes));
+                this.renderProfile(document.getElementById('profile-content'));
+                return credential.accessToken;
+            }
+        } catch (err) {
+            console.error("Failed to request scope:", err);
+            throw err;
+        }
+        return null;
+    },
+
+    saveAISettings: function() {
+        const keyInput = document.getElementById('custom-gemini-key');
+        const modelSelect = document.getElementById('custom-gemini-model');
+        if (keyInput) {
+            localStorage.setItem('mm_custom_gemini_key', keyInput.value.trim());
+        }
+        if (modelSelect) {
+            localStorage.setItem('mm_preferred_model', modelSelect.value);
+            if (window.SC && window.SC.aiWidget) {
+                window.SC.aiWidget.selectedModel = modelSelect.value;
+            }
+        }
+    },
+
     renderProfile: function(container) {
         if (!container) return;
         const user = auth.currentUser;
@@ -111,6 +182,13 @@ window.Auth = {
         
         if (user && !user.isAnonymous) {
             const isAdmin = window.Auth.isAdmin;
+            const scopes = this.googleAuthorizedScopes || [];
+            const hasDrive = scopes.includes('https://www.googleapis.com/auth/drive.readonly');
+            const hasCal = scopes.includes('https://www.googleapis.com/auth/calendar.readonly');
+            const hasContacts = scopes.includes('https://www.googleapis.com/auth/contacts.readonly');
+            const customKey = localStorage.getItem('mm_custom_gemini_key') || '';
+            const preferredModel = localStorage.getItem('mm_preferred_model') || 'gemini-2.5-flash';
+
             html += `
             <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow flex flex-col gap-3">
                 <div class="flex items-center gap-3">
@@ -126,6 +204,44 @@ window.Auth = {
                         <div class="text-[10px] text-emerald-400 mt-0.5">Authenticated via ${user.providerData.length > 0 ? user.providerData[0].providerId : 'email'}</div>
                     </div>
                 </div>
+
+                <div class="border-t border-slate-800 pt-3 flex flex-col gap-2">
+                    <h4 class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Google Integrations</h4>
+                    <div class="flex flex-col gap-2">
+                        <label class="flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none">
+                            <input type="checkbox" onchange="window.Auth.handleScopeToggle(this, 'https://www.googleapis.com/auth/drive.readonly')" ${hasDrive ? 'checked' : ''} class="w-3.5 h-3.5 bg-slate-950 border border-slate-700 text-indigo-500 rounded focus:ring-indigo-500">
+                            <span>Google Drive & Docs 🔺</span>
+                        </label>
+                        <label class="flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none">
+                            <input type="checkbox" onchange="window.Auth.handleScopeToggle(this, 'https://www.googleapis.com/auth/calendar.readonly')" ${hasCal ? 'checked' : ''} class="w-3.5 h-3.5 bg-slate-950 border border-slate-700 text-indigo-500 rounded focus:ring-indigo-500">
+                            <span>Google Calendar 📅</span>
+                        </label>
+                        <label class="flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none">
+                            <input type="checkbox" onchange="window.Auth.handleScopeToggle(this, 'https://www.googleapis.com/auth/contacts.readonly')" ${hasContacts ? 'checked' : ''} class="w-3.5 h-3.5 bg-slate-950 border border-slate-700 text-indigo-500 rounded focus:ring-indigo-500">
+                            <span>Google Contacts 👥</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="border-t border-slate-800 pt-3 flex flex-col gap-2">
+                    <h4 class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">AI Settings (Bring Your Own Key)</h4>
+                    <div class="flex flex-col gap-2">
+                        <div class="flex flex-col gap-1">
+                            <label class="text-[9px] text-slate-500 font-bold uppercase">Gemini API Key</label>
+                            <input type="password" id="custom-gemini-key" placeholder="AIzaSy..." value="${customKey}" onchange="window.Auth.saveAISettings()" class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-300 outline-none focus:border-indigo-500">
+                        </div>
+                        <div class="flex flex-col gap-1">
+                            <label class="text-[9px] text-slate-500 font-bold uppercase">Preferred Model</label>
+                            <select id="custom-gemini-model" onchange="window.Auth.saveAISettings()" class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-300 outline-none focus:border-indigo-500">
+                                <option value="gemini-2.5-flash" ${preferredModel === 'gemini-2.5-flash' ? 'selected' : ''}>Gemini 2.5 Flash</option>
+                                <option value="gemini-1.5-flash" ${preferredModel === 'gemini-1.5-flash' ? 'selected' : ''}>Gemini 1.5 Flash</option>
+                                <option value="gemini-1.5-pro" ${preferredModel === 'gemini-1.5-pro' ? 'selected' : ''}>Gemini 1.5 Pro</option>
+                                <option value="gemini-2.5-pro" ${preferredModel === 'gemini-2.5-pro' ? 'selected' : ''}>Gemini 2.5 Pro</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
                 ${isAdmin ? `
                 <a href="admin.html" class="w-full py-2 bg-amber-900/40 hover:bg-amber-800/60 text-amber-300 text-xs font-bold rounded transition-colors border border-amber-700/60 text-center flex items-center justify-center gap-2">
                     <span>⚙️</span> Admin Console

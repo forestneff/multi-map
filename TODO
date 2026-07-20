@@ -8,7 +8,7 @@
 
 ---
 
-### [ ] Phase 1: The Data & Identity Layer
+### [x] Phase 1: The Data & Identity Layer
 - Agent Context: firestore.rules, multi-map-core.js (data manager), multi-map-library.js, auth.js, Firebase Admin functions.
 
 ### [x] 1. Project Directory Cleanup & Data Integrity
@@ -18,7 +18,7 @@
   - Selecting a project in the data-manager should make its unique directory the active map.
   - Enforce logic ensuring the project directory only has one pointer to each unique page in the project.
 
-### [ ] 2. Refine Map Sharing & Read-Only Views
+### [x] 2. Refine Map Sharing & Read-Only Views
 - Intent: Refine the existing map-sharing system and polish the read-only `view.html` experience.
 - Details:
   - Improve the `view.html` page to provide a seamless read-only map mode (stripping out inspector panels and editing event listeners, but keeping limited smart button and navigation features from multi-map-core.js).
@@ -31,7 +31,7 @@
 ### [ ] Phase 2: The Portal & Agent Paradigm Shift
 - Agent Context: phase-engines.js, engines/*, mapstate-schema.json, Portal logic (multi-map-core.js), AI Agent prompt definitions.
 
-### [ ] 3. File-Root Maptype & Local File System Explorer
+### [x] 3. File-Root Maptype & Local File System Explorer
 - Intent: Create a map-native local file-system explorer for seamless local file management within Multi-Map.
 - Specification: feature-specs/file-root-spec.md
 - Details:

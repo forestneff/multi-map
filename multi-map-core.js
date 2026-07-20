@@ -128,6 +128,7 @@ class MultiMapKernel {
         this.activeVault = localStorage.getItem("mm_active_vault") || "firebase";
 
         this.migrateLocalGuestData();
+        this.loadVaultLibraryAsync();
 
         const rawState = this.loadFromStorage();
         
@@ -162,7 +163,7 @@ class MultiMapKernel {
                     page_ids: []
                 };
                 this.projects = [defaultProj];
-                localStorage.setItem("mm_projects", JSON.stringify(this.projects));
+                this.saveProjects(this.projects);
             }
             
             this.activeProjectId = targetProjId;
@@ -199,7 +200,7 @@ class MultiMapKernel {
                 if (proj) {
                     if (!proj.page_ids) proj.page_ids = [];
                     proj.page_ids.push(masterMapId);
-                    localStorage.setItem("mm_projects", JSON.stringify(this.projects));
+                    this.saveProjects(this.projects);
                 }
 
                 const libRaw = localStorage.getItem("mm_constellation_lib");
@@ -231,9 +232,34 @@ class MultiMapKernel {
     }
 
     async setVault(vault) {
-        if (vault !== 'firebase' && vault !== 'local') return;
+        if (vault !== 'firebase' && vault !== 'local' && vault !== 'gdrive' && vault !== 'local-os') return;
+        
+        if (vault === 'local-os') {
+            try {
+                const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+                await FileHandleStore.set('active_vault_local_os', handle);
+            } catch (e) {
+                console.error("Directory picker canceled or failed:", e);
+                return;
+            }
+        }
+
+        if (vault === 'gdrive') {
+            const hasDrive = window.Auth && window.Auth.googleAuthorizedScopes && window.Auth.googleAuthorizedScopes.includes('https://www.googleapis.com/auth/drive.readonly');
+            if (!hasDrive) {
+                try {
+                    await window.Auth.requestGoogleScope('https://www.googleapis.com/auth/drive.readonly');
+                } catch (e) {
+                    console.error("Google Drive auth failed:", e);
+                    return;
+                }
+            }
+        }
+
         this.activeVault = vault;
         localStorage.setItem('mm_active_vault', vault);
+        
+        await this.loadVaultLibraryAsync();
         
         const projects = this.getProjects();
         if (projects.length > 0) {
@@ -323,10 +349,7 @@ class MultiMapKernel {
     }
 
     getProjects() {
-        if (this.isUsingCloudVault()) {
-            return this.firestoreProjects || [];
-        }
-        
+        let list = [];
         const defaultProj = {
             project_id: 'default_project',
             meta: { title: "Local Session", description: "Your local sandbox", color: "#8b5cf6" },
@@ -334,18 +357,199 @@ class MultiMapKernel {
             page_assignments: {},
             page_ids: []
         };
-        
-        try {
-            const p = JSON.parse(localStorage.getItem("mm_projects"));
-            if (p && p.length > 0) {
-                if (!p.find(proj => proj.project_id === 'default_project')) {
-                    p.push(defaultProj);
-                }
-                return p;
+
+        if (this.activeVault === 'firebase') {
+            list = (this.firestoreProjects || []).map(p => ({ ...p, vault: 'firebase' }));
+        } else {
+            const loadFromKey = (key) => {
+                try {
+                    const p = JSON.parse(localStorage.getItem(key));
+                    if (p && p.length > 0) {
+                        if (!p.find(proj => proj.project_id === 'default_project')) {
+                            p.push(defaultProj);
+                        }
+                        return p;
+                    }
+                } catch(e) {}
+                return [defaultProj];
+            };
+
+            if (this.activeVault === 'local') {
+                const localKey = localStorage.getItem("mm_projects_local") ? "mm_projects_local" : "mm_projects";
+                list = loadFromKey(localKey).map(p => ({ ...p, vault: 'local' }));
+            } else if (this.activeVault === 'gdrive') {
+                list = loadFromKey("mm_projects_gdrive").map(p => ({ ...p, vault: 'gdrive' }));
+            } else if (this.activeVault === 'local-os') {
+                list = loadFromKey("mm_projects_localos").map(p => ({ ...p, vault: 'local-os' }));
+            } else if (this.activeVault === 'all') {
+                const fb = (this.firestoreProjects || []).map(p => ({ ...p, vault: 'firebase' }));
+                const localKey = localStorage.getItem("mm_projects_local") ? "mm_projects_local" : "mm_projects";
+                const loc = loadFromKey(localKey).map(p => ({ ...p, vault: 'local' }));
+                const gd = loadFromKey("mm_projects_gdrive").map(p => ({ ...p, vault: 'gdrive' }));
+                const lo = loadFromKey("mm_projects_localos").map(p => ({ ...p, vault: 'local-os' }));
+                
+                const all = [...fb, ...loc, ...gd, ...lo];
+                const seen = new Set();
+                list = all.filter(p => {
+                    const dupId = `${p.vault}:${p.project_id}`;
+                    if (seen.has(dupId)) return false;
+                    seen.add(dupId);
+                    return true;
+                });
+            } else {
+                list = [defaultProj];
             }
-        } catch(e) {}
+        }
         
-        return [defaultProj];
+        this.projects = list;
+        return list;
+    }
+
+    saveProjects(projects) {
+        const vault = this.activeVault;
+        if (vault === 'local' || vault === 'all') {
+            localStorage.setItem("mm_projects_local", JSON.stringify(projects));
+            localStorage.setItem("mm_projects", JSON.stringify(projects)); // fallback
+        } else if (vault === 'gdrive') {
+            localStorage.setItem("mm_projects_gdrive", JSON.stringify(projects));
+            const lib = JSON.parse(localStorage.getItem("mm_constellation_lib_gdrive") || "[]");
+            this.saveVaultLibraryAsync('gdrive', lib, projects);
+        } else if (vault === 'local-os') {
+            localStorage.setItem("mm_projects_localos", JSON.stringify(projects));
+            const lib = JSON.parse(localStorage.getItem("mm_constellation_lib_localos") || "[]");
+            this.saveVaultLibraryAsync('local-os', lib, projects);
+        }
+    }
+
+    async transferProject(projectId, targetVault) {
+        if (targetVault !== 'firebase' && targetVault !== 'local' && targetVault !== 'gdrive' && targetVault !== 'local-os') return;
+        
+        const currentVault = this.activeVault;
+        
+        this.activeVault = 'all';
+        const allProjects = this.getProjects();
+        const proj = allProjects.find(p => p.project_id === projectId);
+        if (!proj) {
+            this.activeVault = currentVault;
+            throw new Error("Project not found");
+        }
+        
+        const sourceVault = proj.vault || 'local';
+        if (sourceVault === targetVault) {
+            this.activeVault = currentVault;
+            throw new Error("Project is already in the target vault");
+        }
+        
+        const allPages = this.getLibrary();
+        const projectPages = allPages.filter(p => p.meta?.project_id === projectId || (projectId === 'default_project' && !p.meta?.project_id));
+        
+        this.activeVault = currentVault;
+        
+        await this.removeProjectAndPagesFromVault(sourceVault, projectId, projectPages);
+        await this.addProjectAndPagesToVault(targetVault, proj, projectPages);
+        
+        await this.setVault(targetVault);
+    }
+
+    async removeProjectAndPagesFromVault(vault, projectId, pages) {
+        if (vault === 'firebase') {
+            this.firestoreProjects = this.firestoreProjects.filter(p => p.project_id !== projectId);
+            delete this.firestorePagesByProject[projectId];
+            
+            if (window.FirebaseAuth?.currentUser) {
+                const uid = window.FirebaseAuth.currentUser.uid;
+                const db = window.firebaseDb;
+                if (db) {
+                    const { doc, deleteDoc } = window.FirebaseFirestore;
+                    try {
+                        await deleteDoc(doc(db, `users/${uid}/projects`, projectId));
+                        for (const p of pages) {
+                            await deleteDoc(doc(db, `users/${uid}/pages`, p.map_id));
+                        }
+                    } catch(e) {
+                        console.error("Firestore delete project/pages failed:", e);
+                    }
+                }
+            }
+        } else {
+            const projKey = vault === 'local' ? 'mm_projects_local' : (vault === 'gdrive' ? 'mm_projects_gdrive' : 'mm_projects_localos');
+            const libKey = vault === 'local' ? 'mm_constellation_lib_local' : (vault === 'gdrive' ? 'mm_constellation_lib_gdrive' : 'mm_constellation_lib_localos');
+            
+            try {
+                let projs = JSON.parse(localStorage.getItem(projKey) || '[]');
+                projs = projs.filter(p => p.project_id !== projectId);
+                localStorage.setItem(projKey, JSON.stringify(projs));
+                if (vault === 'local') localStorage.setItem('mm_projects', JSON.stringify(projs));
+                
+                let lib = JSON.parse(localStorage.getItem(libKey) || '[]');
+                const pageIdsToDelete = new Set(pages.map(p => p.map_id));
+                lib = lib.filter(p => !pageIdsToDelete.has(p.map_id));
+                localStorage.setItem(libKey, JSON.stringify(lib));
+                if (vault === 'local') localStorage.setItem('mm_constellation_lib', JSON.stringify(lib));
+                
+                if (vault === 'gdrive' || vault === 'local-os') {
+                    await this.saveVaultLibraryAsync(vault, lib, projs);
+                }
+            } catch(e) {
+                console.error("Remove from local/gdrive/local-os vault failed:", e);
+            }
+        }
+    }
+
+    async addProjectAndPagesToVault(vault, project, pages) {
+        project.vault = vault;
+        pages.forEach(p => { p.vault = vault; p.meta.project_id = project.project_id; });
+
+        if (vault === 'firebase') {
+            if (!this.firestoreProjects.some(p => p.project_id === project.project_id)) {
+                this.firestoreProjects.push(project);
+            }
+            this.firestorePagesByProject[project.project_id] = pages;
+            
+            if (window.FirebaseAuth?.currentUser) {
+                const uid = window.FirebaseAuth.currentUser.uid;
+                const db = window.firebaseDb;
+                if (db) {
+                    const { doc, setDoc } = window.FirebaseFirestore;
+                    try {
+                        await setDoc(doc(db, `users/${uid}/projects`, project.project_id), project);
+                        for (const p of pages) {
+                            await setDoc(doc(db, `users/${uid}/pages`, p.map_id), p);
+                        }
+                    } catch(e) {
+                        console.error("Firestore set project/pages failed:", e);
+                    }
+                }
+            }
+        } else {
+            const projKey = vault === 'local' ? 'mm_projects_local' : (vault === 'gdrive' ? 'mm_projects_gdrive' : 'mm_projects_localos');
+            const libKey = vault === 'local' ? 'mm_constellation_lib_local' : (vault === 'gdrive' ? 'mm_constellation_lib_gdrive' : 'mm_constellation_lib_localos');
+            
+            try {
+                let projs = JSON.parse(localStorage.getItem(projKey) || '[]');
+                if (!projs.some(p => p.project_id === project.project_id)) {
+                    projs.push(project);
+                }
+                localStorage.setItem(projKey, JSON.stringify(projs));
+                if (vault === 'local') localStorage.setItem('mm_projects', JSON.stringify(projs));
+                
+                let lib = JSON.parse(localStorage.getItem(libKey) || '[]');
+                const existingPageIds = new Set(lib.map(p => p.map_id));
+                pages.forEach(p => {
+                    if (!existingPageIds.has(p.map_id)) {
+                        lib.push(p);
+                    }
+                });
+                localStorage.setItem(libKey, JSON.stringify(lib));
+                if (vault === 'local') localStorage.setItem('mm_constellation_lib', JSON.stringify(lib));
+                
+                if (vault === 'gdrive' || vault === 'local-os') {
+                    await this.saveVaultLibraryAsync(vault, lib, projs);
+                }
+            } catch(e) {
+                console.error("Add to local/gdrive/local-os vault failed:", e);
+            }
+        }
     }
 
     getPages(projectId) {
@@ -1974,6 +2178,44 @@ class MultiMapKernel {
         }
     }
 
+    clearFileSubtree(rootNodeId) {
+        let targetMap = this.state;
+        let n = this.state.nodes.find(x => x.id === rootNodeId);
+        if (!n) {
+            const lib = this.getLibrary();
+            const foundPage = lib.find(p => p.nodes.some(x => x.id === rootNodeId));
+            if (foundPage) {
+                targetMap = foundPage;
+            }
+        }
+
+        const toDeleteIds = new Set();
+        const queue = [rootNodeId];
+        const visited = new Set([rootNodeId]);
+
+        while (queue.length > 0) {
+            const currentId = queue.shift();
+            const conns = targetMap.connections.filter(c => c.from === currentId && c.type === 'structural');
+            for (const c of conns) {
+                if (!visited.has(c.to)) {
+                    visited.add(c.to);
+                    const childNode = targetMap.nodes.find(node => node.id === c.to);
+                    if (childNode && (childNode.type === 'file-folder' || childNode.type === 'file-document')) {
+                        toDeleteIds.add(c.to);
+                        queue.push(c.to);
+                    }
+                }
+            }
+        }
+
+        if (toDeleteIds.size > 0) {
+            targetMap.connections = targetMap.connections.filter(c => 
+                !toDeleteIds.has(c.from) && !toDeleteIds.has(c.to)
+            );
+            targetMap.nodes = targetMap.nodes.filter(node => !toDeleteIds.has(node.id));
+        }
+    }
+
     updateNode(id, up) { 
         if (this.isReadOnly) return;
         let targetMap = this.state;
@@ -1989,7 +2231,17 @@ class MultiMapKernel {
         }
         if (!n) return; 
 
-        // If the title of a root node is updated, synchronize page and portal titles
+        if (up.root_metadata) {
+            const oldSource = n.root_metadata?.source || 'internal_project';
+            const newSource = up.root_metadata.source || 'internal_project';
+            const oldDir = n.root_metadata?.directory_name || '';
+            const newDir = up.root_metadata.directory_name || '';
+            
+            if (newSource !== oldSource || newDir !== oldDir) {
+                this.clearFileSubtree(id);
+            }
+        }
+
         const isRootType = (type) => type && (type.endsWith('-root') || type === 'root');
         const hasParent = targetMap.connections.some(c => c.to === id && c.type === 'structural');
         const isRootNode = n.data && (n.data.isCore || (!hasParent && isRootType(n.type)));
@@ -1998,7 +2250,6 @@ class MultiMapKernel {
             this.syncTitlesFromPayload(id, up.title);
         }
 
-        // If root metadata updates directory name, synchronize titles
         if (up.root_metadata && up.root_metadata.directory_name && (!n.root_metadata || n.root_metadata.directory_name !== up.root_metadata.directory_name)) {
             this.syncTitlesFromPayload(id, up.root_metadata.directory_name);
         }
@@ -2391,7 +2642,10 @@ class MultiMapKernel {
     saveHistory() { try { this.history.push(JSON.stringify(this.state)); if(this.history.length > 50) this.history.shift(); } catch(e){} }
     undo() { if(this.history.length > 0) { this.state = this.ensureSchema(JSON.parse(this.history.pop())); this.notify(); } }
     
-    saveLibrary(lib) { localStorage.setItem("mm_constellation_lib", JSON.stringify(lib)); }
+    saveLibrary(lib) { 
+        localStorage.setItem("mm_constellation_lib", JSON.stringify(lib)); 
+        this.saveVaultLibraryAsync(lib);
+    }
     
     async saveMapToLibrary(mapState) {
         const snapshot = JSON.parse(JSON.stringify(mapState, (key, value) => {
@@ -2535,11 +2789,191 @@ class MultiMapKernel {
         return this.saveMapToLibrary(snapshot);
     }
 
-    getLibrary() {
-        if (this.isUsingCloudVault()) {
-            return Object.values(this.firestorePagesByProject).flat() || [];
+    async loadVaultLibraryAsync() {
+        try {
+            const token = window.Auth?.googleAccessToken;
+            if (token) {
+                const q = "name = 'multimap_library.json' and trashed = false";
+                const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name)`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    const file = data.files?.[0];
+                    if (file) {
+                        this.gdriveLibraryFileId = file.id;
+                        const contentRes = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`, {
+                            headers: { 'Authorization': `Bearer ${token}` }
+                        });
+                        if (contentRes.ok) {
+                            const libText = await contentRes.text();
+                            let lib = [];
+                            let projs = [];
+                            try {
+                                const parsed = JSON.parse(libText);
+                                if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                                    lib = parsed.library || [];
+                                    projs = parsed.projects || [];
+                                } else if (Array.isArray(parsed)) {
+                                    lib = parsed;
+                                }
+                            } catch(e) {}
+                            localStorage.setItem("mm_constellation_lib_gdrive", JSON.stringify(lib));
+                            localStorage.setItem("mm_projects_gdrive", JSON.stringify(projs));
+                        }
+                    }
+                }
+            }
+        } catch(e) {
+            console.error("Failed to load Google Drive vault:", e);
         }
-        try { return JSON.parse(localStorage.getItem("mm_constellation_lib")) || []; } catch(e) { return []; }
+
+        try {
+            const dirHandle = await FileHandleStore.get('active_vault_local_os');
+            if (dirHandle) {
+                const opts = { mode: 'readwrite' };
+                if ((await dirHandle.queryPermission(opts)) === 'granted') {
+                    const fileHandle = await dirHandle.getFileHandle('multimap_library.json', { create: true });
+                    const file = await fileHandle.getFile();
+                    const text = await file.text();
+                    let lib = [];
+                    let projs = [];
+                    try {
+                        const parsed = JSON.parse(text);
+                        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                            lib = parsed.library || [];
+                            projs = parsed.projects || [];
+                        } else if (Array.isArray(parsed)) {
+                            lib = parsed;
+                        }
+                    } catch(e) {}
+                    localStorage.setItem("mm_constellation_lib_localos", JSON.stringify(lib));
+                    localStorage.setItem("mm_projects_localos", JSON.stringify(projs));
+                }
+            }
+        } catch(e) {
+            console.error("Failed to load Local OS vault:", e);
+        }
+
+        this.notify();
+    }
+
+    async saveVaultLibraryAsync(vault, lib, projs) {
+        if (!vault) vault = this.activeVault;
+        if (vault === 'local' || vault === 'firebase' || vault === 'all') return;
+        
+        if (!projs) {
+            const projKey = vault === 'gdrive' ? 'mm_projects_gdrive' : 'mm_projects_localos';
+            try {
+                projs = JSON.parse(localStorage.getItem(projKey) || '[]');
+            } catch(e) {
+                projs = [];
+            }
+        }
+        
+        const payload = {
+            projects: projs,
+            library: lib
+        };
+        
+        if (vault === 'gdrive') {
+            try {
+                const token = window.Auth?.googleAccessToken;
+                if (!token) return;
+                
+                const boundary = 'foo_bar_baz';
+                const delimiter = `\r\n--${boundary}\r\n`;
+                const closeDelimiter = `\r\n--${boundary}--`;
+                
+                const metadata = {
+                    name: 'multimap_library.json',
+                    mimeType: 'application/json'
+                };
+                
+                const multipartBody = 
+                    delimiter +
+                    'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+                    JSON.stringify(metadata) +
+                    delimiter +
+                    'Content-Type: application/json\r\n\r\n' +
+                    JSON.stringify(payload) +
+                    closeDelimiter;
+                
+                if (this.gdriveLibraryFileId) {
+                    const res = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${this.gdriveLibraryFileId}?uploadType=media`, {
+                        method: 'PATCH',
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(payload)
+                    });
+                    if (!res.ok) throw new Error("Drive patch failed");
+                } else {
+                    const res = await fetch(`https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': `multipart/related; boundary=${boundary}`
+                        },
+                        body: multipartBody
+                    });
+                    if (!res.ok) throw new Error("Drive create failed");
+                    const data = await res.json();
+                    this.gdriveLibraryFileId = data.id;
+                }
+            } catch (e) {
+                console.error("Failed to save Google Drive vault:", e);
+            }
+        } else if (vault === 'local-os') {
+            try {
+                const dirHandle = await FileHandleStore.get('active_vault_local_os');
+                if (!dirHandle) return;
+                
+                const fileHandle = await dirHandle.getFileHandle('multimap_library.json', { create: true });
+                const writable = await fileHandle.createWritable();
+                await writable.write(JSON.stringify(payload, null, 2));
+                await writable.close();
+            } catch (e) {
+                console.error("Failed to save Local OS vault:", e);
+            }
+        }
+    }
+
+    getLibrary() {
+        if (this.activeVault === 'firebase') {
+            return (Object.values(this.firestorePagesByProject).flat() || []).map(p => {
+                p.vault = 'firebase';
+                return p;
+            });
+        }
+        
+        const loadLibFromKey = (key) => {
+            try {
+                return JSON.parse(localStorage.getItem(key)) || [];
+            } catch(e) {
+                return [];
+            }
+        };
+
+        if (this.activeVault === 'local') {
+            const localKey = localStorage.getItem("mm_constellation_lib_local") ? "mm_constellation_lib_local" : "mm_constellation_lib";
+            return loadLibFromKey(localKey).map(p => { p.vault = 'local'; return p; });
+        } else if (this.activeVault === 'gdrive') {
+            return loadLibFromKey("mm_constellation_lib_gdrive").map(p => { p.vault = 'gdrive'; return p; });
+        } else if (this.activeVault === 'local-os') {
+            return loadLibFromKey("mm_constellation_lib_localos").map(p => { p.vault = 'local-os'; return p; });
+        } else if (this.activeVault === 'all') {
+            const fb = (Object.values(this.firestorePagesByProject).flat() || []).map(p => { p.vault = 'firebase'; return p; });
+            const localKey = localStorage.getItem("mm_constellation_lib_local") ? "mm_constellation_lib_local" : "mm_constellation_lib";
+            const loc = loadLibFromKey(localKey).map(p => { p.vault = 'local'; return p; });
+            const gd = loadLibFromKey("mm_constellation_lib_gdrive").map(p => { p.vault = 'gdrive'; return p; });
+            const lo = loadLibFromKey("mm_constellation_lib_localos").map(p => { p.vault = 'local-os'; return p; });
+            
+            return [...fb, ...loc, ...gd, ...lo];
+        }
+        
+        return [];
     }
 
     getRootMetadata(mapId) {

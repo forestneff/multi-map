@@ -21,6 +21,7 @@ class PhaseRegistrySystem {
         this.register(new IframePhaseEngine(kernel, 'agent', 'engines/agent-config.html'));
         this.register(new IframePhaseEngine(kernel, 'person', 'engines/person.html'));
         this.register(new IframePhaseEngine(kernel, 'file', 'engines/file-explorer.html'));
+        this.register(new IframePhaseEngine(kernel, 'text-edit', 'engines/text-editor.html'));
         
         this.register(new DataPhaseEngine(kernel)); 
         
@@ -45,6 +46,7 @@ class PhaseRegistrySystem {
                     else if (action === 'DELETE' && id) window.SC.actionDelete(id);
                     else if (action === 'ENTER_PORTAL' && id) window.SC.actionEnterPortal(id);
                     else if (action === 'OPEN_FILE_TAB' && id) window.SC.actionOpenFileInNewTab(id);
+                    else if (action === 'EDIT_FILE_LOCALLY' && id) window.SC.actionEditFileLocally(id);
                     else if (action === 'TRIGGER_AI' && id) window.SC.actionTriggerAI(id);
                     else if (action === 'APPLY_TEMPLATE' && id && event.data.data) {
                         window.SC.actionApplyTemplateToNode(id, event.data.data);
@@ -63,6 +65,23 @@ class PhaseRegistrySystem {
                     }
                     else if (action === 'MOUNT_DIRECTORY' && id) {
                         window.SC.actionMountDirectory(id);
+                    }
+                    else if (action === 'AUTHORIZE_GOOGLE_SERVICES' && id) {
+                        window.SC.actionAuthorizeGoogleServices(id);
+                    }
+                    else if (action === 'SAVE_FILE_CONTENT' && id && event.data.data) {
+                        window.SC.actionSaveFileContent(id, event.data.data.content);
+                    }
+                    else if (action === 'CLOSE_FILE_EDITOR' && id) {
+                        window.SC.actionCloseFileEditor(id);
+                    }
+                    else if (action === 'GIT_PUSH' && id && event.data.data) {
+                        window.SC.actionGitPush(id, event.data.data);
+                    }
+                    else if (action === 'SWITCH_TO_MAP_VIEW') {
+                        window.SC.setView('map');
+                        window.SC.actionCloseDataManager();
+                        window.SC.render();
                     }
                 }
             }
@@ -210,7 +229,11 @@ class DataPhaseEngine extends PhaseEngineBase {
                             const mbUsage = (usage / 1024 / 1024).toFixed(2);
                             const mbLimit = (limit / 1024 / 1024).toFixed(1);
                             const isWarning = percent >= 80;
-                            const activeVault = this.kernel.isUsingCloudVault() ? 'firebase' : 'local';
+                            const activeVault = this.kernel.activeVault;
+                            let vaultLabel = 'Local Browser (Legacy) 📁';
+                            if (activeVault === 'firebase') vaultLabel = 'Firebase (Cloud) ☁️';
+                            else if (activeVault === 'gdrive') vaultLabel = 'Google Drive 🔺';
+                            else if (activeVault === 'local-os') vaultLabel = 'Local OS 💾';
                             
                             return `
                             <div class="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-hidden p-4 flex flex-col gap-3 shrink-0">
@@ -223,7 +246,7 @@ class DataPhaseEngine extends PhaseEngineBase {
                                                 onclick="SC.showVaultSelectorDropdown(event)"
                                                 class="bg-slate-950 hover:bg-slate-800 text-[10px] text-slate-300 px-3 py-1.5 rounded-lg border border-slate-700 font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
                                             >
-                                                <span>Target: ${activeVault === 'firebase' ? 'Firebase (Cloud) ☁️' : 'Local Browser (Legacy) 📁'}</span>
+                                                <span>Target: ${vaultLabel}</span>
                                                 <span class="text-[8px] opacity-60">▼</span>
                                             </button>
                                         </div>
@@ -247,10 +270,23 @@ class DataPhaseEngine extends PhaseEngineBase {
                                 <div class="text-[9px] text-slate-500 flex justify-between px-1">
                                     <span>Sync Status:</span>
                                     <span class="font-bold flex items-center gap-1" id="save-status">
-                                        ${this.kernel.isUsingCloudVault() ? '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Cloud' : '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Local'}
+                                        ${(() => {
+                                            if (activeVault === 'firebase') return '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Firebase';
+                                            if (activeVault === 'gdrive') return '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Google Drive';
+                                            if (activeVault === 'local-os') return '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Local OS';
+                                            return '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Local';
+                                        })()}
                                     </span>
                                 </div>
                                 `}
+                                
+                                <div class="flex justify-between items-center px-1 border-t border-slate-800/40 pt-2 select-none">
+                                    <span class="text-[9px] text-slate-500">Show All Projects:</span>
+                                    <label class="flex items-center gap-1 cursor-pointer text-[9px] text-slate-400 hover:text-slate-300 transition-colors" title="Toggle aggregation of all project vaults">
+                                        <input type="checkbox" onchange="SC.actionToggleShowAllVaults(this.checked)" ${this.kernel.showAllVaults ? 'checked' : ''} class="w-3 h-3 bg-slate-950 border border-slate-700 text-purple-650 rounded focus:ring-purple-600 cursor-pointer">
+                                        <span class="font-semibold text-slate-400">Aggregated</span>
+                                    </label>
+                                </div>
                             </div>
                             `;
                         })()}
@@ -275,7 +311,7 @@ class DataPhaseEngine extends PhaseEngineBase {
                                         <h3 class="text-purple-400 font-bold uppercase text-[10px] tracking-widest flex items-center gap-1.5">
                                             📁 Projects <span class="text-slate-500 text-[8px]">${this.ui.projectsSub ? '▼' : '▶'}</span>
                                         </h3>
-                                        <button onclick="event.stopPropagation(); SC.actionCreateProject()" class="text-[9px] bg-purple-600 hover:bg-purple-500 text-white px-2 py-0.5 rounded transition-all font-bold uppercase tracking-wider">+ New Project</button>
+                                        <button onclick="event.stopPropagation(); SC.actionCreateProject()" class="text-[9px] bg-purple-600 hover:bg-purple-500 text-white px-2 py-0.5 rounded transition-all font-bold uppercase tracking-wider cursor-pointer">+ New Project</button>
                                     </div>
                                     ${this.ui.projectsSub ? `
                                     <div class="flex flex-col gap-1.5 overflow-y-auto max-h-[150px] custom-scrollbar pr-1" id="projects-list-container">
@@ -287,6 +323,13 @@ class DataPhaseEngine extends PhaseEngineBase {
                                             const color = meta.color || "#8b5cf6";
                                             const pagesCount = proj.page_ids ? proj.page_ids.length : 0;
                                             
+                                            const vault = proj.vault || 'local';
+                                            let vaultBadge = '';
+                                            if (vault === 'firebase') vaultBadge = '<span class="text-[8px] bg-sky-950 border border-sky-800 text-sky-400 px-1 py-0.5 rounded font-mono font-bold select-none leading-none">Firebase</span>';
+                                            else if (vault === 'gdrive') vaultBadge = '<span class="text-[8px] bg-amber-950 border border-amber-800 text-amber-400 px-1 py-0.5 rounded font-mono font-bold select-none leading-none">GDrive</span>';
+                                            else if (vault === 'local-os') vaultBadge = '<span class="text-[8px] bg-emerald-950 border border-emerald-800 text-emerald-400 px-1 py-0.5 rounded font-mono font-bold select-none leading-none">Local OS</span>';
+                                            else vaultBadge = '<span class="text-[8px] bg-slate-800 border border-slate-700 text-slate-400 px-1 py-0.5 rounded font-mono font-bold select-none leading-none">Local</span>';
+
                                             return `
                                             <div id="proj-item-${proj.project_id}" class="group flex flex-col gap-1 p-2 rounded-lg border transition-all cursor-pointer shrink-0 ${isActive ? 'bg-purple-950/30 border-purple-800/80 shadow-md ring-1 ring-purple-500/25' : 'bg-slate-950/50 border-slate-800/60 hover:border-slate-700/80'}" 
                                                  onclick="SC.actionSetActiveProject('${proj.project_id}')"
@@ -299,11 +342,13 @@ class DataPhaseEngine extends PhaseEngineBase {
                                                         <span class="${isActive ? 'text-purple-300 font-bold' : 'text-slate-300 group-hover:text-slate-100'} truncate">${title}</span>
                                                     </span>
                                                     <div class="flex gap-1 opacity-60 group-hover:opacity-100 transition-opacity shrink-0">
-                                                        <button onclick="event.stopPropagation(); SC.actionOpenProjectSettings('${proj.project_id}')" class="bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white text-[9px] py-0.5 px-2 rounded border border-slate-800/80 shadow transition-all font-bold uppercase tracking-wider flex items-center gap-1" title="Project Settings">⚙️ settings</button>
+                                                        <button onclick="event.stopPropagation(); SC.showTransferProjectDropdown(event, '${proj.project_id}')" class="bg-slate-900 hover:bg-slate-800 text-purple-300 hover:text-purple-100 text-[9px] py-0.5 px-2 rounded border border-slate-800/80 shadow transition-all font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer" title="Transfer Project">🔄 Transfer</button>
+                                                        <button onclick="event.stopPropagation(); SC.actionOpenProjectSettings('${proj.project_id}')" class="bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white text-[9px] py-0.5 px-2 rounded border border-slate-800/80 shadow transition-all font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer" title="Project Settings">⚙️ settings</button>
                                                     </div>
                                                 </div>
-                                                <div class="text-[9px] text-slate-500 pl-5">
+                                                <div class="text-[9px] text-slate-500 pl-5 flex items-center justify-between gap-2">
                                                     <span>${pagesCount} pages</span>
+                                                    ${vaultBadge}
                                                 </div>
                                             </div>
                                             `;

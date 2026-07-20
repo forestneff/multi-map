@@ -1757,6 +1757,169 @@ class SandboxController {
         }
     }
 
+    async getFileContent(nodeId) {
+        const node = this.kernel.state.nodes.find(n => n.id === nodeId);
+        if (!node) throw new Error("Node not found");
+
+        if (node.data && node.data.local_content !== undefined) {
+            return node.data.local_content;
+        }
+
+        const fileRoot = this.kernel.state.nodes.find(n => n.type === 'file-root');
+        const source = fileRoot?.root_metadata?.source || 'internal_project';
+
+        if (source === 'local_os') {
+            const handle = await this.kernel.getFileHandleForNode(nodeId);
+            if (!handle) throw new Error("Local file handle not found");
+            
+            const opt = { mode: 'read' };
+            if ((await handle.queryPermission(opt)) !== 'granted') {
+                if ((await handle.requestPermission(opt)) !== 'granted') {
+                    throw new Error("Local read permission denied");
+                }
+            }
+            const file = await handle.getFile();
+            return await file.text();
+        } else if (source === 'google_drive') {
+            const fileId = node.content;
+            if (!fileId) throw new Error("Google Drive file ID not found");
+
+            const token = window.Auth.googleAccessToken;
+            if (!token) throw new Error("Google Drive not authorized");
+
+            const metaRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=mimeType`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (!metaRes.ok) throw new Error("Failed to fetch Google Drive file metadata");
+            const meta = await metaRes.json();
+
+            let downloadUrl = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`;
+            if (meta.mimeType === 'application/vnd.google-apps.document') {
+                downloadUrl = `https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=text/plain`;
+            }
+
+            const res = await fetch(downloadUrl, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (!res.ok) throw new Error("Failed to download file from Google Drive");
+            return await res.text();
+        } else if (source === 'github') {
+            const meta = fileRoot.root_metadata || {};
+            const repo = meta.github_repo;
+            const branch = meta.github_branch || 'main';
+            const pat = meta.github_pat;
+            const path = node.content;
+
+            if (!repo || !path) throw new Error("GitHub repo or file path not configured");
+
+            const headers = {};
+            if (pat) headers['Authorization'] = `token ${pat}`;
+
+            const res = await fetch(`https://api.github.com/repos/${repo}/contents/${path}?ref=${branch}`, { headers });
+            if (!res.ok) throw new Error("Failed to fetch file from GitHub");
+            const data = await res.json();
+            
+            return decodeURIComponent(escape(atob(data.content.replace(/\s/g, ''))));
+        } else {
+            return node.content || '';
+        }
+    }
+
+    async saveFileContent(nodeId, newContent) {
+        const node = this.kernel.state.nodes.find(n => n.id === nodeId);
+        if (!node) throw new Error("Node not found");
+
+        const fileRoot = this.kernel.state.nodes.find(n => n.type === 'file-root');
+        const source = fileRoot?.root_metadata?.source || 'internal_project';
+
+        if (source === 'local_os' || source === 'google_drive' || source === 'github') {
+            node.data = node.data || {};
+            node.data.local_content = newContent;
+            this.kernel.saveCurrentMapToLibrary();
+        } else {
+            node.content = newContent;
+            this.kernel.saveCurrentMapToLibrary();
+        }
+
+        if (fileRoot && (source === 'local_os' || source === 'google_drive' || source === 'github')) {
+            fileRoot.root_metadata = fileRoot.root_metadata || {};
+            fileRoot.root_metadata.dirty_files = fileRoot.root_metadata.dirty_files || [];
+            const relPath = source === 'local_os' ? node.title : node.content;
+            if (!fileRoot.root_metadata.dirty_files.includes(relPath)) {
+                fileRoot.root_metadata.dirty_files.push(relPath);
+                this.kernel.saveCurrentMapToLibrary();
+            }
+        }
+    }
+
+    async actionEditFileLocally(id) {
+        const tgt = id || this.kernel.state.session.selectedId;
+        const node = this.kernel.state.nodes.find(n => n.id === tgt);
+        if (!node || node.type !== 'file-document') return;
+
+        try {
+            const saveStatus = document.getElementById('save-status');
+            if (saveStatus) saveStatus.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span> Loading...';
+
+            const text = await this.getFileContent(node.id);
+
+            this.setView('text-edit');
+
+            const eng = this.registry.get('text-edit');
+            if (eng && eng.iframe) {
+                const theme = document.body.classList.contains('light-mode') ? 'light' : 'dark';
+                const post = () => {
+                    if (eng.iframe.contentWindow) {
+                        eng.iframe.contentWindow.postMessage({
+                            type: 'STATE_UPDATE',
+                            nodeId: node.id,
+                            filePath: node.title,
+                            fileContent: text,
+                            theme: theme
+                        }, '*');
+                    }
+                };
+                if (eng.iframe.contentDocument && eng.iframe.contentDocument.readyState === 'complete') {
+                    post();
+                } else {
+                    eng.iframe.onload = post;
+                }
+            }
+
+            if (saveStatus) {
+                const isCloud = this.kernel.isUsingCloudVault();
+                saveStatus.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> ${isCloud ? 'Cloud' : 'Local'}`;
+            }
+        } catch (e) {
+            console.error("Local edit failed:", e);
+            alert("Failed to edit file: " + e.message);
+        }
+    }
+
+    async actionSaveFileContent(id, content) {
+        try {
+            await this.saveFileContent(id, content);
+            const textEditEng = this.registry.get('text-edit');
+            if (textEditEng && textEditEng.iframe && textEditEng.iframe.contentWindow) {
+                textEditEng.iframe.contentWindow.postMessage({
+                    type: 'SAVE_SUCCESS'
+                }, '*');
+            }
+            const fileEng = this.registry.get('file');
+            if (fileEng && fileEng.iframe && fileEng.iframe.contentWindow) {
+                fileEng.iframe.contentWindow.postMessage({ type: 'REFRESH_TREE' }, '*');
+            }
+            this.showToast("File saved successfully!", "success");
+        } catch (err) {
+            console.error("Save file content failed:", err);
+            alert("Save failed: " + err.message);
+        }
+    }
+
+    actionCloseFileEditor(id) {
+        this.setView('file');
+    }
+
     async actionMountDirectory(id) {
         const tgt = id || this.kernel.state.session.selectedId;
         const node = this.kernel.state.nodes.find(n => n.id === tgt);
@@ -1787,6 +1950,138 @@ class SandboxController {
             if (e.name !== 'AbortError') {
                 alert("Failed to mount directory: " + e.message);
             }
+        }
+    }
+
+    async actionAuthorizeGoogleServices(id) {
+        try {
+            await window.Auth.requestGoogleScope('https://www.googleapis.com/auth/drive.readonly');
+            this.showToast("Google Services authorized!", "success");
+            this.render();
+        } catch (e) {
+            console.error("Authorization failed:", e);
+            alert("Authorization failed: " + e.message);
+        }
+    }
+
+    async actionGitPush(id, data) {
+        const fileRoot = this.kernel.state.nodes.find(n => n.id === id);
+        if (!fileRoot) return;
+
+        const source = fileRoot.root_metadata?.source || 'internal_project';
+        const dirty = fileRoot.root_metadata?.dirty_files || [];
+        if (dirty.length === 0) {
+            this.showToast("No modifications to sync.", "info");
+            return;
+        }
+
+        try {
+            this.showToast("Starting synchronization...", "info");
+
+            if (source === 'github') {
+                const meta = fileRoot.root_metadata || {};
+                const repo = meta.github_repo;
+                const branch = meta.github_branch || 'main';
+                const pat = meta.github_pat;
+                if (!repo || !pat) throw new Error("GitHub repository or PAT is not configured");
+
+                const headers = { 'Authorization': `token ${pat}`, 'Content-Type': 'application/json' };
+
+                for (const path of dirty) {
+                    const node = this.kernel.state.nodes.find(n => n.content === path && n.type === 'file-document');
+                    if (!node || node.data?.local_content === undefined) continue;
+
+                    const newContent = node.data.local_content;
+
+                    const getRes = await fetch(`https://api.github.com/repos/${repo}/contents/${path}?ref=${branch}`, { headers: { 'Authorization': `token ${pat}` } });
+                    let sha = undefined;
+                    if (getRes.ok) {
+                        const fileData = await getRes.json();
+                        sha = fileData.sha;
+                    }
+
+                    const base64Content = btoa(unescape(encodeURIComponent(newContent)));
+                    const putRes = await fetch(`https://api.github.com/repos/${repo}/contents/${path}`, {
+                        method: 'PUT',
+                        headers,
+                        body: JSON.stringify({
+                            message: data.message || `Update ${path} via Multi-Map`,
+                            content: base64Content,
+                            sha: sha,
+                            branch: branch
+                        })
+                    });
+                    if (!putRes.ok) {
+                        const errData = await putRes.json();
+                        throw new Error(`Failed to push ${path}: ${errData.message}`);
+                    }
+                }
+            } else if (source === 'google_drive') {
+                const token = window.Auth?.googleAccessToken;
+                if (!token) throw new Error("Google Drive is not authorized");
+
+                for (const fileId of dirty) {
+                    const node = this.kernel.state.nodes.find(n => n.content === fileId && n.type === 'file-document');
+                    if (!node || node.data?.local_content === undefined) continue;
+
+                    const newContent = node.data.local_content;
+
+                    const metaRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=mimeType`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    const meta = await metaRes.json();
+                    if (meta.mimeType === 'application/vnd.google-apps.document') continue;
+
+                    const res = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
+                        method: 'PATCH',
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'text/plain'
+                        },
+                        body: newContent
+                    });
+                    if (!res.ok) throw new Error(`Failed to update Google Drive file: ${node.title}`);
+                }
+            } else if (source === 'local_os') {
+                for (const fileName of dirty) {
+                    const node = this.kernel.state.nodes.find(n => n.title === fileName && n.type === 'file-document');
+                    if (!node || node.data?.local_content === undefined) continue;
+
+                    const newContent = node.data.local_content;
+                    const handle = await this.kernel.getFileHandleForNode(node.id);
+                    if (!handle) throw new Error(`Local file handle not found for ${fileName}`);
+
+                    const opt = { mode: 'readwrite' };
+                    if ((await handle.queryPermission(opt)) !== 'granted') {
+                        if ((await handle.requestPermission(opt)) !== 'granted') {
+                            throw new Error(`Local write permission denied for ${fileName}`);
+                        }
+                    }
+                    const writable = await handle.createWritable();
+                    await writable.write(newContent);
+                    await writable.close();
+                }
+            }
+
+            this.kernel.state.nodes.forEach(n => {
+                if (n.data && n.data.local_content !== undefined) {
+                    delete n.data.local_content;
+                }
+            });
+
+            fileRoot.root_metadata = fileRoot.root_metadata || {};
+            fileRoot.root_metadata.dirty_files = [];
+            this.kernel.saveCurrentMapToLibrary();
+
+            const fileEng = this.registry.get('file');
+            if (fileEng && fileEng.iframe && fileEng.iframe.contentWindow) {
+                fileEng.iframe.contentWindow.postMessage({ type: 'REFRESH_TREE' }, '*');
+            }
+
+            this.showToast("All changes synchronized successfully!", "success");
+        } catch (e) {
+            console.error("Synchronization failed:", e);
+            alert("Synchronization failed: " + e.message);
         }
     }
 
@@ -4050,6 +4345,12 @@ ${innerHtml}
     }
 
     async actionSetActiveProject(projId) {
+        const projects = this.kernel.getProjects();
+        const proj = projects.find(p => p.project_id === projId);
+        if (proj && proj.vault && proj.vault !== this.kernel.activeVault) {
+            await this.kernel.setVault(proj.vault);
+        }
+
         this.kernel.activeProjectId = projId;
         const masterMap = await this.kernel.getOrCreateMasterMap(projId);
         if (masterMap) {
@@ -5373,9 +5674,33 @@ ${innerHtml}
                     themeClasses = 'bg-rose-600 hover:bg-rose-500 border-rose-400 text-rose-100 hover:text-white shadow-[0_0_15px_rgba(225,29,72,0.4)]';
                 } else if (type === 'file-document') {
                     const fileRoot = this.kernel.state.nodes.find(x => x.type === 'file-root');
-                    const isLocalOS = fileRoot && fileRoot.root_metadata && fileRoot.root_metadata.source === 'local_os';
+                    const source = fileRoot?.root_metadata?.source || 'internal_project';
                     
-                    if (isLocalOS) {
+                    const isTextFile = (name) => {
+                        if (!name) return false;
+                        const n = name.toLowerCase();
+                        return n.endsWith('.txt') || n.endsWith('.md') || n.endsWith('.json') || 
+                               n.endsWith('.js') || n.endsWith('.css') || n.endsWith('.html') || 
+                               n.endsWith('.xml') || n.endsWith('.yaml') || n.endsWith('.yml') || 
+                               n.endsWith('.py') || n.endsWith('.sh') || n.endsWith('.bat') || 
+                               n.endsWith('.ts') || n.endsWith('.sql') || n.endsWith('.rs') || 
+                               n.endsWith('.go') || n.endsWith('.cpp') || n.endsWith('.c') || 
+                               n.endsWith('.h') || n.endsWith('.java') || n.endsWith('.ini');
+                    };
+                    
+                    const isText = isTextFile(selectedNode.title);
+                    
+                    if (isText) {
+                        action = () => this.actionEditFileLocally(selectedNode.id);
+                        text = 'Edit Document';
+                        themeClasses = 'bg-emerald-600 hover:bg-emerald-500 border-emerald-400 text-emerald-100 hover:text-white shadow-[0_0_15px_rgba(16,185,129,0.4)]';
+                        options = [
+                            { text: 'Edit Document 📝', action: action }
+                        ];
+                        if (source === 'local_os') {
+                            options.push({ text: 'Open in New Tab ↗️', action: () => this.actionOpenFileInNewTab(selectedNode.id) });
+                        }
+                    } else if (source === 'local_os') {
                         action = () => this.actionOpenFileInNewTab(selectedNode.id);
                         text = 'Open in New Tab';
                         themeClasses = 'bg-indigo-600 hover:bg-indigo-500 border-indigo-400 text-indigo-100 hover:text-white shadow-[0_0_15px_rgba(79,70,229,0.4)]';
@@ -6634,7 +6959,7 @@ ${innerHtml}
         const btn = event.currentTarget;
         const rect = btn.getBoundingClientRect();
         
-        const activeVault = this.kernel.isUsingCloudVault() ? 'firebase' : 'local';
+        const activeVault = this.kernel.activeVault;
         const isLoggedIn = window.FirebaseAuth && window.FirebaseAuth.currentUser && !window.FirebaseAuth.currentUser.isAnonymous;
 
         const panel = document.createElement('div');
@@ -6647,8 +6972,8 @@ ${innerHtml}
         const options = [
             { value: 'firebase', label: 'Firebase (Cloud) ☁️', enabled: isLoggedIn, desc: isLoggedIn ? 'Active cloud-synchronized vault' : 'Requires full account sign-in' },
             { value: 'local', label: 'Local Browser (Legacy) 📁', enabled: true, desc: 'Saves locally inside browser cache' },
-            { value: 'gdrive', label: 'Google Drive (Coming Soon) 🔺', enabled: false, desc: 'Personal Drive synchronization' },
-            { value: 'local-os', label: 'Local OS (Coming Soon) 💾', enabled: false, desc: 'Access local computer directory' }
+            { value: 'gdrive', label: 'Google Drive 🔺', enabled: true, desc: 'Saves library directly to your Google Drive' },
+            { value: 'local-os', label: 'Local OS 💾', enabled: true, desc: 'Saves library directly to a computer directory' }
         ];
 
         options.forEach(opt => {
@@ -6684,5 +7009,76 @@ ${innerHtml}
             document.addEventListener('mousedown', close, true);
             document.addEventListener('scroll', close, { capture: true, passive: true });
         }, 0);
+    }
+
+    showTransferProjectDropdown(event, projectId) {
+        const btn = event.currentTarget;
+        const rect = btn.getBoundingClientRect();
+
+        const panel = document.createElement('div');
+        panel.id = 'mm-project-transfer-dd';
+        panel.className = "fixed z-[99999] bg-slate-950 border border-slate-700 rounded-xl shadow-2xl overflow-hidden flex flex-col font-sans py-1";
+        panel.style.left = `${rect.left}px`;
+        panel.style.top = `${rect.bottom + 4}px`;
+        panel.style.minWidth = `180px`;
+
+        const allProjects = this.kernel.getProjects();
+        const proj = allProjects.find(p => p.project_id === projectId);
+        const currentVault = proj?.vault || 'local';
+        const isLoggedIn = window.FirebaseAuth && window.FirebaseAuth.currentUser && !window.FirebaseAuth.currentUser.isAnonymous;
+
+        const vaults = [
+            { value: 'local', label: 'Local Browser (Legacy) 📁', enabled: true, desc: 'Saves to local browser cache' },
+            { value: 'firebase', label: 'Firebase (Cloud) ☁️', enabled: isLoggedIn, desc: isLoggedIn ? 'Sync with Firebase Cloud Firestore' : 'Requires full account sign-in' },
+            { value: 'gdrive', label: 'Google Drive 🔺', enabled: true, desc: 'Sync with your personal Drive file' },
+            { value: 'local-os', label: 'Local OS 💾', enabled: true, desc: 'Save to a computer directory' }
+        ];
+
+        vaults.forEach(v => {
+            if (v.value === currentVault) return;
+            
+            const b = document.createElement('button');
+            b.className = `text-left w-full px-3 py-2 text-[10px] font-medium flex flex-col transition-colors border-none bg-transparent cursor-pointer ${v.enabled ? 'text-slate-300 hover:bg-purple-600 hover:text-white' : 'text-slate-600 cursor-not-allowed'}`;
+            b.disabled = !v.enabled;
+            b.innerHTML = `
+                <div class="font-bold">${v.label}</div>
+                <div class="text-[8px] text-slate-500 mt-0.5">${v.desc}</div>
+            `;
+            if (v.enabled) {
+                b.onclick = async () => {
+                    panel.remove();
+                    if (confirm(`Are you sure you want to transfer this project and all its pages to ${v.label}?`)) {
+                        try {
+                            await this.kernel.transferProject(projectId, v.value);
+                            this.showToast("Project transferred successfully!", "success");
+                            this.render();
+                        } catch(e) {
+                            alert("Transfer failed: " + e.message);
+                        }
+                    }
+                };
+            }
+            panel.appendChild(b);
+        });
+
+        document.body.appendChild(panel);
+
+        const close = (e) => {
+            if (!panel.contains(e.target) && e.target !== btn) {
+                panel.remove();
+                document.removeEventListener('mousedown', close, true);
+                document.removeEventListener('scroll', close, true);
+            }
+        };
+        setTimeout(() => {
+            document.addEventListener('mousedown', close, true);
+            document.addEventListener('scroll', close, { capture: true, passive: true });
+        }, 0);
+    }
+
+    actionToggleShowAllVaults(checked) {
+        this.kernel.showAllVaults = checked;
+        localStorage.setItem("mm_show_all_vaults", checked ? "true" : "false");
+        this.render();
     }
 }

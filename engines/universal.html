@@ -411,19 +411,37 @@
                     } else if (field === 'custom_payload') {
                         try {
                             rMeta.custom_payload = JSON.parse(val);
-                            // Valid JSON, remove error style if we had one
                             const ta = document.getElementById('rm-payload');
                             if(ta) ta.classList.remove('ring-red-500', 'border-red-500');
                         } catch(e) {
-                            // Invalid JSON, add error style
                             const ta = document.getElementById('rm-payload');
                             if(ta) ta.classList.add('ring-red-500', 'border-red-500');
-                            return; // Don't save invalid JSON
+                            return;
                         }
                     } else {
                         rMeta[field] = val;
                     }
                     notifyUpdate(id, { root_metadata: rMeta });
+                }
+            };
+
+            window.changeFSSource = (id, sourceVal) => {
+                const n = currentState.nodes.find(x => x.id === id);
+                if (!n) return;
+                const rMeta = n.root_metadata || { summary: "", tags: [], portal_behavior: "standard", static_layout: false, custom_payload: {} };
+                rMeta.source = sourceVal;
+                if (sourceVal !== 'local_os') {
+                    rMeta.is_mounted = false;
+                    rMeta.directory_name = '';
+                }
+                notifyUpdate(id, { root_metadata: rMeta });
+                if (sourceVal === 'local_os') {
+                    notifyAction('MOUNT_DIRECTORY', id);
+                } else if (sourceVal === 'google_drive') {
+                    const hasDrive = window.parent.Auth && window.parent.Auth.googleAuthorizedScopes && window.parent.Auth.googleAuthorizedScopes.includes('https://www.googleapis.com/auth/drive.readonly');
+                    if (!hasDrive) {
+                        notifyAction('AUTHORIZE_GOOGLE_SERVICES', id);
+                    }
                 }
             };
 
@@ -583,9 +601,11 @@
                     <div class="flex flex-col gap-3 mt-1">
                         <div class="flex flex-col gap-1">
                             <label class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">File System Source</label>
-                            <select onchange="window.updateRootMetadata('${node.id}', 'source', this.value)" class="w-full bg-slate-800 border border-slate-700 p-2 rounded text-xs text-white outline-none focus:border-sky-500 transition-all duration-300">
-                                <option value="internal_project" ${source === 'internal_project' ? 'selected' : ''}>Internal Project Pages</option>
-                                <option value="local_os" ${source === 'local_os' ? 'selected' : ''}>Local OS Directory</option>
+                            <select onchange="window.changeFSSource('${node.id}', this.value)" class="w-full bg-slate-800 border border-slate-700 p-2 rounded text-xs text-white outline-none focus:border-sky-500 transition-all duration-300">
+                                <option value="internal_project" ${source === 'internal_project' ? 'selected' : ''}>Current Vault (Internal Pages) ☁️</option>
+                                <option value="local_os" ${source === 'local_os' ? 'selected' : ''}>Local OS Directory 💾</option>
+                                <option value="google_drive" ${source === 'google_drive' ? 'selected' : ''}>Google Drive & Docs 🔺</option>
+                                <option value="github" ${source === 'github' ? 'selected' : ''}>GitHub Git Repository 🐙</option>
                             </select>
                         </div>
                         
@@ -606,6 +626,43 @@
                                     ${isMounted ? 'Change Directory 📁' : 'Mount OS Directory 📁'}
                                 </button>
                             </div>
+                        ` : source === 'google_drive' ? (() => {
+                            const hasDrive = window.parent.Auth && window.parent.Auth.googleAuthorizedScopes && window.parent.Auth.googleAuthorizedScopes.includes('https://www.googleapis.com/auth/drive.readonly');
+                            return `
+                            <div class="flex flex-col gap-2 bg-slate-950/40 border border-slate-800/80 rounded-xl p-3 mt-1">
+                                <div class="text-[10px] text-slate-400 flex justify-between items-center">
+                                    <span>GOOGLE DRIVE:</span>
+                                    <span class="${hasDrive ? 'text-emerald-400 font-black' : 'text-amber-400 font-black'} uppercase">
+                                        ${hasDrive ? 'Authorized' : 'Not Linked'}
+                                    </span>
+                                </div>
+                                ${!hasDrive ? `
+                                    <button onclick="notifyAction('AUTHORIZE_GOOGLE_SERVICES', '${node.id}')" class="mt-1 w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded shadow transition-colors">
+                                        Link Google Drive 🔺
+                                    </button>
+                                ` : `
+                                    <div class="text-[10px] text-slate-500 italic">
+                                        Connected to your Google Drive. Traverses files dynamically in the File Phase.
+                                    </div>
+                                `}
+                            </div>
+                            `;
+                        })() : source === 'github' ? `
+                            <div class="flex flex-col gap-2 bg-slate-950/40 border border-slate-800/80 rounded-xl p-3 mt-1">
+                                <div class="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1 flex items-center gap-1">🐙 GitHub Sync Settings</div>
+                                <div class="flex flex-col gap-1">
+                                    <label class="text-[9px] text-slate-500 font-bold uppercase">Repository (owner/repo)</label>
+                                    <input type="text" oninput="window.updateRootMetadata('${node.id}', 'github_repo', this.value)" placeholder="owner/repo" value="${escapeHTML(meta.github_repo || '')}" class="w-full bg-slate-900 border border-slate-700 text-white p-2 rounded text-xs focus:border-sky-500 outline-none">
+                                </div>
+                                <div class="flex flex-col gap-1">
+                                    <label class="text-[9px] text-slate-500 font-bold uppercase">Branch</label>
+                                    <input type="text" oninput="window.updateRootMetadata('${node.id}', 'github_branch', this.value)" placeholder="main" value="${escapeHTML(meta.github_branch || 'main')}" class="w-full bg-slate-900 border border-slate-700 text-white p-2 rounded text-xs focus:border-sky-500 outline-none">
+                                </div>
+                                <div class="flex flex-col gap-1">
+                                    <label class="text-[9px] text-slate-500 font-bold uppercase">Access Token (PAT)</label>
+                                    <input type="password" oninput="window.updateRootMetadata('${node.id}', 'github_pat', this.value)" placeholder="ghp_..." value="${escapeHTML(meta.github_pat || '')}" class="w-full bg-slate-900 border border-slate-700 text-white p-2 rounded text-xs focus:border-sky-500 outline-none">
+                                </div>
+                            </div>
                         ` : `
                             <div class="text-[10px] text-slate-500 italic p-2 border border-dashed border-slate-800 rounded">
                                 Pages created inside this project will automatically sync onto this Master map.
@@ -623,14 +680,31 @@
                 `;
             } else if (node.type === 'file-document') {
                 const fileRoot = state.nodes.find(n => n.type === 'file-root');
-                const isLocalOS = fileRoot && fileRoot.root_metadata && fileRoot.root_metadata.source === 'local_os';
+                const source = fileRoot?.root_metadata?.source || 'internal_project';
+                
+                const isTextFile = (name) => {
+                    if (!name) return false;
+                    const n = name.toLowerCase();
+                    return n.endsWith('.txt') || n.endsWith('.md') || n.endsWith('.json') || 
+                           n.endsWith('.js') || n.endsWith('.css') || n.endsWith('.html') || 
+                           n.endsWith('.xml') || n.endsWith('.yaml') || n.endsWith('.yml') || 
+                           n.endsWith('.py') || n.endsWith('.sh') || n.endsWith('.bat') || 
+                           n.endsWith('.ts') || n.endsWith('.sql') || n.endsWith('.rs') || 
+                           n.endsWith('.go') || n.endsWith('.cpp') || n.endsWith('.c') || 
+                           n.endsWith('.h') || n.endsWith('.java') || n.endsWith('.ini');
+                };
+                const isText = isTextFile(node.title);
+
                 contentAreaHtml = `
                     <div class="flex flex-col h-full bg-slate-900/50 border border-slate-800 rounded-lg p-3 text-center justify-center items-center gap-2">
                         <span class="text-3xl">📄</span>
                         <span class="text-slate-400 text-xs">Document</span>
                         <span class="text-slate-600 text-[10px] font-mono mt-2">${escapeHTML(node.title)}</span>
-                        ${isLocalOS ? `
-                            <button onclick="notifyAction('OPEN_FILE_TAB', '${node.id}')" class="mt-3 w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded shadow transition-colors">Open in New Tab ↗️</button>
+                        ${isText ? `
+                            <button onclick="notifyAction('EDIT_FILE_LOCALLY', '${node.id}')" class="mt-3 w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded shadow transition-colors">Edit Document 📝</button>
+                        ` : ''}
+                        ${source === 'local_os' ? `
+                            <button onclick="notifyAction('OPEN_FILE_TAB', '${node.id}')" class="mt-2 w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded shadow transition-colors">Open in New Tab ↗️</button>
                         ` : ''}
                     </div>
                 `;

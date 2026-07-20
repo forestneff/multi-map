@@ -14,6 +14,31 @@
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.5); }
         .tree-item:hover { background: rgba(255, 255, 255, 0.04); }
         .tree-item.active { background: rgba(99, 102, 241, 0.2); border-left: 3px solid #6366f1; }
+
+        /* Light Mode Styleset */
+        body.light-mode { background: #fafaf9; color: #1c1917; }
+        body.light-mode .text-white { color: #1c1917 !important; }
+        body.light-mode .text-slate-100, body.light-mode .text-slate-200, body.light-mode .text-slate-300, body.light-mode .text-slate-400 { color: #44403c !important; }
+        body.light-mode .text-slate-500, body.light-mode .text-slate-600 { color: #6e6a66 !important; }
+        body.light-mode .bg-slate-900, body.light-mode .bg-slate-900\/60, body.light-mode .bg-slate-900\/40, body.light-mode .bg-slate-900\/10 { background-color: #f5f5f4 !important; }
+        body.light-mode .bg-slate-950, body.light-mode .bg-slate-950\/20, body.light-mode .bg-slate-950\/60 { background-color: #ffffff !important; }
+        body.light-mode .bg-slate-900\/20 { background-color: #fafaf9 !important; }
+        body.light-mode .border-slate-800, body.light-mode .border-slate-800\/80, body.light-mode .border-slate-800\/60 { border-color: #e7e5e4 !important; }
+        body.light-mode .border-slate-700 { border-color: #d6d3d1 !important; }
+        body.light-mode .hover\:bg-slate-700:hover { background-color: #e7e5e4 !important; color: #1c1917 !important; }
+        body.light-mode .bg-slate-800, body.light-mode .hover\:bg-slate-800:hover { background-color: #e7e5e4 !important; color: #1c1917 !important; }
+        body.light-mode .text-slate-300 { color: #2e2a24 !important; }
+        body.light-mode .hover\:text-white:hover { color: #1c1917 !important; }
+        body.light-mode #file-editor { color: #1c1917 !important; background: transparent !important; }
+        body.light-mode #locked-overlay { background: rgba(250, 250, 249, 0.95) !important; }
+        body.light-mode #locked-overlay h3 { color: #1c1917 !important; }
+        body.light-mode #locked-overlay p { color: #57534e !important; }
+        body.light-mode .bg-indigo-600 { background-color: #4f46e5 !important; color: #ffffff !important; }
+        body.light-mode .bg-indigo-600:hover { background-color: #4338ca !important; }
+        body.light-mode .glass { background: rgba(255, 255, 255, 0.6); border: 1px solid rgba(0, 0, 0, 0.08); }
+        body.light-mode .glass:hover { border-color: rgba(0, 0, 0, 0.15); }
+        body.light-mode .tree-item:hover { background: rgba(0, 0, 0, 0.04); }
+        body.light-mode .tree-item.active { background: rgba(99, 102, 241, 0.15); border-left: 3px solid #6366f1; }
     </style>
 </head>
 <body class="flex flex-col h-screen overflow-hidden">
@@ -41,6 +66,21 @@
                 <div class="text-center py-8 text-xs text-slate-500 italic">
                     Loading structure...
                 </div>
+            </div>
+            
+            <!-- Git Sync Panel -->
+            <div id="git-sync-panel" class="border-t border-slate-800/80 bg-slate-950/40 p-3 select-none flex flex-col gap-2.5 hidden">
+                <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center justify-between">
+                    <span>🐙 GitHub Sync</span>
+                    <button id="btn-git-refresh" onclick="refreshGitChanges()" class="text-[9px] text-sky-400 hover:underline cursor-pointer">Refresh</button>
+                </span>
+                <div id="git-changes-list" class="max-h-24 overflow-y-auto text-[10px] text-slate-400 font-mono flex flex-col gap-1 custom-scrollbar">
+                    <div class="italic text-slate-600 text-center py-2">No local modifications</div>
+                </div>
+                <input id="git-commit-msg" type="text" placeholder="Commit message..." class="w-full bg-slate-900 border border-slate-700 text-white p-1.5 rounded text-[10px] outline-none focus:border-sky-500 transition-all">
+                <button id="btn-git-push" onclick="commitAndPushGit()" class="w-full py-1.5 bg-amber-600 hover:bg-amber-500 text-white text-[10px] font-bold rounded shadow transition-colors uppercase tracking-wider cursor-pointer">
+                    Commit & Push 🚀
+                </button>
             </div>
         </div>
 
@@ -130,9 +170,16 @@
 
         // Listen for updates from parent
         window.addEventListener('message', (event) => {
-            if (event.data && event.data.type === 'STATE_UPDATE') {
-                currentState = event.data.state;
-                initWorkspace();
+            if (event.data) {
+                if (event.data.type === 'STATE_UPDATE') {
+                    currentState = event.data.state;
+                    if (event.data.theme) {
+                        document.body.classList.toggle('light-mode', event.data.theme === 'light');
+                    }
+                    initWorkspace();
+                } else if (event.data.type === 'REFRESH_TREE') {
+                    loadTreeStructureGeneral();
+                }
             }
         });
 
@@ -192,14 +239,12 @@
             if (source === 'local_os') {
                 statusInd.innerHTML = `Source: <span class="text-indigo-400 font-bold">Local OS (${escapeHTML(meta.directory_name || 'Folder')})</span>`;
                 
-                // Get handle from IndexedDB
                 rootHandle = await FileHandleStore.get(rootNode.id);
                 if (!rootHandle) {
                     renderUnmountedState();
                     return;
                 }
 
-                // Verify permissions
                 const permissionOpts = { mode: 'readwrite' };
                 const verified = (await rootHandle.queryPermission(permissionOpts)) === 'granted';
                 if (!verified) {
@@ -210,10 +255,45 @@
                 hideLockOverlay();
                 treeCache.handles[''] = rootHandle;
                 await loadTreeStructure();
+            } else if (source === 'google_drive') {
+                statusInd.innerHTML = `Source: <span class="text-emerald-400 font-bold">Google Drive & Docs 🔺</span>`;
+                hideLockOverlay();
+                await loadGoogleDriveStructure();
+            } else if (source === 'github') {
+                statusInd.innerHTML = `Source: <span class="text-amber-400 font-bold">GitHub: ${escapeHTML(meta.github_repo || 'Not Configured')} 🐙</span>`;
+                hideLockOverlay();
+                await loadGitHubStructure();
             } else {
                 statusInd.innerHTML = `Source: <span class="text-sky-400 font-bold">Internal Project Pages</span>`;
                 hideLockOverlay();
                 loadInternalProjectStructure();
+            }
+
+            const gitPanel = document.getElementById('git-sync-panel');
+            if (source === 'github' || source === 'google_drive' || source === 'local_os') {
+                gitPanel.classList.remove('hidden');
+                
+                const titleSpan = gitPanel.querySelector('span > span');
+                const pushBtn = document.getElementById('btn-git-push');
+                const commitMsgInput = document.getElementById('git-commit-msg');
+                
+                if (source === 'github') {
+                    if (titleSpan) titleSpan.innerHTML = '🐙 GitHub Sync';
+                    if (pushBtn) pushBtn.innerHTML = 'Commit & Push 🚀';
+                    if (commitMsgInput) commitMsgInput.classList.remove('hidden');
+                } else if (source === 'google_drive') {
+                    if (titleSpan) titleSpan.innerHTML = '🔺 Drive Sync';
+                    if (pushBtn) pushBtn.innerHTML = 'Sync to Drive 🚀';
+                    if (commitMsgInput) commitMsgInput.classList.add('hidden');
+                } else if (source === 'local_os') {
+                    if (titleSpan) titleSpan.innerHTML = '💾 Local Disk Sync';
+                    if (pushBtn) pushBtn.innerHTML = 'Save to Disk 💾';
+                    if (commitMsgInput) commitMsgInput.classList.add('hidden');
+                }
+                
+                updateGitPanelChanges();
+            } else {
+                gitPanel.classList.add('hidden');
             }
         }
 
@@ -368,11 +448,488 @@
         }
 
         function enterWorkspacePage(mapId) {
+            if (currentState && currentState.meta && currentState.meta.map_id === mapId) {
+                window.parent.postMessage({
+                    type: 'ACTION',
+                    action: 'SWITCH_TO_MAP_VIEW'
+                }, '*');
+                return;
+            }
             window.parent.postMessage({
                 type: 'ACTION',
                 action: 'ENTER_PORTAL',
                 id: currentState.nodes.find(n => n.content === mapId)?.id || rootNode.id
             }, '*');
+        }
+
+        // --- General File System Tree Dispatcher ---
+
+        async function loadTreeStructureGeneral() {
+            const meta = rootNode.root_metadata || {};
+            const source = meta.source || 'internal_project';
+            if (source === 'local_os') {
+                await loadTreeStructure();
+            } else if (source === 'google_drive') {
+                await loadGoogleDriveStructure();
+            } else if (source === 'github') {
+                await loadGitHubStructure();
+            } else {
+                loadInternalProjectStructure();
+            }
+        }
+
+        // --- Google Drive File System Loader ---
+
+        async function loadGoogleDriveStructure() {
+            const container = document.getElementById('tree-container');
+            container.innerHTML = '';
+
+            const list = document.createElement('div');
+            list.className = 'flex flex-col gap-0.5';
+
+            treeCache.handles[''] = 'root';
+            await buildGoogleDriveBranch('', list, 0);
+            container.appendChild(list);
+        }
+
+        async function buildGoogleDriveBranch(parentPath, containerEl, depth) {
+            const folderId = treeCache.handles[parentPath];
+            if (!folderId) return;
+
+            const token = window.parent.Auth && window.parent.Auth.googleAccessToken;
+            if (!token) {
+                containerEl.innerHTML = `
+                    <div class="text-center py-4 text-xs text-amber-500 italic select-none">
+                        Google Drive not authorized. Link account in Inspector or Profile.
+                    </div>
+                `;
+                return;
+            }
+
+            const loader = document.createElement('div');
+            loader.className = 'text-[10px] text-slate-500 italic px-2 py-1 select-none';
+            loader.textContent = 'Loading Drive items...';
+            containerEl.appendChild(loader);
+
+            try {
+                const res = await fetch(`https://www.googleapis.com/drive/v3/files?q='${folderId}'+in+parents+and+trashed=false&fields=files(id,name,mimeType,size)&orderBy=folder,name`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                loader.remove();
+
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.error?.message || "Failed to fetch Drive files");
+                }
+
+                const data = await res.json();
+                const files = data.files || [];
+
+                if (files.length === 0 && depth === 0) {
+                    containerEl.innerHTML = `
+                        <div class="text-center py-8 text-xs text-slate-500 italic select-none">
+                            Folder is empty.
+                        </div>
+                    `;
+                    return;
+                }
+
+                for (const file of files) {
+                    const path = parentPath ? `${parentPath}/${file.name}` : file.name;
+                    treeCache.handles[path] = file.id;
+
+                    const isDir = file.mimeType === 'application/vnd.google-apps.folder';
+                    const isExpanded = !!treeCache.expanded[path];
+
+                    const row = document.createElement('div');
+                    row.className = 'flex flex-col';
+
+                    const item = document.createElement('div');
+                    const paddingLeft = depth * 12 + 8;
+                    const activeClass = activePath === path ? 'active text-white' : '';
+
+                    item.className = `tree-item flex items-center gap-2 p-2 rounded-lg text-xs font-mono text-slate-400 cursor-pointer transition-colors ${activeClass}`;
+                    item.style.paddingLeft = `${paddingLeft}px`;
+
+                    const icon = isDir ? (isExpanded ? '📂' : '📁') : '📄';
+                    item.innerHTML = `
+                        <span class="select-none text-xs shrink-0">${icon}</span>
+                        <span class="truncate">${escapeHTML(file.name)}</span>
+                    `;
+
+                    item.onclick = async (e) => {
+                        e.stopPropagation();
+                        if (isDir) {
+                            treeCache.expanded[path] = !treeCache.expanded[path];
+                            await loadTreeStructureGeneral();
+                        } else {
+                            await selectGoogleDriveFile(file, path);
+                        }
+                    };
+
+                    row.appendChild(item);
+
+                    if (isDir && isExpanded) {
+                        const subContainer = document.createElement('div');
+                        subContainer.className = 'flex flex-col';
+                        await buildGoogleDriveBranch(path, subContainer, depth + 1);
+                        row.appendChild(subContainer);
+                    }
+
+                    containerEl.appendChild(row);
+                }
+            } catch (e) {
+                loader.remove();
+                containerEl.innerHTML = `
+                    <div class="text-xs text-rose-500 p-2 select-none">
+                        Error: ${escapeHTML(e.message)}
+                    </div>
+                `;
+            }
+        }
+
+        async function selectGoogleDriveFile(file, path) {
+            activePath = path;
+            activeType = 'file';
+
+            document.querySelectorAll('.tree-item').forEach(el => el.classList.remove('active', 'text-white'));
+
+            const header = document.getElementById('preview-header');
+            header.classList.remove('hidden');
+            document.getElementById('preview-icon').textContent = '📄';
+            document.getElementById('preview-title').textContent = path;
+
+            const actions = document.getElementById('preview-actions');
+            actions.innerHTML = '';
+
+            const body = document.getElementById('preview-body');
+            body.innerHTML = `
+                <div class="flex-1 flex justify-center items-center">
+                    <div class="text-xs text-slate-500 animate-pulse">Reading file data from Google Drive...</div>
+                </div>
+            `;
+
+            try {
+                const isGoogleDoc = file.mimeType === 'application/vnd.google-apps.document';
+                const ext = file.name.split('.').pop().toLowerCase();
+                const isText = ['txt', 'md', 'js', 'json', 'css', 'html', 'py', 'ts', 'yaml', 'yml', 'rs', 'sh', 'bat', 'go'].includes(ext) || file.mimeType.startsWith('text/') || isGoogleDoc;
+
+                if (isText) {
+                    const editBtn = document.createElement('button');
+                    editBtn.className = "px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold rounded-lg shadow-md transition-all uppercase tracking-wider flex items-center gap-1.5 cursor-pointer";
+                    editBtn.innerHTML = "📝 Edit Document";
+                    editBtn.onclick = () => {
+                        window.parent.postMessage({
+                            type: 'UPDATE_NODE',
+                            id: rootNode.id,
+                            data: {
+                                content: file.id,
+                                title: file.name
+                            }
+                        }, '*');
+
+                        setTimeout(() => {
+                            window.parent.postMessage({
+                                type: 'ACTION',
+                                action: 'EDIT_FILE_LOCALLY',
+                                id: rootNode.id
+                            }, '*');
+                        }, 100);
+                    };
+                    actions.appendChild(editBtn);
+
+                    const driveBtn = document.createElement('button');
+                    driveBtn.className = "px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[11px] font-bold rounded-lg shadow-md transition-all uppercase tracking-wider flex items-center gap-1.5 border border-slate-700 cursor-pointer";
+                    driveBtn.innerHTML = "↗️ Open in Drive";
+                    driveBtn.onclick = () => window.open(`https://docs.google.com/document/d/${file.id}/edit`, '_blank');
+                    actions.appendChild(driveBtn);
+
+                    body.innerHTML = `
+                        <div class="glass border border-slate-800/80 rounded-2xl p-6 max-w-md mx-auto mt-16 flex flex-col items-center gap-6 relative overflow-hidden shadow-2xl bg-slate-950/20">
+                            <div class="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-emerald-500 to-teal-500"></div>
+                            <span class="text-5xl">📄</span>
+                            <div class="text-center">
+                                <h3 class="text-sm font-bold text-white font-mono">${escapeHTML(file.name)}</h3>
+                                <p class="text-[10px] text-emerald-400 mt-1 uppercase font-semibold">Google Document / Plain Text</p>
+                            </div>
+                            <div class="border-t border-slate-800/80 w-full pt-4 flex flex-col gap-2.5 text-xs text-slate-400 font-mono">
+                                <div class="flex justify-between">
+                                    <span class="text-slate-500">Type:</span>
+                                    <span>${isGoogleDoc ? 'Google Doc' : 'Text File'}</span>
+                                </div>
+                            </div>
+                            <button id="btn-drive-edit" class="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-lg transition-all uppercase tracking-wider">
+                                📝 Edit Document Locally
+                            </button>
+                        </div>
+                    `;
+                    document.getElementById('btn-drive-edit').onclick = editBtn.onclick;
+                } else {
+                    const driveBtn = document.createElement('button');
+                    driveBtn.className = "px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[11px] font-bold rounded-lg shadow-md transition-all uppercase tracking-wider flex items-center gap-1.5 border border-slate-700 cursor-pointer";
+                    driveBtn.innerHTML = "↗️ Open in Drive";
+                    driveBtn.onclick = () => window.open(`https://drive.google.com/open?id=${file.id}`, '_blank');
+                    actions.appendChild(driveBtn);
+
+                    body.innerHTML = `
+                        <div class="glass border border-slate-800/80 rounded-2xl p-6 max-w-md mx-auto mt-16 flex flex-col items-center gap-6 relative overflow-hidden shadow-2xl bg-slate-950/20">
+                            <div class="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-amber-500 to-orange-500"></div>
+                            <span class="text-5xl">📦</span>
+                            <div class="text-center">
+                                <h3 class="text-sm font-bold text-white font-mono">${escapeHTML(file.name)}</h3>
+                                <p class="text-[10px] text-slate-500 mt-1 uppercase font-semibold">Binary / Non-Editable Resource</p>
+                            </div>
+                            <div class="border-t border-slate-800/80 w-full pt-4 flex flex-col gap-2.5 text-xs text-slate-400 font-mono">
+                                <div class="flex justify-between">
+                                    <span class="text-slate-500">Size:</span>
+                                    <span>${file.size ? (file.size / 1024).toFixed(2) + ' KB' : 'Unknown'}</span>
+                                </div>
+                            </div>
+                            <button id="btn-body-drive" class="mt-4 w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-350 hover:text-white text-xs font-bold rounded-xl shadow-md border border-slate-700 transition-all uppercase tracking-wider flex items-center gap-2 justify-center">
+                                ↗️ Open in Google Drive
+                            </button>
+                        </div>
+                    `;
+                    document.getElementById('btn-body-drive').onclick = driveBtn.onclick;
+                }
+            } catch (e) {
+                body.innerHTML = `
+                    <div class="flex-1 flex flex-col items-center justify-center text-rose-500 gap-2 select-none">
+                        <span class="text-4xl">⚠️</span>
+                        <div class="text-sm font-bold">Failed to Fetch File Details</div>
+                        <p class="text-xs text-rose-600 max-w-xs text-center">${escapeHTML(e.message)}</p>
+                    </div>
+                `;
+            }
+            // Sync tree selection
+            document.querySelectorAll('.tree-item').forEach(el => {
+                if (el.querySelector('.truncate')?.textContent === file.name) {
+                    el.classList.add('active', 'text-white');
+                }
+            });
+        }
+
+        // --- GitHub File System Loader ---
+
+        async function loadGitHubStructure() {
+            const container = document.getElementById('tree-container');
+            container.innerHTML = '';
+
+            const list = document.createElement('div');
+            list.className = 'flex flex-col gap-0.5';
+
+            treeCache.handles[''] = '';
+            await buildGitHubBranch('', list, 0);
+            container.appendChild(list);
+        }
+
+        async function buildGitHubBranch(parentPath, containerEl, depth) {
+            const path = treeCache.handles[parentPath];
+            const meta = rootNode.root_metadata || {};
+            const repo = meta.github_repo;
+            const branch = meta.github_branch || 'main';
+            const pat = meta.github_pat;
+
+            if (!repo) {
+                containerEl.innerHTML = `
+                    <div class="text-center py-4 text-xs text-amber-500 italic select-none">
+                        GitHub Repository not configured in Inspector.
+                    </div>
+                `;
+                return;
+            }
+
+            const loader = document.createElement('div');
+            loader.className = 'text-[10px] text-slate-500 italic px-2 py-1 select-none';
+            loader.textContent = 'Loading GitHub items...';
+            containerEl.appendChild(loader);
+
+            try {
+                const headers = {};
+                if (pat) headers['Authorization'] = `token ${pat}`;
+
+                const res = await fetch(`https://api.github.com/repos/${repo}/contents/${path}?ref=${branch}`, { headers });
+                loader.remove();
+
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.message || "Failed to fetch GitHub files");
+                }
+
+                const files = await res.json();
+                files.sort((a, b) => {
+                    if (a.type === b.type) return a.name.localeCompare(b.name);
+                    return a.type === 'dir' ? -1 : 1;
+                });
+
+                if (files.length === 0 && depth === 0) {
+                    containerEl.innerHTML = `
+                        <div class="text-center py-8 text-xs text-slate-500 italic select-none">
+                            Repository is empty.
+                        </div>
+                    `;
+                    return;
+                }
+
+                for (const file of files) {
+                    const fileKey = parentPath ? `${parentPath}/${file.name}` : file.name;
+                    treeCache.handles[fileKey] = file.path;
+
+                    const isDir = file.type === 'dir';
+                    const isExpanded = !!treeCache.expanded[fileKey];
+
+                    const row = document.createElement('div');
+                    row.className = 'flex flex-col';
+
+                    const item = document.createElement('div');
+                    const paddingLeft = depth * 12 + 8;
+                    const activeClass = activePath === fileKey ? 'active text-white' : '';
+
+                    item.className = `tree-item flex items-center gap-2 p-2 rounded-lg text-xs font-mono text-slate-400 cursor-pointer transition-colors ${activeClass}`;
+                    item.style.paddingLeft = `${paddingLeft}px`;
+
+                    const icon = isDir ? (isExpanded ? '📂' : '📁') : '📄';
+                    item.innerHTML = `
+                        <span class="select-none text-xs shrink-0">${icon}</span>
+                        <span class="truncate">${escapeHTML(file.name)}</span>
+                    `;
+
+                    item.onclick = async (e) => {
+                        e.stopPropagation();
+                        if (isDir) {
+                            treeCache.expanded[fileKey] = !treeCache.expanded[fileKey];
+                            await loadTreeStructureGeneral();
+                        } else {
+                            await selectGitHubFile(file, fileKey);
+                        }
+                    };
+
+                    row.appendChild(item);
+
+                    if (isDir && isExpanded) {
+                        const subContainer = document.createElement('div');
+                        subContainer.className = 'flex flex-col';
+                        await buildGitHubBranch(fileKey, subContainer, depth + 1);
+                        row.appendChild(subContainer);
+                    }
+
+                    containerEl.appendChild(row);
+                }
+            } catch (e) {
+                loader.remove();
+                containerEl.innerHTML = `
+                    <div class="text-xs text-rose-500 p-2 select-none">
+                        Error: ${escapeHTML(e.message)}
+                    </div>
+                `;
+            }
+        }
+
+        async function selectGitHubFile(file, path) {
+            activePath = path;
+            activeType = 'file';
+
+            document.querySelectorAll('.tree-item').forEach(el => el.classList.remove('active', 'text-white'));
+
+            const header = document.getElementById('preview-header');
+            header.classList.remove('hidden');
+            document.getElementById('preview-icon').textContent = '📄';
+            document.getElementById('preview-title').textContent = path;
+
+            const actions = document.getElementById('preview-actions');
+            actions.innerHTML = '';
+
+            const body = document.getElementById('preview-body');
+            body.innerHTML = `
+                <div class="flex-1 flex justify-center items-center">
+                    <div class="text-xs text-slate-500 animate-pulse">Reading file data from GitHub...</div>
+                </div>
+            `;
+
+            try {
+                const ext = file.name.split('.').pop().toLowerCase();
+                const isText = ['txt', 'md', 'js', 'json', 'css', 'html', 'py', 'ts', 'yaml', 'yml', 'rs', 'sh', 'bat', 'go'].includes(ext);
+
+                if (isText) {
+                    const editBtn = document.createElement('button');
+                    editBtn.className = "px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold rounded-lg shadow-md transition-all uppercase tracking-wider flex items-center gap-1.5 cursor-pointer";
+                    editBtn.innerHTML = "📝 Edit Document";
+                    editBtn.onclick = () => {
+                        window.parent.postMessage({
+                            type: 'UPDATE_NODE',
+                            id: rootNode.id,
+                            data: {
+                                content: file.path,
+                                title: file.name
+                            }
+                        }, '*');
+
+                        setTimeout(() => {
+                            window.parent.postMessage({
+                                type: 'ACTION',
+                                action: 'EDIT_FILE_LOCALLY',
+                                id: rootNode.id
+                            }, '*');
+                        }, 100);
+                    };
+                    actions.appendChild(editBtn);
+
+                    const githubBtn = document.createElement('button');
+                    githubBtn.className = "px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[11px] font-bold rounded-lg shadow-md transition-all uppercase tracking-wider flex items-center gap-1.5 border border-slate-700 cursor-pointer";
+                    githubBtn.innerHTML = "↗️ GitHub View";
+                    githubBtn.onclick = () => window.open(file.html_url, '_blank');
+                    actions.appendChild(githubBtn);
+
+                    body.innerHTML = `
+                        <div class="glass border border-slate-800/80 rounded-2xl p-6 max-w-md mx-auto mt-16 flex flex-col items-center gap-6 relative overflow-hidden shadow-2xl bg-slate-950/20">
+                            <div class="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-emerald-500 to-teal-500"></div>
+                            <span class="text-5xl">📄</span>
+                            <div class="text-center">
+                                <h3 class="text-sm font-bold text-white font-mono">${escapeHTML(file.name)}</h3>
+                                <p class="text-[10px] text-emerald-400 mt-1 uppercase font-semibold">GitHub Source Code / Text</p>
+                            </div>
+                            <button id="btn-github-edit" class="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-lg transition-all uppercase tracking-wider">
+                                📝 Edit Document Locally
+                            </button>
+                        </div>
+                    `;
+                    document.getElementById('btn-github-edit').onclick = editBtn.onclick;
+                } else {
+                    const githubBtn = document.createElement('button');
+                    githubBtn.className = "px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[11px] font-bold rounded-lg shadow-md transition-all uppercase tracking-wider flex items-center gap-1.5 border border-slate-700 cursor-pointer";
+                    githubBtn.innerHTML = "↗️ GitHub View";
+                    githubBtn.onclick = () => window.open(file.html_url, '_blank');
+                    actions.appendChild(githubBtn);
+
+                    body.innerHTML = `
+                        <div class="glass border border-slate-800/80 rounded-2xl p-6 max-w-md mx-auto mt-16 flex flex-col items-center gap-6 relative overflow-hidden shadow-2xl bg-slate-950/20">
+                            <div class="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-amber-500 to-orange-500"></div>
+                            <span class="text-5xl">📦</span>
+                            <div class="text-center">
+                                <h3 class="text-sm font-bold text-white font-mono">${escapeHTML(file.name)}</h3>
+                                <p class="text-[10px] text-slate-500 mt-1 uppercase font-semibold">Binary / Non-Editable Resource</p>
+                            </div>
+                            <button id="btn-body-github" class="mt-4 w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-350 hover:text-white text-xs font-bold rounded-xl shadow-md border border-slate-700 transition-all uppercase tracking-wider flex items-center gap-2 justify-center">
+                                ↗️ View on GitHub
+                            </button>
+                        </div>
+                    `;
+                    document.getElementById('btn-body-github').onclick = githubBtn.onclick;
+                }
+            } catch (e) {
+                body.innerHTML = `
+                    <div class="flex-1 flex flex-col items-center justify-center text-rose-500 gap-2 select-none">
+                        <span class="text-4xl">⚠️</span>
+                        <div class="text-sm font-bold">Failed to Fetch File Details</div>
+                        <p class="text-xs text-rose-600 max-w-xs text-center">${escapeHTML(e.message)}</p>
+                    </div>
+                `;
+            }
+            document.querySelectorAll('.tree-item').forEach(el => {
+                if (el.querySelector('.truncate')?.textContent === file.name) {
+                    el.classList.add('active', 'text-white');
+                }
+            });
         }
 
         // --- Local OS File System Loader ---
@@ -590,6 +1147,74 @@
             d.textContent = String(str);
             return d.innerHTML;
         }
+
+        // --- Git Sync Panel Handlers ---
+
+        function updateGitPanelChanges() {
+            const list = document.getElementById('git-changes-list');
+            if (!list) return;
+
+            const meta = rootNode.root_metadata || {};
+            const dirty = meta.dirty_files || [];
+
+            if (dirty.length === 0) {
+                list.innerHTML = `<div class="italic text-slate-600 text-center py-2 select-none">No local modifications</div>`;
+                return;
+            }
+
+            list.innerHTML = '';
+            dirty.forEach(filePath => {
+                const el = document.createElement('div');
+                el.className = 'flex items-center gap-1.5 py-0.5 truncate border-b border-slate-900 select-none';
+                el.innerHTML = `
+                    <span class="text-amber-500 font-bold text-[9px] shrink-0">M</span>
+                    <span class="truncate">${escapeHTML(filePath)}</span>
+                `;
+                list.appendChild(el);
+            });
+        }
+
+        window.refreshGitChanges = function() {
+            updateGitPanelChanges();
+        };
+
+        window.commitAndPushGit = function() {
+            const meta = rootNode.root_metadata || {};
+            const source = meta.source || 'internal_project';
+            const msgInput = document.getElementById('git-commit-msg');
+            const message = msgInput.value.trim();
+            
+            if (source === 'github' && !message) {
+                alert("Please enter a commit message first!");
+                return;
+            }
+
+            const dirty = meta.dirty_files || [];
+            if (dirty.length === 0) {
+                alert("No modified files to sync!");
+                return;
+            }
+
+            const pushBtn = document.getElementById('btn-git-push');
+            pushBtn.disabled = true;
+            pushBtn.textContent = 'Syncing... ⌛';
+
+            window.parent.postMessage({
+                type: 'ACTION',
+                action: 'GIT_PUSH',
+                id: rootNode.id,
+                data: {
+                    message: message,
+                    files: dirty
+                }
+            }, '*');
+
+            setTimeout(() => {
+                pushBtn.disabled = false;
+                pushBtn.innerHTML = source === 'github' ? 'Commit & Push 🚀' : (source === 'google_drive' ? 'Sync to Drive 🚀' : 'Save to Disk 💾');
+                msgInput.value = '';
+            }, 2000);
+        };
 
         // Refresh triggers full read
         document.getElementById('btn-refresh').onclick = () => {

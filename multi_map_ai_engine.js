@@ -1431,6 +1431,9 @@ class MultiMapAI {
         const auth = await this.getAuthToken();
         const authHeaderValue = `${auth.scheme} ${auth.value}`;
 
+        const customKey = localStorage.getItem('mm_custom_gemini_key') || '';
+        const preferredModel = localStorage.getItem('mm_preferred_model') || this.selectedModel;
+
         const response = await fetch(CLOUD_AGENT_URL, {
             method: 'POST',
             headers: {
@@ -1442,8 +1445,9 @@ class MultiMapAI {
             body: JSON.stringify({
                 prompt: prompt,
                 contextStr: contextStr,
-                model: this.selectedModel,
-                mapId: this.kernel?.state?.map_id || 'unknown'
+                model: preferredModel,
+                mapId: this.kernel?.state?.map_id || 'unknown',
+                userApiKey: customKey || undefined
             })
         });
 
