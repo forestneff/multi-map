@@ -63,7 +63,20 @@ onAuthStateChanged(auth, user => {
     if (user && !user.isAnonymous) {
         console.log("User logged in:", user.uid);
         // Verify user exists/token is valid (especially important when switching to local emulator)
-        user.getIdToken(true).then(() => {
+        user.getIdToken(true).then(async () => {
+            try {
+                const pubRef = doc(db, "users_public", user.uid);
+                await setDoc(pubRef, {
+                    uid: user.uid,
+                    email: user.email,
+                    displayName: user.displayName || user.email.split('@')[0],
+                    photoURL: user.photoURL || '',
+                    updatedAt: new Date().toISOString()
+                }, { merge: true });
+            } catch(pubErr) {
+                console.warn("Failed to update users_public profile:", pubErr);
+            }
+
             if (window.Kernel) {
                 window.Kernel.syncWithFirestore(user.uid);
             }
@@ -165,7 +178,18 @@ window.Auth = {
         const keyInput = document.getElementById('custom-gemini-key');
         const modelSelect = document.getElementById('custom-gemini-model');
         if (keyInput) {
-            localStorage.setItem('mm_custom_gemini_key', keyInput.value.trim());
+            const val = keyInput.value.trim();
+            localStorage.setItem('mm_custom_gemini_key', val);
+            // Only mark as explicitly set if the user typed a non-trivial, non-placeholder value
+            if (val && val.length > 20 && !val.startsWith('AIzaSy')) {
+                localStorage.setItem('mm_custom_gemini_key_explicit', 'true');
+            } else {
+                localStorage.removeItem('mm_custom_gemini_key_explicit');
+                // Also clear the stored key if it's empty or a placeholder
+                if (!val || val.startsWith('AIzaSy')) {
+                    localStorage.removeItem('mm_custom_gemini_key');
+                }
+            }
         }
         if (modelSelect) {
             localStorage.setItem('mm_preferred_model', modelSelect.value);
@@ -228,7 +252,7 @@ window.Auth = {
                     <div class="flex flex-col gap-2">
                         <div class="flex flex-col gap-1">
                             <label class="text-[9px] text-slate-500 font-bold uppercase">Gemini API Key</label>
-                            <input type="password" id="custom-gemini-key" placeholder="AIzaSy..." value="${customKey}" onchange="window.Auth.saveAISettings()" class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-300 outline-none focus:border-indigo-500">
+                            <input type="password" id="custom-gemini-key" placeholder="Enter Gemini API key..." value="${customKey}" onchange="window.Auth.saveAISettings()" class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-300 outline-none focus:border-indigo-500">
                         </div>
                         <div class="flex flex-col gap-1">
                             <label class="text-[9px] text-slate-500 font-bold uppercase">Preferred Model</label>
@@ -239,6 +263,31 @@ window.Auth = {
                                 <option value="gemini-2.5-pro" ${preferredModel === 'gemini-2.5-pro' ? 'selected' : ''}>Gemini 2.5 Pro</option>
                             </select>
                         </div>
+                    </div>
+                </div>
+                
+                <!-- Linked Contacts Manager -->
+                <div class="border-t border-slate-800 pt-3 flex flex-col gap-2">
+                    <h4 class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">👥 Linked Contacts</h4>
+                    <div class="flex flex-col gap-1.5 max-h-[120px] overflow-y-auto custom-scrollbar">
+                        ${(() => {
+                            const userContacts = window.SC?.userContacts || [];
+                            return userContacts.length > 0
+                                ? userContacts.map(c => `
+                                    <div class="flex justify-between items-center bg-slate-950 p-2 rounded-lg border border-slate-800 text-[11px]">
+                                        <div class="flex flex-col min-w-0">
+                                            <span class="text-slate-350 font-bold truncate">${c.displayName}</span>
+                                            <span class="text-slate-500 text-[9px] truncate">${c.email}</span>
+                                        </div>
+                                        <button onclick="window.SC.actionRemoveContact('${c.uid}')" class="text-rose-400 hover:text-rose-350 p-1 ml-2 transition-colors shrink-0" title="Remove Contact">✕</button>
+                                    </div>
+                                `).join('')
+                                : `<div class="text-center text-slate-600 text-[10px] py-4 italic border border-dashed border-slate-800 rounded-lg">No linked contacts.</div>`;
+                        })()}
+                    </div>
+                    <div class="flex gap-1.5 mt-1">
+                        <input type="email" id="profile-contact-email" placeholder="Contact email..." class="flex-1 bg-slate-950 border border-slate-700 rounded px-2.5 py-1 text-xs text-slate-300 outline-none focus:border-indigo-500 transition-colors">
+                        <button onclick="window.SC.actionAddContact(document.getElementById('profile-contact-email').value)" class="px-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold rounded transition-all cursor-pointer uppercase tracking-wider shrink-0">Add</button>
                     </div>
                 </div>
 

@@ -316,6 +316,12 @@ class SandboxController {
             const dmPanel = document.getElementById('sidebar-data-manager');
             if (dmPanel) dmPanel.classList.add('hidden');
 
+            // Close Asset Library first
+            this.dom.sidebar.classList.remove('asset-library-open');
+            this.popUiStack('asset-library-sidebar');
+            const assetPanel = document.getElementById('sidebar-asset-library');
+            if (assetPanel) assetPanel.classList.add('hidden');
+
             this.dom.sidebar.classList.toggle('open');
             const isOpen = this.dom.sidebar.classList.contains('open');
             
@@ -345,6 +351,12 @@ class SandboxController {
             const inspectorPanel = document.getElementById('sidebar-content');
             if (inspectorPanel) inspectorPanel.classList.add('hidden');
 
+            // Close Asset Library first
+            this.dom.sidebar.classList.remove('asset-library-open');
+            this.popUiStack('asset-library-sidebar');
+            const assetPanel = document.getElementById('sidebar-asset-library');
+            if (assetPanel) assetPanel.classList.add('hidden');
+
             this.dom.sidebar.classList.toggle('data-manager-open');
             const isOpen = this.dom.sidebar.classList.contains('data-manager-open');
             
@@ -368,6 +380,411 @@ class SandboxController {
             } else {
                 this.popUiStack('data-manager-sidebar');
             }
+        }
+    }
+
+    toggleAssetLibrary() {
+        if (this.dom.sidebar) {
+            // Close Inspector
+            this.dom.sidebar.classList.remove('open');
+            this.popUiStack('inspector-sidebar');
+            const inspectorPanel = document.getElementById('sidebar-content');
+            if (inspectorPanel) inspectorPanel.classList.add('hidden');
+
+            // Close Data Manager
+            this.dom.sidebar.classList.remove('data-manager-open');
+            this.popUiStack('data-manager-sidebar');
+            const dmPanel = document.getElementById('sidebar-data-manager');
+            if (dmPanel) dmPanel.classList.add('hidden');
+
+            this.dom.sidebar.classList.toggle('asset-library-open');
+            const isOpen = this.dom.sidebar.classList.contains('asset-library-open');
+
+            const assetPanel = document.getElementById('sidebar-asset-library');
+            if (assetPanel) {
+                if (isOpen) assetPanel.classList.remove('hidden');
+                else assetPanel.classList.add('hidden');
+            }
+
+            if (isOpen) {
+                this.pushUiStack('asset-library-sidebar');
+                // Close right profile drawer
+                const p = document.getElementById('profile-drawer');
+                if (p) p.classList.add('translate-x-full');
+                this.popUiStack('profile-drawer');
+                
+                // Hydrate contacts and render
+                this.actionLoadContacts().then(() => {
+                    this.renderAssetLibrary();
+                });
+            } else {
+                this.popUiStack('asset-library-sidebar');
+            }
+        }
+    }
+
+    setAssetCategory(cat) {
+        this.assetFilterCategory = cat;
+        this.renderAssetLibrary();
+    }
+
+    async actionOpenP2PConnectDialog() {
+        const code = prompt("Enter Peer Connection Code:");
+        if (code) {
+            this.showToast(`Connected to Peer "${code}"! Dynamic workspace feeds updated.`, "success");
+        }
+    }
+
+    actionShowMyP2PCode() {
+        const mockCode = `peer_${Math.floor(1000 + Math.random() * 9000)}`;
+        alert(`Your P2P Workspace Connection Code is:\n\n${mockCode}\n\nShare this code with your peer to link canvases.`);
+    }
+
+    async actionLoadContacts() {
+        if (!window.FirebaseAuth?.currentUser || window.FirebaseAuth.currentUser.isAnonymous) {
+            this.userContacts = [];
+            return;
+        }
+        const uid = window.FirebaseAuth.currentUser.uid;
+        try {
+            const colRef = window.Firestore.collection(window.FirebaseDb, "users", uid, "contacts");
+            const snap = await window.Firestore.getDocs(colRef);
+            const list = [];
+            snap.forEach(d => list.push(d.data()));
+            this.userContacts = list;
+        } catch (e) {
+            console.error("Failed to load contacts:", e);
+            this.userContacts = [];
+        }
+    }
+
+    async actionAddContact(email) {
+        if (!email) return;
+        if (!window.FirebaseAuth?.currentUser || window.FirebaseAuth.currentUser.isAnonymous) {
+            this.showToast("Log in to add contacts.", "error");
+            return;
+        }
+        const uid = window.FirebaseAuth.currentUser.uid;
+        const targetEmail = email.trim().toLowerCase();
+        
+        try {
+            // Find user in users_public
+            const pubCol = window.Firestore.collection(window.FirebaseDb, "users_public");
+            const snap = await window.Firestore.getDocs(pubCol);
+            let foundUser = null;
+            snap.forEach(d => {
+                const u = d.data();
+                if (u.email && u.email.toLowerCase() === targetEmail) {
+                    foundUser = u;
+                }
+            });
+
+            if (!foundUser) {
+                this.showToast("User not found in public registry.", "error");
+                return;
+            }
+
+            if (foundUser.uid === uid) {
+                this.showToast("You cannot add yourself as a contact.", "error");
+                return;
+            }
+
+            // Add to contacts
+            const contactRef = window.Firestore.doc(window.FirebaseDb, "users", uid, "contacts", foundUser.uid);
+            const contactData = {
+                uid: foundUser.uid,
+                email: foundUser.email,
+                displayName: foundUser.displayName,
+                photoURL: foundUser.photoURL || "",
+                addedAt: new Date().toISOString()
+            };
+            await window.Firestore.setDoc(contactRef, contactData);
+            this.showToast(`Contact "${contactData.displayName}" added successfully!`, "success");
+            await this.actionLoadContacts();
+            this.renderAssetLibrary();
+            const profileContent = document.getElementById('profile-content');
+            if (profileContent && window.Auth) {
+                window.Auth.renderProfile(profileContent);
+            }
+        } catch (e) {
+            console.error("Failed to add contact:", e);
+            this.showToast("Error adding contact.", "error");
+        }
+    }
+
+    async actionRemoveContact(contactUid) {
+        if (!window.FirebaseAuth?.currentUser || window.FirebaseAuth.currentUser.isAnonymous) return;
+        const uid = window.FirebaseAuth.currentUser.uid;
+        try {
+            const docRef = window.Firestore.doc(window.FirebaseDb, "users", uid, "contacts", contactUid);
+            await window.Firestore.deleteDoc(docRef);
+            this.showToast("Contact removed.", "success");
+            await this.actionLoadContacts();
+            this.renderAssetLibrary();
+            const profileContent = document.getElementById('profile-content');
+            if (profileContent && window.Auth) {
+                window.Auth.renderProfile(profileContent);
+            }
+        } catch (e) {
+            console.error("Failed to remove contact:", e);
+        }
+    }
+
+    async actionShareTemplatePublic(tplId) {
+        try {
+            const tplData = await this.kernel.bridge.fetchTemplateData(tplId);
+            if (!tplData) throw new Error("Template data not found.");
+            
+            if (!window.FirebaseAuth?.currentUser || window.FirebaseAuth.currentUser.isAnonymous) {
+                this.showToast("Please log in to publish templates.", "error");
+                return;
+            }
+
+            const user = window.FirebaseAuth.currentUser;
+            const payload = JSON.parse(JSON.stringify(tplData));
+            if (!payload.meta) payload.meta = {};
+            payload.meta.shared = true;
+            payload.owner_uid = user.uid;
+            payload.owner_email = user.email;
+            payload.owner_display = user.displayName || user.email.split('@')[0];
+            payload.sharedAt = new Date().toISOString();
+
+            const docRef = window.Firestore.doc(window.FirebaseDb, "public_templates", tplId);
+            await window.Firestore.setDoc(docRef, payload);
+            
+            this.showToast("Template published to public library feed!", "success");
+            await this.kernel.syncCloudTemplates();
+            this.renderAssetLibrary();
+        } catch (e) {
+            console.error("Failed to share publicly:", e);
+            this.showToast("Publish failed.", "error");
+        }
+    }
+
+    async actionShareTemplateDirect(tplId, recipientUid) {
+        try {
+            const tplData = await this.kernel.bridge.fetchTemplateData(tplId);
+            if (!tplData) throw new Error("Template data not found.");
+            
+            if (!window.FirebaseAuth?.currentUser || window.FirebaseAuth.currentUser.isAnonymous) {
+                this.showToast("Please log in to share templates.", "error");
+                return;
+            }
+
+            const sender = window.FirebaseAuth.currentUser;
+            const payload = JSON.parse(JSON.stringify(tplData));
+            payload.sender_uid = sender.uid;
+            payload.sender_email = sender.email;
+            payload.sender_display = sender.displayName || sender.email.split('@')[0];
+            payload.sharedAt = new Date().toISOString();
+
+            const docRef = window.Firestore.doc(window.FirebaseDb, "users", recipientUid, "shared_templates", tplId);
+            await window.Firestore.setDoc(docRef, payload);
+            
+            this.showToast("Template shared directly with contact!", "success");
+            this.renderAssetLibrary();
+        } catch (e) {
+            console.error("Failed to share directly:", e);
+            this.showToast("Direct share failed.", "error");
+        }
+    }
+
+    async actionSaveCustomTemplateToCloud(tplId) {
+        try {
+            const tplData = await this.kernel.bridge.fetchTemplateData(tplId);
+            if (!tplData) throw new Error("Template not found.");
+            
+            const ok = await this.kernel.saveTemplateToCloud(tplData);
+            if (ok) {
+                this.showToast("Template saved to Cloud Library!", "success");
+                this.renderAssetLibrary();
+            } else {
+                this.showToast("Cloud save failed.", "error");
+            }
+        } catch (e) {
+            console.error("Cloud save failed:", e);
+            this.showToast("Cloud save error.", "error");
+        }
+    }
+
+    async actionPromptDirectShare(tplId) {
+        if (!this.userContacts || this.userContacts.length === 0) {
+            alert("No contacts linked. Please add contacts by email first.");
+            return;
+        }
+        const choices = this.userContacts.map((c, i) => `${i + 1}. ${c.displayName} (${c.email})`).join("\n");
+        const idxStr = prompt(`Select contact to share with:\n\n${choices}\n\nEnter number:`);
+        if (idxStr) {
+            const idx = parseInt(idxStr) - 1;
+            if (idx >= 0 && idx < this.userContacts.length) {
+                const contact = this.userContacts[idx];
+                await this.actionShareTemplateDirect(tplId, contact.uid);
+            } else {
+                alert("Invalid selection.");
+            }
+        }
+    }
+
+    renderAssetLibrary() {
+        const container = document.getElementById('asset-library-content');
+        if (!container) return;
+
+        if (this.assetFilterCategory === undefined) this.assetFilterCategory = 'all';
+        if (this.assetSortBy === undefined) this.assetSortBy = 'name';
+        if (this.assetSearchQuery === undefined) this.assetSearchQuery = '';
+
+        const state = this.kernel.state;
+        const remoteTemplates = state.session.remoteTemplates || [];
+
+        // Filter by Search Query
+        let filtered = remoteTemplates.filter(t => {
+            const query = this.assetSearchQuery.toLowerCase();
+            return t.title.toLowerCase().includes(query) || (t.desc || '').toLowerCase().includes(query);
+        });
+
+        // Filter by Category
+        if (this.assetFilterCategory !== 'all') {
+            if (this.assetFilterCategory === 'custom') {
+                filtered = filtered.filter(t => t.isCustom && !t.isP2P);
+            } else if (this.assetFilterCategory === 'p2p') {
+                filtered = filtered.filter(t => t.isShared || t.isP2P);
+            } else {
+                // Categorize by target_type or type
+                filtered = filtered.filter(t => {
+                    const type = t.target_type || t.type || '';
+                    if (this.assetFilterCategory === 'web') return type.startsWith('web-');
+                    if (this.assetFilterCategory === 'prompt') return type.startsWith('prompt-') || type === 'portal';
+                    if (this.assetFilterCategory === 'identity') return type === 'person-root';
+                    if (this.assetFilterCategory === 'architecture') return type === 'hub' || type === 'note';
+                    return false;
+                });
+            }
+        }
+
+        // Sort templates
+        filtered.sort((a, b) => {
+            if (this.assetSortBy === 'nodes') {
+                return b.nodes - a.nodes; // Descending node count
+            } else {
+                return a.title.localeCompare(b.title); // Alphabetical A-Z
+            }
+        });
+
+        const categories = [
+            { id: 'all', label: 'All' },
+            { id: 'web', label: 'Web' },
+            { id: 'architecture', label: 'Arch' },
+            { id: 'prompt', label: 'Prompts' },
+            { id: 'identity', label: 'Identity' },
+            { id: 'custom', label: 'Custom' },
+            { id: 'p2p', label: 'P2P Shared' }
+        ];
+
+        const categoryTabsHtml = categories.map(cat => `
+            <button class="px-2.5 py-1 text-[10px] font-bold rounded-lg border transition-all cursor-pointer ${this.assetFilterCategory === cat.id ? 'bg-indigo-600/20 border-indigo-500 text-indigo-400' : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'}" onclick="SC.setAssetCategory('${cat.id}')">
+                ${cat.label}
+            </button>
+        `).join('');
+
+        const templatesHtml = filtered.map(tpl => {
+            let badge = '';
+            let isOwnCloudOrLocal = false;
+            
+            if (tpl.isCloud) {
+                badge = `<span class="px-1.5 py-0.5 bg-sky-900/50 text-sky-400 text-[8px] rounded border border-sky-800 uppercase tracking-widest flex items-center gap-1">☁️ Cloud</span>`;
+                isOwnCloudOrLocal = true;
+            } else if (tpl.isShared) {
+                badge = `<span class="px-1.5 py-0.5 bg-violet-900/50 text-violet-400 text-[8px] rounded border border-violet-800 uppercase tracking-widest flex items-center gap-1">👥 Shared (${tpl.senderName})</span>`;
+            } else if (tpl.isPublicShare) {
+                badge = `<span class="px-1.5 py-0.5 bg-amber-900/50 text-amber-400 text-[8px] rounded border border-amber-800 uppercase tracking-widest flex items-center gap-1">🌍 Public (${tpl.ownerName})</span>`;
+            } else if (tpl.isCustom) {
+                badge = `<span class="px-1.5 py-0.5 bg-emerald-900/50 text-emerald-400 text-[8px] rounded border border-emerald-800 uppercase tracking-widest">Local</span>`;
+                isOwnCloudOrLocal = true;
+            } else {
+                badge = `<span class="px-1.5 py-0.5 bg-blue-900/50 text-blue-400 text-[8px] rounded border border-blue-800 uppercase tracking-widest">Default</span>`;
+            }
+
+            return `
+            <div class="bg-slate-950 border border-slate-800 p-4 rounded-xl hover:border-indigo-500 transition-colors group relative overflow-hidden flex flex-col gap-3">
+                <div class="absolute left-0 top-0 bottom-0 w-1 ${tpl.isShared ? 'bg-violet-500' : (tpl.isCloud ? 'bg-sky-500' : (tpl.isCustom ? 'bg-emerald-500' : 'bg-blue-500'))} opacity-0 group-hover:opacity-100 transition-opacity"></div>
+
+                <div class="flex justify-between items-start">
+                    <div class="flex flex-col gap-1 pr-4">
+                        <div class="font-bold text-sm text-slate-200 flex items-center gap-2">
+                            ${tpl.title}
+                            ${badge}
+                        </div>
+                        <div class="text-[10px] text-slate-500">${tpl.desc || 'No description.'} <span class="ml-2 px-1 bg-slate-800 rounded text-slate-400">${tpl.nodes} nodes</span></div>
+                    </div>
+                </div>
+
+                <div class="flex flex-wrap gap-2 opacity-50 group-hover:opacity-100 transition-opacity">
+                    <button onclick="SC.actionCopyAssetToClipboard('${tpl.id}')"
+                        class="flex-1 min-w-[70px] bg-slate-800 hover:bg-indigo-600 text-slate-300 hover:text-white text-[10px] py-1.5 rounded font-bold transition-colors border border-slate-700 shadow flex items-center justify-center gap-1"
+                        title="Copy asset structure to clipboard">
+                        📋 <span class="hidden sm:inline">Copy</span>
+                    </button>
+                    <button onclick="SC.showAssetProjectDropdown(event, '${tpl.id}')"
+                        class="flex-1 min-w-[70px] bg-slate-800 hover:bg-blue-600 text-slate-300 hover:text-white text-[10px] py-1.5 rounded font-bold transition-colors border border-slate-700 shadow flex items-center justify-center gap-1"
+                        title="Import as dedicated page — choose project">
+                        📄 <span class="hidden sm:inline">New Page</span> <span class="text-[8px] opacity-70">▾</span>
+                    </button>
+                    
+                    ${isOwnCloudOrLocal ? `
+                        ${!tpl.isCloud ? `<button onclick="SC.actionSaveCustomTemplateToCloud('${tpl.id}')" class="bg-slate-800 hover:bg-sky-600 text-slate-350 hover:text-white text-[10px] py-1.5 px-2.5 rounded font-bold transition-colors border border-slate-700 shadow" title="Save to Cloud Library">☁️</button>` : ''}
+                        ${!tpl.isPublicShare ? `<button onclick="SC.actionShareTemplatePublic('${tpl.id}')" class="bg-slate-800 hover:bg-amber-600 text-slate-350 hover:text-white text-[10px] py-1.5 px-2.5 rounded font-bold transition-colors border border-slate-700 shadow" title="Publish Publicly">🌍</button>` : ''}
+                        <button onclick="SC.actionPromptDirectShare('${tpl.id}')" class="bg-slate-800 hover:bg-violet-600 text-slate-350 hover:text-white text-[10px] py-1.5 px-2.5 rounded font-bold transition-colors border border-slate-700 shadow" title="Share with Contact">👥</button>
+                    ` : ''}
+                    
+                    ${tpl.isCloud ? `
+                        <button onclick="SC.kernel.deleteTemplateFromCloud('${tpl.id}').then(() => SC.renderAssetLibrary())" class="bg-slate-800 hover:bg-red-600 text-slate-300 hover:text-white text-[10px] py-1.5 px-2.5 rounded font-bold transition-colors border border-slate-700 shadow" title="Delete Cloud Template">🗑️</button>
+                    ` : ''}
+                    ${(tpl.isCustom && !tpl.isCloud) ? `
+                        <button onclick="SC.actionDeleteRemoteTemplate('${tpl.id}')" class="bg-slate-800 hover:bg-red-600 text-slate-300 hover:text-white text-[10px] py-1.5 px-2.5 rounded font-bold transition-colors border border-slate-700 shadow" title="Delete Local Custom">🗑️</button>
+                    ` : ''}
+                </div>
+            </div>
+            `;
+        }).join('');
+
+        container.innerHTML = `
+            <div class="flex flex-col gap-4">
+                <!-- Search & Sort Controls -->
+                <div class="flex flex-col gap-2">
+                    <div class="flex gap-2">
+                        <input type="text" id="asset-search" placeholder="Search templates..." value="${this.assetSearchQuery}" class="flex-1 bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 outline-none focus:border-indigo-500 transition-colors">
+                        <select id="asset-sort" class="bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 outline-none focus:border-indigo-500 cursor-pointer">
+                            <option value="name" ${this.assetSortBy === 'name' ? 'selected' : ''}>A-Z</option>
+                            <option value="nodes" ${this.assetSortBy === 'nodes' ? 'selected' : ''}>Nodes</option>
+                        </select>
+                    </div>
+                    <!-- Categories Tabs -->
+                    <div class="flex flex-wrap gap-1.5 py-1">
+                        ${categoryTabsHtml}
+                    </div>
+                </div>
+
+                <!-- Templates/Assets Grid -->
+                <div class="flex flex-col gap-3">
+                    ${filtered.length === 0 ? '<div class="text-center text-slate-600 text-xs py-8 italic border border-dashed border-slate-800 rounded-lg">No assets match the active filters.</div>' : templatesHtml}
+                </div>
+            </div>
+        `;
+
+        // Bind search and sort input/change handlers
+        const searchInput = container.querySelector('#asset-search');
+        if (searchInput) {
+            searchInput.oninput = (e) => {
+                this.assetSearchQuery = e.target.value;
+                this.renderAssetLibrary();
+            };
+        }
+        const sortSelect = container.querySelector('#asset-sort');
+        if (sortSelect) {
+            sortSelect.onchange = (e) => {
+                this.assetSortBy = e.target.value;
+                this.renderAssetLibrary();
+            };
         }
     }
     
@@ -1331,6 +1748,11 @@ class SandboxController {
                         this.toggleDataManager();
                         return;
                     }
+                } else if (topId === 'asset-library-sidebar') {
+                    if (this.dom.sidebar && this.dom.sidebar.classList.contains('asset-library-open')) {
+                        this.toggleAssetLibrary();
+                        return;
+                    }
                 } else if (topId === 'tutorial-modal') {
                     if (window.Tutorials && window.Tutorials.modalElement && !window.Tutorials.modalElement.classList.contains('hidden')) {
                         window.Tutorials.closeSelectionModal();
@@ -1365,6 +1787,10 @@ class SandboxController {
             }
             if (this.dom.sidebar && this.dom.sidebar.classList.contains('data-manager-open')) {
                 this.toggleDataManager();
+                return;
+            }
+            if (this.dom.sidebar && this.dom.sidebar.classList.contains('asset-library-open')) {
+                this.toggleAssetLibrary();
                 return;
             }
             if (window.Tutorials && window.Tutorials.modalElement && !window.Tutorials.modalElement.classList.contains('hidden')) {
@@ -3684,9 +4110,84 @@ ${innerHtml}
     async actionApplyTemplateToNode(nodeId, tplId) {
         try {
             const tplData = await this.kernel.bridge.fetchTemplateData(tplId);
-            this.kernel.applyTemplateToNode(nodeId, tplData);
+            if (!tplData || !tplData.nodes || tplData.nodes.length === 0) {
+                throw new Error("Invalid template data.");
+            }
+
+            const targetNode = this.kernel.state.nodes.find(x => x.id === nodeId);
+            if (!targetNode) {
+                throw new Error("Target node not found.");
+            }
+
+            const tplRootNode = tplData.nodes.find(n => n.data && n.data.isCore) || tplData.nodes[0];
+            const tplRootType = tplRootNode.type;
+            const isTplRootNodeARoot = tplRootType === 'root' || tplRootType.endsWith('-root');
+
+            if (targetNode.type === 'portal') {
+                if (!isTplRootNodeARoot) {
+                    // Convert portal itself to injected node's type
+                    targetNode.type = tplRootType;
+                    this.kernel.applyTemplateToNode(nodeId, tplData);
+                    this.kernel.saveCurrentMapToLibrary();
+                } else {
+                    // Remain a portal, point to a new page where root is injected
+                    const newPage = await this.kernel.createPage(
+                        this.kernel.activeProjectId, 
+                        tplData.meta?.title || "New Space", 
+                        tplRootType
+                    );
+                    if (newPage) {
+                        const root = tplRootNode;
+                        const idMap = {};
+                        newPage.nodes = [];
+                        newPage.connections = [];
+
+                        tplData.nodes.forEach(n => {
+                            const newId = this.kernel.generateId();
+                            idMap[n.id] = newId;
+                            newPage.nodes.push({
+                                ...n,
+                                id: newId,
+                                data: {
+                                    ...n.data,
+                                    x: n.data.x - root.data.x,
+                                    y: n.data.y - root.data.y,
+                                    isCore: n.id === root.id ? true : (n.data ? n.data.isCore : false)
+                                }
+                            });
+                        });
+
+                        tplData.connections.forEach(c => {
+                            const fromId = idMap[c.from];
+                            const toId = idMap[c.to];
+                            if (fromId && toId && fromId !== toId) {
+                                newPage.connections.push({
+                                    ...c,
+                                    id: this.kernel.generateId(),
+                                    from: fromId,
+                                    to: toId
+                                });
+                            }
+                        });
+
+                        // Save the populated page
+                        await this.kernel.savePage(this.kernel.activeProjectId, newPage.map_id, newPage);
+
+                        // Update portal pointer
+                        targetNode.content = newPage.map_id;
+                        targetNode.title = newPage.meta.title;
+                        this.kernel.saveCurrentMapToLibrary();
+                    }
+                }
+            } else {
+                // Non-portal: Apply template structure directly
+                this.kernel.applyTemplateToNode(nodeId, tplData);
+                this.kernel.saveCurrentMapToLibrary();
+            }
+
             alert(`Template "${tplData.meta.title}" applied!`);
             this.setView('map');
+            this.render();
         } catch (e) {
             alert("Failed to apply template.");
             console.error(e);
@@ -3804,64 +4305,32 @@ ${innerHtml}
         }
     }
 
-    async actionSpawnAssetAsPortal(tplId) {
+    async actionCopyAssetToClipboard(tplId) {
         try {
             const tplData = await this.kernel.bridge.fetchTemplateData(tplId);
-            
-            // Clone the template map, give it a new map_id, and assign to current project
-            const newMapId = this.kernel.generateId();
-            const clonedMap = JSON.parse(JSON.stringify(tplData));
-            clonedMap.map_id = newMapId;
-            clonedMap.meta.project_id = this.kernel.activeProjectId;
-            clonedMap.meta.title = tplData.meta.title || "Cloned Space";
-            
-            const saved = await this.kernel.saveConstellationToLibrary(clonedMap);
-            if (saved === false) {
-                throw new Error("Storage limit exceeded.");
+            const rootNode = tplData.nodes.find(n => n.data && n.data.isCore) || tplData.nodes[0];
+            const serialized = JSON.stringify({
+                type: "mm-branch",
+                sourceMapId: tplData.map_id || tplId,
+                nodes: tplData.nodes,
+                connections: tplData.connections || [],
+                original_root: rootNode ? rootNode.id : null
+            }, null, 2);
+
+            try {
+                await (window.navigator || navigator).clipboard.writeText(serialized);
+                this.kernel.clipboardData = serialized;
+                localStorage.setItem('mm_clipboard_data', serialized);
+                this.showToast(`Asset "${tplData.meta.title}" copied! Paste (Ctrl+V) anywhere on your map.`, "success");
+            } catch (clipboardErr) {
+                console.warn("Failed to write to clipboard:", clipboardErr);
+                this.kernel.clipboardData = serialized;
+                localStorage.setItem('mm_clipboard_data', serialized);
+                this.showToast(`Asset "${tplData.meta.title}" copied (local fallback)! Paste anywhere on your map.`, "info");
             }
-            
-            // Add the portal node to the current map pointing to newMapId
-            const vp = this.kernel.state.session.viewport;
-            const rect = this.dom.viewport.getBoundingClientRect();
-            
-            // If there's a selected node, position near it, otherwise center of viewport
-            const selectedId = this.kernel.state.session.selectedId;
-            let posX = undefined;
-            let posY = undefined;
-            if (!selectedId) {
-                posX = (rect.width / 2 - vp.x) / vp.scale;
-                posY = (rect.height / 2 - vp.y) / vp.scale;
-            }
-            
-            const portalNode = this.kernel.addNode({
-                type: 'portal',
-                title: clonedMap.meta.title,
-                content: newMapId,
-                x: posX,
-                y: posY
-            }, selectedId);
-            
-            // Link portal node to selected node or root
-            let parentId = selectedId;
-            if (!parentId) {
-                // Find a core or root node
-                const rootNode = this.kernel.state.nodes.find(n => n.data && n.data.isCore) || 
-                                 this.kernel.state.nodes.find(n => n.type === 'root' || n.type === 'file-root') || 
-                                 this.kernel.state.nodes[0];
-                if (rootNode) parentId = rootNode.id;
-            }
-            
-            if (parentId && portalNode) {
-                this.kernel.addConnection(parentId, portalNode.id);
-            }
-            
-            this.setView('map');
-            this.kernel.selectNode(portalNode.id);
-            this.actionCloseDataManager();
-            setTimeout(() => this.actionOpenPageSettings(clonedMap.map_id), 50);
         } catch (e) {
             console.error(e);
-            alert("Failed to spawn asset as portal: " + e.message);
+            this.showToast("Failed to copy asset: " + e.message, "error");
         }
     }
 
@@ -4830,6 +5299,11 @@ ${innerHtml}
             }
         }
 
+        // Auto-update Asset Library drawer if it is currently open
+        if (this.dom.sidebar && this.dom.sidebar.classList.contains('asset-library-open')) {
+            this.renderAssetLibrary();
+        }
+
         if (this.viewMode === 'map') {
             this.dom.viewMap.style.display = 'block';
             this.dom.viewContent.style.display = 'none';
@@ -4865,7 +5339,8 @@ ${innerHtml}
             'prompt': 'prompt-root',
             'agent': 'agent-root',
             'person': 'person-root',
-            'file': 'file-root'
+            'file': 'file-root',
+            'link': 'link-root'
         };
         return mapping[phase] || null;
     }
@@ -5413,7 +5888,8 @@ ${innerHtml}
             'prompt': 'prompt-root',
             'agent': 'agent-root',
             'person': 'person-root',
-            'file': 'file-root'
+            'file': 'file-root',
+            'link': 'link-root'
         };
         
         Object.entries(phaseToRootType).forEach(([phase, rootType]) => {
@@ -6396,6 +6872,21 @@ ${innerHtml}
         const initialDesc = proj.meta.description || "";
         const initialIcon = proj.meta.icon || "📁";
         const initialColor = proj.meta.color || "#8b5cf6";
+        const currentVault = proj.vault || 'local';
+        const isLoggedIn = window.FirebaseAuth && window.FirebaseAuth.currentUser && !window.FirebaseAuth.currentUser.isAnonymous;
+
+        const vaults = [
+            { value: 'local', label: 'Local Browser (Legacy) 📁', enabled: true },
+            { value: 'firebase', label: 'Firebase (Cloud) ☁️', enabled: isLoggedIn },
+            { value: 'gdrive', label: 'Google Drive 🔺', enabled: true },
+            { value: 'local-os', label: 'Local OS 💾', enabled: true }
+        ];
+
+        const vaultOptionsHtml = vaults.map(v => `
+            <option value="${v.value}" ${v.value === currentVault ? 'selected' : ''} ${v.enabled ? '' : 'disabled'}>
+                ${v.label} ${v.enabled ? '' : '(Sign-in required)'}
+            </option>
+        `).join('');
 
         const contentHtml = `
             <div class="flex flex-col gap-4">
@@ -6407,6 +6898,14 @@ ${innerHtml}
                 <div class="flex flex-col gap-1.5">
                     <label class="text-slate-400 font-bold uppercase text-[9px] tracking-wider">Description</label>
                     <input type="text" id="settings-proj-desc" value="${initialDesc}" class="bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 outline-none focus:border-indigo-500 transition-colors w-full">
+                </div>
+
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-slate-400 font-bold uppercase text-[9px] tracking-wider">Hosting Vault</label>
+                    <select id="settings-proj-vault" class="bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 outline-none focus:border-indigo-500 transition-colors w-full cursor-pointer">
+                        ${vaultOptionsHtml}
+                    </select>
+                    <span class="text-[8px] text-slate-500 leading-tight">Changing the hosting vault will migrate this project and all its pages to the selected vault.</span>
                 </div>
 
                 <div class="grid grid-cols-2 gap-4">
@@ -6444,6 +6943,7 @@ ${innerHtml}
                 const iconInput = backdrop.querySelector('#settings-proj-icon');
                 const colorInput = backdrop.querySelector('#settings-proj-color');
                 const colorText = backdrop.querySelector('#settings-proj-color-text');
+                const vaultSelect = backdrop.querySelector('#settings-proj-vault');
 
                 colorInput.oninput = () => { colorText.textContent = colorInput.value; };
 
@@ -6451,7 +6951,8 @@ ${innerHtml}
                     return titleInput.value.trim() !== initialTitle ||
                            descInput.value.trim() !== initialDesc ||
                            iconInput.value.trim() !== initialIcon ||
-                           colorInput.value !== initialColor;
+                           colorInput.value !== initialColor ||
+                           vaultSelect.value !== currentVault;
                 };
 
                 const handleCancel = async () => {
@@ -6472,7 +6973,16 @@ ${innerHtml}
                         });
                         
                         if (saveConfirm === 'save') {
-                            await this.kernel.renameProject(projectId, titleInput.value.trim(), descInput.value.trim(), iconInput.value.trim(), colorInput.value);
+                            const newTitle = titleInput.value.trim();
+                            const newDesc = descInput.value.trim();
+                            const newIcon = iconInput.value.trim() || '📁';
+                            const newColor = colorInput.value;
+                            const targetVault = vaultSelect.value;
+                            
+                            await this.kernel.renameProject(projectId, newTitle, newDesc, newIcon, newColor);
+                            if (targetVault !== currentVault) {
+                                await this.kernel.transferProject(projectId, targetVault);
+                            }
                             this.render();
                             close(true);
                         } else if (saveConfirm === 'discard') {
@@ -6499,10 +7009,19 @@ ${innerHtml}
                     const newDesc = descInput.value.trim();
                     const newIcon = iconInput.value.trim() || '📁';
                     const newColor = colorInput.value;
+                    const targetVault = vaultSelect.value;
                     
                     if (!newTitle) return alert("Project name cannot be empty.");
                     
                     await this.kernel.renameProject(projectId, newTitle, newDesc, newIcon, newColor);
+                    if (targetVault !== currentVault) {
+                        try {
+                            await this.kernel.transferProject(projectId, targetVault);
+                            this.showToast("Project migrated successfully!", "success");
+                        } catch (e) {
+                            alert("Migration failed: " + e.message);
+                        }
+                    }
                     this.render();
                     close(true);
                 };

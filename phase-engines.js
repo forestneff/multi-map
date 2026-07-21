@@ -24,6 +24,7 @@ class PhaseRegistrySystem {
         this.register(new IframePhaseEngine(kernel, 'text-edit', 'engines/text-editor.html'));
         
         this.register(new DataPhaseEngine(kernel)); 
+        this.register(new LinkPhaseEngine(kernel)); 
         
         // Listen for messages from iframes
         window.addEventListener('message', (event) => {
@@ -528,68 +529,7 @@ class DataPhaseEngine extends PhaseEngineBase {
                         </div>
                         
                         
-                        <!-- 0. Cloud Templates Accordion -->
-                        <div class="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-hidden transition-all flex flex-col shrink-0">
-                            <div class="p-4 bg-slate-800/50 hover:bg-slate-800 cursor-pointer flex justify-between items-center transition-colors select-none" onclick="SC.registry.get('data').toggle('templates')">
-                                <h2 class="text-blue-400 font-bold uppercase text-xs tracking-widest flex items-center gap-2">🌐 Assets</h2>
-                                <div class="flex items-center gap-3">
-                                    <span class="bg-slate-800 text-slate-400 px-2 py-0.5 rounded text-[10px] border border-slate-700">${state.session.remoteTemplates ? state.session.remoteTemplates.length : 0} Available</span>
-                                    <span class="text-slate-500 text-xs">${this.ui.templates ? '▼' : '▶'}</span>
-                                </div>
-                            </div>
-                            
-                            ${this.ui.templates ? `
-                            <div class="p-5 border-t border-slate-800 flex flex-col gap-4 bg-slate-900">
-                                <p class="text-[11px] text-slate-400">Fetch public, read-only map assets from the global repository. Importing an asset automatically drops a portal into your map and merges the asset's graph structure via that portal.</p>
-                                
-                                <div class="flex gap-2">
-                                    <button onclick="SC.saveConstellation()" class="flex-1 py-2 bg-slate-800 hover:bg-purple-600 hover:text-white transition-colors text-xs font-bold rounded shadow border border-slate-700 flex items-center justify-center gap-2" title="Save Current Session">
-                                        💾 <span class="hidden sm:inline">Save Current</span>
-                                    </button>
-                                    <label class="flex-1 py-2 bg-slate-800 hover:bg-emerald-600 hover:text-white transition-colors text-xs font-bold rounded shadow border border-slate-700 cursor-pointer text-center flex items-center justify-center gap-2" title="Upload Asset">
-                                        ⬆️ <span class="hidden sm:inline">Upload Asset</span>
-                                        <input type="file" accept=".json" class="hidden" onchange="SC.actionUploadTemplateFile(event)">
-                                    </label>
-                                </div>
 
-                                <div class="flex-1 overflow-y-auto max-h-[350px] custom-scrollbar pr-2 space-y-3 mt-2">
-                                    ${(!state.session.remoteTemplates || state.session.remoteTemplates.length === 0) ? '<div class="text-center text-slate-600 text-xs py-6 italic border border-dashed border-slate-800 rounded-lg">No assets loaded. Click refresh.</div>' : ''}
-                                    ${(state.session.remoteTemplates || []).map(tpl => {
-                                        return `
-                                        <div class="bg-slate-950 border border-slate-800 p-4 rounded-xl hover:border-blue-500 transition-colors group relative overflow-hidden flex flex-col gap-3">
-                                            <div class="absolute left-0 top-0 bottom-0 w-1 ${tpl.isCustom ? 'bg-emerald-500' : 'bg-blue-500'} opacity-0 group-hover:opacity-100 transition-opacity"></div>
-
-                                            <div class="flex justify-between items-start">
-                                                <div class="flex flex-col gap-1 pr-4">
-                                                    <div class="font-bold text-sm text-slate-200 flex items-center gap-2">
-                                                        ${tpl.title}
-                                                        ${tpl.isCustom ? '<span class="px-1.5 py-0.5 bg-emerald-900/50 text-emerald-400 text-[8px] rounded border border-emerald-800 uppercase tracking-widest">Custom</span>' : '<span class="px-1.5 py-0.5 bg-blue-900/50 text-blue-400 text-[8px] rounded border border-blue-800 uppercase tracking-widest">Default</span>'}
-                                                    </div>
-                                                    <div class="text-[10px] text-slate-500">${tpl.desc} <span class="ml-2 px-1 bg-slate-800 rounded">${tpl.nodes} nodes</span></div>
-                                                </div>
-                                            </div>
-
-                                            <div class="flex gap-2 opacity-50 group-hover:opacity-100 transition-opacity">
-                                                <button onclick="SC.actionSpawnAssetAsPortal('${tpl.id}')"
-                                                    class="flex-1 bg-slate-800 hover:bg-violet-600 text-slate-300 hover:text-white text-[10px] py-1.5 rounded font-bold transition-colors border border-slate-700 shadow flex items-center justify-center gap-1"
-                                                    title="Spawn as portal in current map">
-                                                    🌀 <span class="hidden sm:inline">Spawn Portal</span>
-                                                </button>
-                                                <button onclick="SC.showAssetProjectDropdown(event, '${tpl.id}')"
-                                                    class="flex-1 bg-slate-800 hover:bg-blue-600 text-slate-300 hover:text-white text-[10px] py-1.5 rounded font-bold transition-colors border border-slate-700 shadow flex items-center justify-center gap-1"
-                                                    title="Import as dedicated page — choose project">
-                                                    📄 <span class="hidden sm:inline">New Page</span> <span class="text-[8px] opacity-70">▾</span>
-                                                </button>
-                                                <button onclick="SC.actionDownloadTemplate('${tpl.id}')" class="bg-slate-800 hover:bg-sky-600 text-slate-300 hover:text-white text-[10px] py-1.5 px-3 rounded font-bold transition-colors border border-slate-700 shadow" title="Download JSON">⬇️</button>
-                                                ${tpl.isCustom ? `<button onclick="SC.actionDeleteRemoteTemplate('${tpl.id}')" class="bg-slate-800 hover:bg-red-600 text-slate-300 hover:text-white text-[10px] py-1.5 px-3 rounded font-bold transition-colors border border-slate-700 shadow" title="Delete">🗑️</button>` : ''}
-                                            </div>
-                                        </div>
-                                        `;
-                                    }).join('')}
-                                </div>
-                            </div>
-                            ` : ''}
-                        </div>
 
                         <!-- 2. API Accordion -->
                         <div class="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-hidden transition-all shrink-0">
@@ -674,3 +614,263 @@ class DataPhaseEngine extends PhaseEngineBase {
         }
     }
 }
+
+class LinkPhaseEngine extends PhaseEngineBase {
+    constructor(kernel) {
+        super(kernel);
+        this.id = 'link';
+        this._metaCache = {}; // In-memory cache keyed by URL
+        this._fetchingUrls = new Set();
+    }
+
+    /**
+     * Fetches link metadata from the cloud function, with in-memory caching.
+     * Also persists fetched metadata onto the node's data._linkMeta field.
+     */
+    async fetchMeta(url, nodeId) {
+        if (!url) return null;
+        if (this._metaCache[url]) return this._metaCache[url];
+        if (this._fetchingUrls.has(url)) return null; // Already in-flight
+
+        this._fetchingUrls.add(url);
+
+        try {
+            let endpoint = 'https://us-central1-mm-multi-map.cloudfunctions.net/generateMapState/link-meta';
+            if (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost' || window.location.hostname === '0.0.0.0' || window.location.hostname === '[::1]') {
+                const host = (window.location.hostname === '0.0.0.0' || window.location.hostname === '[::1]' || !window.location.hostname) ? '127.0.0.1' : window.location.hostname;
+                endpoint = `http://${host}:5001/mm-multi-map/us-central1/generateMapState/link-meta`;
+            }
+
+            const resp = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url }),
+            });
+
+            if (!resp.ok) {
+                this._fetchingUrls.delete(url);
+                return null;
+            }
+
+            const meta = await resp.json();
+            this._metaCache[url] = meta;
+            this._fetchingUrls.delete(url);
+
+            // Persist to node data for offline use
+            if (nodeId && window.SC && window.SC.kernel) {
+                const node = window.SC.kernel.state.nodes.find(n => n.id === nodeId);
+                if (node) {
+                    if (!node.data) node.data = {};
+                    node.data._linkMeta = meta;
+                    node.data._linkMetaTs = Date.now();
+                }
+            }
+
+            // Re-render to show fetched data
+            const container = document.getElementById('view-content');
+            if (container && window.SC && window.SC.viewMode === 'link') {
+                this.render(container, window.SC.kernel.state);
+            }
+
+            return meta;
+        } catch (err) {
+            console.warn('LinkPhaseEngine: fetchMeta failed for', url, err);
+            this._fetchingUrls.delete(url);
+            return null;
+        }
+    }
+
+    escapeHTML(str) {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+
+    render(container, state) {
+        container.innerHTML = '';
+        const isLight = document.body.classList.contains('light-mode');
+        container.className = `link-phase-container w-full h-full overflow-y-auto p-6 flex flex-col gap-6 custom-scrollbar ${isLight ? 'link-phase-light' : 'link-phase-dark'}`;
+
+        // Header section
+        const header = document.createElement('div');
+        header.className = 'link-phase-header flex flex-col gap-1 pb-4 border-b';
+        header.innerHTML = `
+            <h2 class="text-xl font-extrabold tracking-tight flex items-center gap-2">
+                <span>🔗</span> Link Space
+            </h2>
+            <p class="text-xs link-phase-muted">Curated links with live metadata previews.</p>
+        `;
+        container.appendChild(header);
+
+        // Find all web-link nodes
+        const linkNodes = (state.nodes || []).filter(n => n.type === 'web-link');
+
+        if (linkNodes.length === 0) {
+            const emptyState = document.createElement('div');
+            emptyState.className = 'link-phase-empty flex-1 flex flex-col items-center justify-center text-center py-12 px-6 border border-dashed rounded-2xl';
+            emptyState.innerHTML = `
+                <div class="text-4xl mb-3">🌳</div>
+                <div class="font-bold text-sm mb-1">No Link Nodes Found</div>
+                <p class="text-[11px] link-phase-muted max-w-xs leading-normal">Add web-link nodes (🔗) to this space and set their <strong>href</strong> field to a URL. Metadata will be fetched automatically.</p>
+            `;
+            container.appendChild(emptyState);
+            return;
+        }
+
+        // Stack container
+        const stack = document.createElement('div');
+        stack.className = 'flex flex-col gap-4 max-w-2xl mx-auto w-full pb-10';
+
+        linkNodes.forEach(node => {
+            let pData = {};
+            let isJson = false;
+            try {
+                pData = JSON.parse(node.content || '{}');
+                isJson = true;
+            } catch(e) {
+                pData = { text: node.content || '', href: '' };
+            }
+
+            // Resolve URL using the same logic as getWebLinkUrl on the map canvas
+            let url = (pData.href || '').trim();
+            if (!url && isJson) {
+                const candidates = [pData.text, pData.src, pData.classes].filter(Boolean);
+                for (const candidate of candidates) {
+                    const txt = candidate.trim();
+                    if (txt.match(/^(https?:\/\/|www\.)/i) || txt.match(/^[a-z0-9\-]+\.[a-z]{2,6}(\/|$)/i)) {
+                        url = txt;
+                        break;
+                    }
+                }
+            }
+            if (!url && !isJson && node.content) {
+                url = node.content.trim();
+            }
+            if (url && !/^(https?:\/\/|file:\/\/)/i.test(url) && !/^[.\/]/.test(url)) {
+                url = 'https://' + url;
+            }
+            if (url && /^[#.\/]/.test(url)) {
+                url = '';
+            }
+
+            const nodeText = pData.text || node.title || '';
+
+            // Get cached/persisted metadata
+            const cachedMeta = this._metaCache[url] || (node.data && node.data._linkMeta) || null;
+            if (!this._metaCache[url] && cachedMeta) {
+                this._metaCache[url] = cachedMeta;
+            }
+
+            // Kick off fetch if needed
+            const META_TTL = 1000 * 60 * 60 * 24;
+            const metaTs = (node.data && node.data._linkMetaTs) || 0;
+            if (url && !cachedMeta && !this._fetchingUrls.has(url)) {
+                this.fetchMeta(url, node.id);
+            } else if (url && cachedMeta && (Date.now() - metaTs > META_TTL) && !this._fetchingUrls.has(url)) {
+                this.fetchMeta(url, node.id);
+            }
+
+            // Resolve display values
+            const title = (cachedMeta && cachedMeta.title) || nodeText || 'Untitled Link';
+            const description = (cachedMeta && cachedMeta.description) || pData.description || '';
+            const ogImage = (cachedMeta && cachedMeta.image) || pData.src || '';
+            const siteName = (cachedMeta && cachedMeta.siteName) || '';
+            const favicon = (cachedMeta && cachedMeta.favicon) || '';
+            const themeColor = (cachedMeta && cachedMeta.themeColor) || '';
+            const isFetching = url && !cachedMeta && this._fetchingUrls.has(url);
+
+            let domain = '';
+            try { domain = new URL(url).hostname.replace('www.', ''); } catch(e) {}
+
+            const card = document.createElement('div');
+            card.className = 'link-card rounded-2xl overflow-hidden transition-all duration-300 group relative cursor-pointer';
+            if (themeColor) {
+                card.style.borderLeftColor = themeColor;
+                card.style.borderLeftWidth = '3px';
+            }
+
+            // OG image banner
+            let ogImageHtml = '';
+            if (ogImage) {
+                ogImageHtml = `
+                    <div class="link-card-image w-full h-36 overflow-hidden relative">
+                        <img src="${this.escapeHTML(ogImage)}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" onerror="this.parentElement.style.display='none'" alt="">
+                        <div class="link-card-image-overlay absolute inset-0"></div>
+                    </div>
+                `;
+            }
+
+            // Favicon
+            let faviconHtml = '';
+            if (favicon) {
+                faviconHtml = `<img src="${this.escapeHTML(favicon)}" class="w-4 h-4 rounded-sm" onerror="this.style.display='none'" alt="">`;
+            } else {
+                faviconHtml = `<span class="text-xs">🔗</span>`;
+            }
+
+            // Site label
+            let siteLabel = '';
+            if (siteName) {
+                siteLabel = `<span class="link-phase-muted text-[10px] font-bold uppercase tracking-wider">${this.escapeHTML(siteName)}</span>`;
+            } else if (domain) {
+                siteLabel = `<span class="link-phase-muted text-[10px] font-bold uppercase tracking-wider">${this.escapeHTML(domain)}</span>`;
+            }
+
+            card.innerHTML = `
+                ${ogImageHtml}
+                <div class="p-4 flex gap-3">
+                    <div class="flex-1 min-w-0 flex flex-col gap-1.5">
+                        <div class="flex items-center gap-2">
+                            ${faviconHtml}
+                            ${siteLabel}
+                            ${isFetching ? '<span class="text-[9px] text-indigo-400 animate-pulse ml-auto">Fetching...</span>' : ''}
+                        </div>
+                        <h3 class="link-card-title font-extrabold text-[15px] leading-snug group-hover:text-indigo-400 transition-colors line-clamp-2">${this.escapeHTML(title)}</h3>
+                        ${description ? `<p class="link-phase-muted text-[11px] leading-relaxed line-clamp-3">${this.escapeHTML(description)}</p>` : ''}
+                        <div class="link-card-url text-[10px] truncate mt-0.5 flex items-center gap-1">
+                            ${url ? `<span>🌐</span> ${this.escapeHTML(domain || url)}` : '<span class="link-phase-muted italic">No URL configured</span>'}
+                        </div>
+                    </div>
+                    ${url ? `
+                        <div class="flex flex-col gap-2 shrink-0 justify-center">
+                            <button onclick="event.stopPropagation(); navigator.clipboard.writeText('${this.escapeHTML(url)}').then(() => { if(window.SC) window.SC.showToast('URL copied!', 'success'); })" class="link-card-copy-btn p-2.5 rounded-xl transition-all text-xs" title="Copy URL">📋</button>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+
+            // Click opens link in new tab (or selects node if no URL)
+            card.onclick = () => {
+                if (url) {
+                    window.open(url, '_blank', 'noopener');
+                } else if (window.SC && window.SC.kernel) {
+                    window.SC.kernel.selectNode(node.id);
+                    window.SC.render();
+                }
+            };
+
+            stack.appendChild(card);
+        });
+
+        container.appendChild(stack);
+    }
+
+    /**
+     * Force-refreshes metadata for a URL by busting the cache.
+     */
+    refreshMeta(url, nodeId) {
+        delete this._metaCache[url];
+        this._fetchingUrls.delete(url);
+        // Clear persisted meta
+        if (nodeId && window.SC && window.SC.kernel) {
+            const node = window.SC.kernel.state.nodes.find(n => n.id === nodeId);
+            if (node && node.data) {
+                delete node.data._linkMeta;
+                delete node.data._linkMetaTs;
+            }
+        }
+        this.fetchMeta(url, nodeId);
+        if (window.SC) window.SC.showToast('Refreshing metadata...', 'info');
+    }
+}
+

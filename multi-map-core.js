@@ -93,12 +93,40 @@ class HostBridge {
 
     async fetchTemplateData(id) {
         try {
-            if (typeof MultiMapLibrary !== 'undefined') return await MultiMapLibrary.getTemplateData(id);
-            throw new Error("Library missing.");
-        } catch (e) {
-            console.error(e);
-            return { map_id: id, meta: { title: `Fallback: ${id}` }, nodes: [], connections: [], submaps: [] };
+            if (typeof MultiMapLibrary !== 'undefined') {
+                const localData = await MultiMapLibrary.getTemplateData(id);
+                if (localData && localData.nodes && localData.nodes.length > 0) {
+                    return localData;
+                }
+            }
+        } catch (e) {}
+
+        if (window.FirebaseAuth?.currentUser) {
+            const uid = window.FirebaseAuth.currentUser.uid;
+            
+            // Check own cloud templates
+            try {
+                const docRef = window.Firestore.doc(window.FirebaseDb, "users", uid, "templates", id);
+                const docSnap = await window.Firestore.getDoc(docRef);
+                if (docSnap.exists()) return docSnap.data();
+            } catch (e) {}
+
+            // Check shared templates
+            try {
+                const docRef = window.Firestore.doc(window.FirebaseDb, "users", uid, "shared_templates", id);
+                const docSnap = await window.Firestore.getDoc(docRef);
+                if (docSnap.exists()) return docSnap.data();
+            } catch (e) {}
+
+            // Check public templates
+            try {
+                const docRef = window.Firestore.doc(window.FirebaseDb, "public_templates", id);
+                const docSnap = await window.Firestore.getDoc(docRef);
+                if (docSnap.exists()) return docSnap.data();
+            } catch (e) {}
         }
+
+        return { map_id: id, meta: { title: `Fallback: ${id}` }, nodes: [], connections: [], submaps: [] };
     }
 }
 
@@ -226,6 +254,22 @@ class MultiMapKernel {
 
     isUsingCloudVault() {
         return this.activeVault === 'firebase' && 
+               window.FirebaseAuth && 
+               window.FirebaseAuth.currentUser && 
+               !window.FirebaseAuth.currentUser.isAnonymous;
+    }
+
+    getProjectVault(projectId) {
+        if (!projectId) return this.activeVault;
+        const projects = this.getProjects();
+        const proj = projects.find(p => p.project_id === projectId);
+        if (proj && proj.vault) return proj.vault;
+        return this.activeVault === 'all' ? 'local' : this.activeVault;
+    }
+
+    isProjectUsingCloudVault(projectId) {
+        const vault = this.getProjectVault(projectId);
+        return vault === 'firebase' && 
                window.FirebaseAuth && 
                window.FirebaseAuth.currentUser && 
                !window.FirebaseAuth.currentUser.isAnonymous;
@@ -553,10 +597,17 @@ class MultiMapKernel {
     }
 
     getPages(projectId) {
-        if (this.isUsingCloudVault()) {
+        const targetVault = this.getProjectVault(projectId);
+        if (targetVault === 'firebase' && window.FirebaseAuth?.currentUser && !window.FirebaseAuth.currentUser.isAnonymous) {
             return this.firestorePagesByProject[projectId] || [];
         }
-        return this.getLibrary().filter(p => p.meta?.project_id === projectId || (!p.meta?.project_id && projectId === 'default_project'));
+        const origVault = this.activeVault;
+        this.activeVault = targetVault;
+        try {
+            return this.getLibrary().filter(p => p.meta?.project_id === projectId || (!p.meta?.project_id && projectId === 'default_project'));
+        } finally {
+            this.activeVault = origVault;
+        }
     }
 
     getAllPages() {
@@ -674,7 +725,7 @@ class MultiMapKernel {
             }
         } else {
             this.projects.push(newProj);
-            localStorage.setItem("mm_projects", JSON.stringify(this.projects));
+            this.saveProjects(this.projects);
         }
         
         const defaultPageId = this.generateId();
@@ -717,7 +768,7 @@ class MultiMapKernel {
             let lib = this.getLibrary();
             lib.push(defaultPage);
             this.saveLibrary(lib);
-            localStorage.setItem("mm_projects", JSON.stringify(this.projects));
+            this.saveProjects(this.projects);
         }
         
         if (autoSwitch) {
@@ -729,23 +780,33 @@ class MultiMapKernel {
     }
 
     async getPagesForProject(projectId) {
-        if (this.isUsingCloudVault()) {
+        const targetVault = this.getProjectVault(projectId);
+        const isCloud = targetVault === 'firebase' && window.FirebaseAuth?.currentUser && !window.FirebaseAuth.currentUser.isAnonymous;
+        if (isCloud) {
             return this.firestorePagesByProject[projectId] || [];
         } else {
-            const lib = this.getLibrary();
-            const project = this.projects.find(p => p.project_id === projectId);
-            const pageIds = project ? new Set(project.page_ids) : new Set();
-            return lib.filter(p => {
-                const hasProjId = p.meta && p.meta.project_id === projectId;
-                const isInProjectList = p.map_id && pageIds.has(p.map_id);
-                return hasProjId || isInProjectList;
-            });
+            const origVault = this.activeVault;
+            this.activeVault = targetVault;
+            try {
+                const lib = this.getLibrary();
+                const project = this.projects.find(p => p.project_id === projectId);
+                const pageIds = project ? new Set(project.page_ids) : new Set();
+                return lib.filter(p => {
+                    const hasProjId = p.meta && p.meta.project_id === projectId;
+                    const isInProjectList = p.map_id && pageIds.has(p.map_id);
+                    return hasProjId || isInProjectList;
+                });
+            } finally {
+                this.activeVault = origVault;
+            }
         }
     }
 
     async savePage(projectId, pageId, pageData) {
         if (this.isReadOnly) return;
-        if (this.isUsingCloudVault()) {
+        const targetVault = this.getProjectVault(projectId);
+        const isCloud = targetVault === 'firebase' && window.FirebaseAuth?.currentUser && !window.FirebaseAuth.currentUser.isAnonymous;
+        if (isCloud) {
             const uid = window.FirebaseAuth.currentUser.uid;
             try {
                 const pageRef = window.Firestore.doc(window.FirebaseDb, "users", uid, "projects", projectId, "pages", pageId);
@@ -754,26 +815,35 @@ class MultiMapKernel {
                 console.error("Firestore savePage failed:", err);
             }
         } else {
-            let lib = this.getLibrary();
-            const idx = lib.findIndex(p => p.map_id === pageId);
-            if (idx !== -1) {
-                lib[idx] = pageData;
-            } else {
-                lib.push(pageData);
+            const origVault = this.activeVault;
+            this.activeVault = targetVault;
+            try {
+                let lib = this.getLibrary();
+                const idx = lib.findIndex(p => p.map_id === pageId);
+                if (idx !== -1) {
+                    lib[idx] = pageData;
+                } else {
+                    lib.push(pageData);
+                }
+                this.saveLibrary(lib);
+            } finally {
+                this.activeVault = origVault;
             }
-            this.saveLibrary(lib);
         }
     }
 
     async saveProject(projData) {
         if (this.isReadOnly) return;
         projData.updated_at = new Date().toISOString();
-        if (this.isUsingCloudVault()) {
+        const projectId = projData.project_id;
+        const targetVault = this.getProjectVault(projectId);
+        const isCloud = targetVault === 'firebase' && window.FirebaseAuth?.currentUser && !window.FirebaseAuth.currentUser.isAnonymous;
+        if (isCloud) {
             const uid = window.FirebaseAuth.currentUser.uid;
             try {
-                const projRef = window.Firestore.doc(window.FirebaseDb, "users", uid, "projects", projData.project_id);
+                const projRef = window.Firestore.doc(window.FirebaseDb, "users", uid, "projects", projectId);
                 await window.Firestore.setDoc(projRef, projData);
-                const idx = this.firestoreProjects.findIndex(p => p.project_id === projData.project_id);
+                const idx = this.firestoreProjects.findIndex(p => p.project_id === projectId);
                 if (idx !== -1) {
                     this.firestoreProjects[idx] = projData;
                 }
@@ -781,13 +851,19 @@ class MultiMapKernel {
                 console.error("Firestore saveProject failed:", err);
             }
         } else {
-            const idx = this.projects.findIndex(p => p.project_id === projData.project_id);
-            if (idx !== -1) {
-                this.projects[idx] = projData;
-            } else {
-                this.projects.push(projData);
+            const origVault = this.activeVault;
+            this.activeVault = targetVault;
+            try {
+                const idx = this.projects.findIndex(p => p.project_id === projectId);
+                if (idx !== -1) {
+                    this.projects[idx] = projData;
+                } else {
+                    this.projects.push(projData);
+                }
+                this.saveProjects(this.projects);
+            } finally {
+                this.activeVault = origVault;
             }
-            localStorage.setItem("mm_projects", JSON.stringify(this.projects));
         }
     }
 
@@ -1015,7 +1091,10 @@ class MultiMapKernel {
                 proj.page_ids.push(masterMapId);
                 proj.updated_at = new Date().toISOString();
 
-                if (this.isUsingCloudVault()) {
+                const targetVault = this.getProjectVault(projectId);
+                const isCloud = targetVault === 'firebase' && window.FirebaseAuth?.currentUser && !window.FirebaseAuth.currentUser.isAnonymous;
+
+                if (isCloud) {
                     const uid = window.FirebaseAuth.currentUser.uid;
                     try {
                         const pageRef = window.Firestore.doc(window.FirebaseDb, "users", uid, "projects", projectId, "pages", masterMapId);
@@ -1028,10 +1107,16 @@ class MultiMapKernel {
                         console.error("Firestore createMasterMap failed:", err);
                     }
                 } else {
-                    let lib = this.getLibrary();
-                    lib.push(masterMap);
-                    this.saveLibrary(lib);
-                    localStorage.setItem("mm_projects", JSON.stringify(this.projects));
+                    const origVault = this.activeVault;
+                    this.activeVault = targetVault;
+                    try {
+                        let lib = this.getLibrary();
+                        lib.push(masterMap);
+                        this.saveLibrary(lib);
+                        this.saveProjects(this.projects);
+                    } finally {
+                        this.activeVault = origVault;
+                    }
                 }
             }
         }
@@ -1052,7 +1137,10 @@ class MultiMapKernel {
             await this.saveProject(proj);
         }
 
-        if (this.isUsingCloudVault()) {
+        const targetVault = this.getProjectVault(projectId);
+        const isCloud = targetVault === 'firebase' && window.FirebaseAuth?.currentUser && !window.FirebaseAuth.currentUser.isAnonymous;
+
+        if (isCloud) {
             const uid = window.FirebaseAuth.currentUser?.uid;
             if (uid) {
                 try {
@@ -1066,8 +1154,14 @@ class MultiMapKernel {
                 this.firestorePagesByProject[projectId] = this.firestorePagesByProject[projectId].filter(p => p.map_id !== pageId);
             }
         } else {
-            let lib = this.getLibrary().filter(x => x.map_id !== pageId);
-            this.saveLibrary(lib);
+            const origVault = this.activeVault;
+            this.activeVault = targetVault;
+            try {
+                let lib = this.getLibrary().filter(x => x.map_id !== pageId);
+                this.saveLibrary(lib);
+            } finally {
+                this.activeVault = origVault;
+            }
         }
 
         // Redirect active state if it was the ghost page
@@ -1422,7 +1516,10 @@ class MultiMapKernel {
             return;
         }
         
-        if (this.isUsingCloudVault()) {
+        const targetVault = this.getProjectVault(projectId);
+        const isCloud = targetVault === 'firebase' && window.FirebaseAuth?.currentUser && !window.FirebaseAuth.currentUser.isAnonymous;
+        
+        if (isCloud) {
             const uid = window.FirebaseAuth.currentUser.uid;
             try {
                 const pages = this.firestorePagesByProject[projectId] || [];
@@ -1439,11 +1536,17 @@ class MultiMapKernel {
                 console.error("Firestore deleteProject failed:", err);
             }
         } else {
-            this.projects = this.projects.filter(p => p.project_id !== projectId);
-            localStorage.setItem("mm_projects", JSON.stringify(this.projects));
-            
-            let lib = this.getLibrary().filter(p => p.meta?.project_id !== projectId);
-            this.saveLibrary(lib);
+            const origVault = this.activeVault;
+            this.activeVault = targetVault;
+            try {
+                this.projects = this.projects.filter(p => p.project_id !== projectId);
+                this.saveProjects(this.projects);
+                
+                let lib = this.getLibrary().filter(p => p.meta?.project_id !== projectId);
+                this.saveLibrary(lib);
+            } finally {
+                this.activeVault = origVault;
+            }
         }
         
         if (this.activeProjectId === projectId) {
@@ -1471,7 +1574,10 @@ class MultiMapKernel {
             proj.meta.color = color;
             proj.updated_at = new Date().toISOString();
             
-            if (this.isUsingCloudVault()) {
+            const targetVault = this.getProjectVault(projectId);
+            const isCloud = targetVault === 'firebase' && window.FirebaseAuth?.currentUser && !window.FirebaseAuth.currentUser.isAnonymous;
+            
+            if (isCloud) {
                 const uid = window.FirebaseAuth.currentUser.uid;
                 try {
                     const projRef = window.Firestore.doc(window.FirebaseDb, "users", uid, "projects", projectId);
@@ -1480,7 +1586,13 @@ class MultiMapKernel {
                     console.error("Firestore renameProject failed:", err);
                 }
             } else {
-                localStorage.setItem("mm_projects", JSON.stringify(this.projects));
+                const origVault = this.activeVault;
+                this.activeVault = targetVault;
+                try {
+                    this.saveProjects(this.projects);
+                } finally {
+                    this.activeVault = origVault;
+                }
             }
             this.notify();
         }
@@ -1507,6 +1619,9 @@ class MultiMapKernel {
             session: { viewport: { x: window.innerWidth / 2, y: window.innerHeight / 2, scale: 1 }, selectedId: null, remoteTemplates: [], layoutMode: 'organic' }
         };
         
+        const targetVault = this.getProjectVault(projectId);
+        const isCloud = targetVault === 'firebase' && window.FirebaseAuth?.currentUser && !window.FirebaseAuth.currentUser.isAnonymous;
+        
         const projects = this.getProjects();
         const proj = projects.find(p => p.project_id === projectId);
         if (proj) {
@@ -1515,7 +1630,7 @@ class MultiMapKernel {
             }
             proj.updated_at = new Date().toISOString();
             
-            if (this.isUsingCloudVault()) {
+            if (isCloud) {
                 const uid = window.FirebaseAuth.currentUser.uid;
                 try {
                     const pageRef = window.Firestore.doc(window.FirebaseDb, "users", uid, "projects", projectId, "pages", pageId);
@@ -1530,10 +1645,16 @@ class MultiMapKernel {
                     console.error("Firestore createPage failed:", err);
                 }
             } else {
-                let lib = this.getLibrary();
-                lib.push(newPage);
-                this.saveLibrary(lib);
-                localStorage.setItem("mm_projects", JSON.stringify(this.projects));
+                const origVault = this.activeVault;
+                this.activeVault = targetVault;
+                try {
+                    let lib = this.getLibrary();
+                    lib.push(newPage);
+                    this.saveLibrary(lib);
+                    this.saveProjects(this.projects);
+                } finally {
+                    this.activeVault = origVault;
+                }
             }
             await this.syncProjectMasterMap(projectId);
             
@@ -1559,46 +1680,80 @@ class MultiMapKernel {
         }
         toProj.updated_at = new Date().toISOString();
         
+        const fromVault = this.getProjectVault(fromProjectId);
+        const toVault = this.getProjectVault(toProjectId);
+        
+        const isFromCloud = fromVault === 'firebase' && window.FirebaseAuth?.currentUser && !window.FirebaseAuth.currentUser.isAnonymous;
+        const isToCloud = toVault === 'firebase' && window.FirebaseAuth?.currentUser && !window.FirebaseAuth.currentUser.isAnonymous;
+        
         let pageState = null;
         
-        if (this.isUsingCloudVault()) {
+        // 1. Fetch/Delete page from source vault
+        if (isFromCloud) {
             const uid = window.FirebaseAuth.currentUser.uid;
             try {
                 const oldPageRef = window.Firestore.doc(window.FirebaseDb, "users", uid, "projects", fromProjectId, "pages", pageId);
                 const pageSnap = await window.Firestore.getDoc(oldPageRef);
                 if (pageSnap.exists()) {
                     pageState = pageSnap.data();
-                    pageState.meta.project_id = toProjectId;
-                    
-                    const newPageRef = window.Firestore.doc(window.FirebaseDb, "users", uid, "projects", toProjectId, "pages", pageId);
-                    await window.Firestore.setDoc(newPageRef, pageState);
                     await window.Firestore.deleteDoc(oldPageRef);
                 }
                 
                 const fromProjRef = window.Firestore.doc(window.FirebaseDb, "users", uid, "projects", fromProjectId);
                 await window.Firestore.setDoc(fromProjRef, fromProj);
                 
-                const toProjRef = window.Firestore.doc(window.FirebaseDb, "users", uid, "projects", toProjectId);
-                await window.Firestore.setDoc(toProjRef, toProj);
-                
                 if (this.firestorePagesByProject[fromProjectId]) {
                     this.firestorePagesByProject[fromProjectId] = this.firestorePagesByProject[fromProjectId].filter(p => p.map_id !== pageId);
                 }
-                if (pageState) {
-                    if (!this.firestorePagesByProject[toProjectId]) this.firestorePagesByProject[toProjectId] = [];
-                    this.firestorePagesByProject[toProjectId].push(pageState);
-                }
             } catch (err) {
-                console.error("Firestore movePage failed:", err);
+                console.error("Firestore movePage source failed:", err);
             }
         } else {
-            let lib = this.getLibrary();
-            const page = lib.find(p => p.map_id === pageId);
-            if (page) {
-                page.meta.project_id = toProjectId;
-                this.saveLibrary(lib);
+            const origVault = this.activeVault;
+            this.activeVault = fromVault;
+            try {
+                let lib = this.getLibrary();
+                const pageIdx = lib.findIndex(p => p.map_id === pageId);
+                if (pageIdx !== -1) {
+                    pageState = lib[pageIdx];
+                    lib.splice(pageIdx, 1);
+                    this.saveLibrary(lib);
+                }
+                this.saveProjects(this.projects);
+            } finally {
+                this.activeVault = origVault;
             }
-            localStorage.setItem("mm_projects", JSON.stringify(this.projects));
+        }
+        
+        // 2. Save page to destination vault
+        if (pageState) {
+            pageState.meta.project_id = toProjectId;
+            if (isToCloud) {
+                const uid = window.FirebaseAuth.currentUser.uid;
+                try {
+                    const newPageRef = window.Firestore.doc(window.FirebaseDb, "users", uid, "projects", toProjectId, "pages", pageId);
+                    await window.Firestore.setDoc(newPageRef, pageState);
+                    
+                    const toProjRef = window.Firestore.doc(window.FirebaseDb, "users", uid, "projects", toProjectId);
+                    await window.Firestore.setDoc(toProjRef, toProj);
+                    
+                    if (!this.firestorePagesByProject[toProjectId]) this.firestorePagesByProject[toProjectId] = [];
+                    this.firestorePagesByProject[toProjectId].push(pageState);
+                } catch (err) {
+                    console.error("Firestore movePage dest failed:", err);
+                }
+            } else {
+                const origVault = this.activeVault;
+                this.activeVault = toVault;
+                try {
+                    let lib = this.getLibrary();
+                    lib.push(pageState);
+                    this.saveLibrary(lib);
+                    this.saveProjects(this.projects);
+                } finally {
+                    this.activeVault = origVault;
+                }
+            }
         }
         
         await this.syncProjectMasterMap(fromProjectId);
@@ -1667,7 +1822,7 @@ class MultiMapKernel {
                 }
             } else {
                 this.projects.push(newProj);
-                localStorage.setItem("mm_projects", JSON.stringify(this.projects));
+                this.saveProjects(this.projects);
             }
             finalProjectId = projId;
         }
@@ -1710,7 +1865,7 @@ class MultiMapKernel {
                 let lib = this.getLibrary();
                 lib.push(clonedPage);
                 this.saveLibrary(lib);
-                localStorage.setItem("mm_projects", JSON.stringify(this.projects));
+                this.saveProjects(this.projects);
             }
             
             await this.syncProjectMasterMap(finalProjectId);
@@ -2388,11 +2543,130 @@ class MultiMapKernel {
     }
 
     async loadRemoteTemplates() {
+        await this.syncCloudTemplates();
+    }
+
+    async saveTemplateToCloud(templateState) {
+        if (!window.FirebaseAuth?.currentUser || window.FirebaseAuth.currentUser.isAnonymous) {
+            console.warn("Cannot save template to cloud: Not authenticated.");
+            return false;
+        }
+        const uid = window.FirebaseAuth.currentUser.uid;
+        const templateId = templateState.map_id;
+        const payload = JSON.parse(JSON.stringify(templateState));
+        payload.createdAt = new Date().toISOString();
+        
         try {
-            const tpls = await this.bridge.fetchTemplates();
-            this.state.session.remoteTemplates = tpls;
+            const docRef = window.Firestore.doc(window.FirebaseDb, "users", uid, "templates", templateId);
+            await window.Firestore.setDoc(docRef, payload);
+            await this.syncCloudTemplates();
+            return true;
+        } catch (e) {
+            console.error("Failed to save template to cloud:", e);
+            return false;
+        }
+    }
+
+    async deleteTemplateFromCloud(templateId) {
+        if (!window.FirebaseAuth?.currentUser || window.FirebaseAuth.currentUser.isAnonymous) return false;
+        const uid = window.FirebaseAuth.currentUser.uid;
+        try {
+            const docRef = window.Firestore.doc(window.FirebaseDb, "users", uid, "templates", templateId);
+            await window.Firestore.deleteDoc(docRef);
+            await this.syncCloudTemplates();
+            return true;
+        } catch (e) {
+            console.error("Failed to delete template from cloud:", e);
+            return false;
+        }
+    }
+
+    async syncCloudTemplates() {
+        try {
+            // 1. Fetch base remote templates from local MultiMapLibrary
+            let merged = [];
+            try {
+                if (typeof MultiMapLibrary !== 'undefined') {
+                    merged = await this.bridge.fetchTemplates();
+                }
+            } catch (localErr) {
+                console.warn("Failed to load local templates:", localErr);
+            }
+            
+            // 2. Fetch cloud templates if logged in
+            if (window.FirebaseAuth?.currentUser && !window.FirebaseAuth.currentUser.isAnonymous) {
+                const uid = window.FirebaseAuth.currentUser.uid;
+                
+                // Own Cloud templates
+                try {
+                    const privateCol = window.Firestore.collection(window.FirebaseDb, "users", uid, "templates");
+                    const privateSnap = await window.Firestore.getDocs(privateCol);
+                    privateSnap.forEach(d => {
+                        const data = d.data();
+                        // Prevent duplicate local IDs if already stored in browser
+                        merged = merged.filter(t => t.id !== data.map_id);
+                        merged.push({
+                            id: data.map_id,
+                            title: data.meta?.title || "Untitled Cloud Template",
+                            desc: data.meta?.notes || "Cloud template.",
+                            target_type: data.meta?.target_type || "any",
+                            nodes: data.nodes?.length || 0,
+                            isCustom: true,
+                            isCloud: true
+                        });
+                    });
+                } catch (e1) { console.warn("Sync cloud templates (own) failed:", e1); }
+
+                // Directly Shared templates
+                try {
+                    const sharedCol = window.Firestore.collection(window.FirebaseDb, "users", uid, "shared_templates");
+                    const sharedSnap = await window.Firestore.getDocs(sharedCol);
+                    sharedSnap.forEach(d => {
+                        const data = d.data();
+                        merged = merged.filter(t => t.id !== data.map_id);
+                        merged.push({
+                            id: data.map_id,
+                            title: data.meta?.title || "Shared Template",
+                            desc: data.meta?.notes || `Shared directly by ${data.sender_email || 'peer'}.`,
+                            target_type: data.meta?.target_type || "any",
+                            nodes: data.nodes?.length || 0,
+                            isCustom: true,
+                            isShared: true,
+                            senderName: data.sender_display || data.sender_email || "Peer"
+                        });
+                    });
+                } catch (e2) { console.warn("Sync shared templates failed:", e2); }
+            }
+
+            // Public templates (fetched for anyone authenticated)
+            if (window.FirebaseAuth?.currentUser) {
+                try {
+                    const publicCol = window.Firestore.collection(window.FirebaseDb, "public_templates");
+                    const publicSnap = await window.Firestore.getDocs(publicCol);
+                    publicSnap.forEach(d => {
+                        const data = d.data();
+                        // Prevent duplicates if already loaded in own/shared
+                        if (!merged.some(t => t.id === data.map_id)) {
+                            merged.push({
+                                id: data.map_id,
+                                title: data.meta?.title || "Public Template",
+                                desc: data.meta?.notes || `Public template by ${data.owner_display || 'peer'}.`,
+                                target_type: data.meta?.target_type || "any",
+                                nodes: data.nodes?.length || 0,
+                                isCustom: true,
+                                isPublicShare: true,
+                                ownerName: data.owner_display || data.owner_email || "Community"
+                            });
+                        }
+                    });
+                } catch (e3) { console.warn("Sync public templates failed:", e3); }
+            }
+            
+            this.state.session.remoteTemplates = merged;
             this.notify();
-        } catch(e) { console.error(e); }
+        } catch(e) { 
+            console.error("Failed to sync templates:", e); 
+        }
     }
 
     // TEMPLATE BOLT-ON ENGINE
@@ -2573,7 +2847,10 @@ class MultiMapKernel {
                 e.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-sky-500 animate-pulse"></span> Saving...';
             }
             
-            if (this.isUsingCloudVault()) {
+            const targetVault = this.getProjectVault(this.activeProjectId);
+            const isCloud = targetVault === 'firebase' && window.FirebaseAuth?.currentUser && !window.FirebaseAuth.currentUser.isAnonymous;
+
+            if (isCloud) {
                 const uid = window.FirebaseAuth.currentUser.uid;
                 const mapId = this.state.map_id;
                 
@@ -2632,7 +2909,10 @@ class MultiMapKernel {
                 }
                 if (e) {
                     setTimeout(() => {
-                        e.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Local';
+                        let vaultLabel = 'Local';
+                        if (targetVault === 'gdrive') vaultLabel = 'Drive';
+                        else if (targetVault === 'local-os') vaultLabel = 'Disk';
+                        e.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> ${vaultLabel}`;
                     }, 500);
                 }
             }
@@ -2643,8 +2923,19 @@ class MultiMapKernel {
     undo() { if(this.history.length > 0) { this.state = this.ensureSchema(JSON.parse(this.history.pop())); this.notify(); } }
     
     saveLibrary(lib) { 
-        localStorage.setItem("mm_constellation_lib", JSON.stringify(lib)); 
-        this.saveVaultLibraryAsync(lib);
+        const vault = this.activeVault;
+        if (vault === 'local' || vault === 'all') {
+            localStorage.setItem("mm_constellation_lib_local", JSON.stringify(lib));
+            localStorage.setItem("mm_constellation_lib", JSON.stringify(lib)); // fallback
+        } else if (vault === 'gdrive') {
+            localStorage.setItem("mm_constellation_lib_gdrive", JSON.stringify(lib));
+            const projects = JSON.parse(localStorage.getItem("mm_projects_gdrive") || "[]");
+            this.saveVaultLibraryAsync('gdrive', lib, projects);
+        } else if (vault === 'local-os') {
+            localStorage.setItem("mm_constellation_lib_localos", JSON.stringify(lib));
+            const projects = JSON.parse(localStorage.getItem("mm_projects_localos") || "[]");
+            this.saveVaultLibraryAsync('local-os', lib, projects);
+        }
     }
     
     async saveMapToLibrary(mapState) {
@@ -2678,16 +2969,25 @@ class MultiMapKernel {
             }
         }
 
+        const targetVault = this.getProjectVault(destProjectId);
+        const isCloud = targetVault === 'firebase' && window.FirebaseAuth?.currentUser && !window.FirebaseAuth.currentUser.isAnonymous;
+
         let exists = false;
-        if (this.isUsingCloudVault()) {
+        if (isCloud) {
             exists = this.firestorePagesByProject[destProjectId] && this.firestorePagesByProject[destProjectId].some(x => x.map_id === snapshot.map_id);
         } else {
-            exists = this.getLibrary().some(x => x.map_id === snapshot.map_id);
+            const origVault = this.activeVault;
+            this.activeVault = targetVault;
+            try {
+                exists = this.getLibrary().some(x => x.map_id === snapshot.map_id);
+            } finally {
+                this.activeVault = origVault;
+            }
         }
 
         if (!exists && !this.checkStorageLimit(1024)) return false;
         
-        if (this.isUsingCloudVault()) {
+        if (isCloud) {
             const uid = window.FirebaseAuth.currentUser.uid;
             try {
                 const mapRef = window.Firestore.doc(window.FirebaseDb, "users", uid, "projects", destProjectId, "pages", snapshot.map_id);
@@ -2728,34 +3028,40 @@ class MultiMapKernel {
                 console.error("Firestore saveMapToLibrary failed:", err);
             }
         } else {
-            let lib = this.getLibrary();
-            const idx = lib.findIndex(x => x.map_id === snapshot.map_id);
-            if (idx !== -1) {
-                lib[idx] = snapshot;
-            } else {
-                lib.push(snapshot);
-            }
-            this.saveLibrary(lib);
-            
-            const proj = this.projects.find(p => p.project_id === destProjectId);
-            if (proj && !proj.page_ids.includes(snapshot.map_id)) {
-                proj.page_ids.push(snapshot.map_id);
-            }
-            
-            // Clean from other projects in Local projects list
-            this.projects.forEach(p => {
-                if (p.project_id !== destProjectId && p.page_ids) {
-                    p.page_ids = p.page_ids.filter(id => id !== snapshot.map_id);
+            const origVault = this.activeVault;
+            this.activeVault = targetVault;
+            try {
+                let lib = this.getLibrary();
+                const idx = lib.findIndex(x => x.map_id === snapshot.map_id);
+                if (idx !== -1) {
+                    lib[idx] = snapshot;
+                } else {
+                    lib.push(snapshot);
                 }
-            });
-            
-            localStorage.setItem("mm_projects", JSON.stringify(this.projects));
-            
-            if (!exists) {
-                await this.syncProjectMasterMap(destProjectId);
+                this.saveLibrary(lib);
+                
+                const proj = this.projects.find(p => p.project_id === destProjectId);
+                if (proj && !proj.page_ids.includes(snapshot.map_id)) {
+                    proj.page_ids.push(snapshot.map_id);
+                }
+                
+                // Clean from other projects in Local projects list
+                this.projects.forEach(p => {
+                    if (p.project_id !== destProjectId && p.page_ids) {
+                        p.page_ids = p.page_ids.filter(id => id !== snapshot.map_id);
+                    }
+                });
+                
+                this.saveProjects(this.projects);
+                
+                if (!exists) {
+                    await this.syncProjectMasterMap(destProjectId);
+                }
+                
+                this.notify();
+            } finally {
+                this.activeVault = origVault;
             }
-            
-            this.notify();
         }
 
         return true;
@@ -3195,7 +3501,7 @@ class MultiMapKernel {
             this.projects.forEach(p => {
                 p.page_ids = p.page_ids.filter(x => x !== id);
             });
-            localStorage.setItem("mm_projects", JSON.stringify(this.projects));
+            this.saveProjects(this.projects);
             
             await this.syncProjectMasterMap(projId);
             
@@ -3895,6 +4201,7 @@ class MultiMapKernel {
                 
                 this.notify();
                 console.log("Firestore sync complete.");
+                this.syncCloudTemplates().catch(e => console.error("Failed to sync cloud templates on login:", e));
                 
                 // Refresh data manager panel if it's open
                 const dmDrawer = document.getElementById('data-manager-drawer');

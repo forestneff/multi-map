@@ -714,7 +714,9 @@
 
             let templateHtml = '';
             const tpls = state.session.remoteTemplates || [];
-            const applicableTemplates = tpls.filter(t => t.target_type === node.type || t.target_type === 'any');
+            const applicableTemplates = node.type === 'portal'
+                ? tpls
+                : tpls.filter(t => t.target_type === node.type || t.target_type === 'any');
             
             if (applicableTemplates.length > 0) {
                 templateHtml = `

@@ -1,0 +1,22 @@
+{
+    "map_id": "tpl_prompt_pass_prompt",
+    "meta": {
+        "title": "Pass Prompt Map",
+        "target_type": "portal",
+        "created": "2026-03-01T12:00:00Z",
+        "notes": "A prompt map to execute source data as instructions directly.",
+        "shared": true
+    },
+    "nodes": [
+        { "id": "pp_root", "type": "prompt-root", "title": "Execute Prompt", "content": "", "data": { "x": 0, "y": 0, "isCore": true, "collapsed": false }, "root_metadata": { "summary": "Execute source data", "tags": ["execute"], "portal_behavior": "execute_prompt" } },
+        { "id": "pp_role", "type": "prompt-role", "title": "System Integrator Persona", "content": "You are a direct execution engine. You obey user instructions exactly.", "data": { "x": -150, "y": 100, "isCore": false, "collapsed": false } },
+        { "id": "pp_inst", "type": "prompt-instruction", "title": "Core Instructions", "content": "Execute the following instructions directly and output the generated map structure.", "data": { "x": 150, "y": 100, "isCore": false, "collapsed": false } },
+        { "id": "pp_var", "type": "prompt-variable", "title": "source_data", "content": "", "data": { "x": 0, "y": 200, "isCore": false, "collapsed": false } }
+    ],
+    "connections": [
+        { "id": "ppc1", "from": "pp_root", "to": "pp_role", "type": "structural" },
+        { "id": "ppc2", "from": "pp_root", "to": "pp_inst", "type": "structural" },
+        { "id": "ppc3", "from": "pp_inst", "to": "pp_var", "type": "structural" }
+    ],
+    "submaps": []
+}

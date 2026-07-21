@@ -121,6 +121,11 @@
                             <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
                         </svg>
                     </button>
+                    <button class="w-10 h-10 rounded-xl hover:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-white transition-all cursor-pointer border-none bg-transparent" onclick="SC.toggleAssetLibrary()" title="Toggle Asset Library">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 pointer-events-none">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 21v-8.25M15.75 21v-8.25M8.25 21v-8.25M3 9l9-6 9 6m-1.5 12V10.33l-7.5-5-7.5 5V21m16.5 0H3.75" />
+                        </svg>
+                    </button>
                 </div>
 
                 <!-- 2. Phase buttons scrollable container (Left on mobile, below toggles on desktop) -->
@@ -146,6 +151,9 @@
                     <button id="btn-phase-file"
                         class="phase-btn w-10 h-10 md:w-12 md:h-12 shrink-0 rounded-xl hover:bg-slate-800 text-xl transition-all flex items-center justify-center cursor-pointer border-none bg-transparent"
                         onclick="SC.setView('file')" title="File Explorer">📁</button>
+                    <button id="btn-phase-link"
+                        class="phase-btn w-10 h-10 md:w-12 md:h-12 shrink-0 rounded-xl hover:bg-slate-800 text-xl transition-all flex items-center justify-center cursor-pointer border-none bg-transparent"
+                        onclick="SC.setView('link')" title="Link Space">🔗</button>
                 </div>
 
             </div>
@@ -186,6 +194,18 @@
                 </div>
                 <div id="data-manager-content" class="flex-1 overflow-y-auto p-4 custom-scrollbar flex flex-col gap-6">
                     <!-- Injected via Auth/Data manager -->
+                </div>
+            </div>
+
+            <!-- Expandable Asset Library Panel -->
+            <div id="sidebar-asset-library" class="flex flex-col w-[calc(100vw-56px)] md:w-[450px] shrink-0 bg-slate-900/90 h-full border-l border-slate-800/60 hidden">
+                <div class="p-3 border-b border-slate-800 flex justify-between items-center bg-slate-950/50">
+                    <span class="font-bold text-xs uppercase tracking-widest text-slate-400">Asset Library</span>
+                    <button class="p-1 text-slate-400 hover:text-white" onclick="SC.toggleAssetLibrary()"
+                        title="Close Asset Library">✕</button>
+                </div>
+                <div id="asset-library-content" class="flex-1 overflow-y-auto p-4 custom-scrollbar flex flex-col gap-6">
+                    <!-- Loaded dynamically via SandboxController -->
                 </div>
             </div>
         </div>

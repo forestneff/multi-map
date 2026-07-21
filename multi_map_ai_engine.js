@@ -1431,7 +1431,14 @@ class MultiMapAI {
         const auth = await this.getAuthToken();
         const authHeaderValue = `${auth.scheme} ${auth.value}`;
 
-        const customKey = localStorage.getItem('mm_custom_gemini_key') || '';
+        // Only send a user API key if the user has explicitly set a valid one.
+        // Ignore placeholder values, the Firebase config apiKey, and empty strings.
+        let customKey = '';
+        const rawKey = (localStorage.getItem('mm_custom_gemini_key') || '').trim();
+        const wasExplicitlySet = localStorage.getItem('mm_custom_gemini_key_explicit') === 'true';
+        if (wasExplicitlySet && rawKey && rawKey.length > 20 && !rawKey.startsWith('AIzaSy')) {
+            customKey = rawKey;
+        }
         const preferredModel = localStorage.getItem('mm_preferred_model') || this.selectedModel;
 
         const response = await fetch(CLOUD_AGENT_URL, {

@@ -1,0 +1,24 @@
+{
+    "map_id": "tpl_sw_arch",
+    "meta": {
+        "title": "Software Architecture",
+        "target_type": "hub",
+        "created": "2026-02-25T12:00:00Z",
+        "notes": "A basic starting node framework for mapping out a web application stack.",
+        "shared": true
+    },
+    "nodes": [
+        { "id": "sa_root", "type": "hub", "title": "Platform Architecture", "content": "Master node", "data": { "x": 0, "y": 0, "isCore": true, "collapsed": false }, "submaps": [] },
+        { "id": "sa_db", "type": "note", "title": "Database Layer", "content": "PostgreSQL / Redis Cache", "data": { "x": 0, "y": 150, "isCore": false, "collapsed": false }, "submaps": [] },
+        { "id": "sa_api", "type": "note", "title": "API Gateway", "content": "Node.js REST API", "data": { "x": -150, "y": 0, "isCore": false, "collapsed": false }, "submaps": [] },
+        { "id": "sa_client", "type": "note", "title": "Web Client", "content": "React Frontend", "data": { "x": 150, "y": 0, "isCore": false, "collapsed": false }, "submaps": [] }
+    ],
+    "connections": [
+        { "id": "sa_c1", "from": "sa_root", "to": "sa_db", "type": "structural" },
+        { "id": "sa_c2", "from": "sa_root", "to": "sa_api", "type": "structural" },
+        { "id": "sa_c3", "from": "sa_root", "to": "sa_client", "type": "structural" },
+        { "id": "sa_c4", "from": "sa_client", "to": "sa_api", "type": "flow" },
+        { "id": "sa_c5", "from": "sa_api", "to": "sa_db", "type": "flow" }
+    ],
+    "submaps": []
+}

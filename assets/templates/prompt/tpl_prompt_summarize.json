@@ -1,0 +1,22 @@
+{
+    "map_id": "tpl_prompt_summarize",
+    "meta": {
+        "title": "Summarize Prompt Map",
+        "target_type": "portal",
+        "created": "2026-03-01T12:00:00Z",
+        "notes": "A prompt map to summarize input data concisely.",
+        "shared": true
+    },
+    "nodes": [
+        { "id": "ps_root", "type": "prompt-root", "title": "Summarize Data", "content": "", "data": { "x": 0, "y": 0, "isCore": true, "collapsed": false }, "root_metadata": { "summary": "Summarize data", "tags": ["summarize"], "portal_behavior": "execute_prompt" } },
+        { "id": "ps_role", "type": "prompt-role", "title": "Concise Writer Persona", "content": "You are an expert summarizer. Your voice is direct, simple, and brief.", "data": { "x": -150, "y": 100, "isCore": false, "collapsed": false } },
+        { "id": "ps_inst", "type": "prompt-instruction", "title": "Core Instructions", "content": "Synthesize the source data into a single-sentence title and a 3-bullet points executive summary.", "data": { "x": 150, "y": 100, "isCore": false, "collapsed": false } },
+        { "id": "ps_var", "type": "prompt-variable", "title": "source_data", "content": "", "data": { "x": 0, "y": 200, "isCore": false, "collapsed": false } }
+    ],
+    "connections": [
+        { "id": "psc1", "from": "ps_root", "to": "ps_role", "type": "structural" },
+        { "id": "psc2", "from": "ps_root", "to": "ps_inst", "type": "structural" },
+        { "id": "psc3", "from": "ps_inst", "to": "ps_var", "type": "structural" }
+    ],
+    "submaps": []
+}

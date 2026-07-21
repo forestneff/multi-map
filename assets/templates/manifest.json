@@ -1,0 +1,8 @@
+[
+    { "id": "tpl_web_standard", "path": "assets/templates/web/tpl_web_standard.json", "title": "Standard Landing Page", "type": "web" },
+    { "id": "tpl_sw_arch", "path": "assets/templates/architecture/tpl_sw_arch.json", "title": "Software Architecture", "type": "architecture" },
+    { "id": "tpl_person_profile", "path": "assets/templates/identity/tpl_person_profile.json", "title": "Standard Person Profile", "type": "identity" },
+    { "id": "tpl_prompt_expand", "path": "assets/templates/prompt/tpl_prompt_expand.json", "title": "Expand Prompt Map", "type": "prompt" },
+    { "id": "tpl_prompt_summarize", "path": "assets/templates/prompt/tpl_prompt_summarize.json", "title": "Summarize Prompt Map", "type": "prompt" },
+    { "id": "tpl_prompt_pass_prompt", "path": "assets/templates/prompt/tpl_prompt_pass_prompt.json", "title": "Pass Prompt Map", "type": "prompt" }
+]

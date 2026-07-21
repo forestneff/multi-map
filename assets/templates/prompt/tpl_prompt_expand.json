@@ -1,0 +1,22 @@
+{
+    "map_id": "tpl_prompt_expand",
+    "meta": {
+        "title": "Expand Prompt Map",
+        "target_type": "portal",
+        "created": "2026-03-01T12:00:00Z",
+        "notes": "A prompt map to expand input data structurally.",
+        "shared": true
+    },
+    "nodes": [
+        { "id": "pe_root", "type": "prompt-root", "title": "Expand Data", "content": "", "data": { "x": 0, "y": 0, "isCore": true, "collapsed": false }, "root_metadata": { "summary": "Expand data", "tags": ["expand"], "portal_behavior": "execute_prompt" } },
+        { "id": "pe_role", "type": "prompt-role", "title": "Data Architect Persona", "content": "You are a professional software architect. Your persona is structured, detailed, and precise.", "data": { "x": -150, "y": 100, "isCore": false, "collapsed": false } },
+        { "id": "pe_inst", "type": "prompt-instruction", "title": "Core Instructions", "content": "Analyze the source data. Generate a highly detailed structural expansion of this data. If it represents a concept, build a mind-map showing its components and logic.", "data": { "x": 150, "y": 100, "isCore": false, "collapsed": false } },
+        { "id": "pe_var", "type": "prompt-variable", "title": "source_data", "content": "", "data": { "x": 0, "y": 200, "isCore": false, "collapsed": false } }
+    ],
+    "connections": [
+        { "id": "pec1", "from": "pe_root", "to": "pe_role", "type": "structural" },
+        { "id": "pec2", "from": "pe_root", "to": "pe_inst", "type": "structural" },
+        { "id": "pec3", "from": "pe_inst", "to": "pe_var", "type": "structural" }
+    ],
+    "submaps": []
+}
