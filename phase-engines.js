@@ -691,14 +691,17 @@ class LinkPhaseEngine extends PhaseEngineBase {
         const isLight = document.body.classList.contains('light-mode');
         container.className = `link-phase-container w-full h-full overflow-y-auto p-6 flex flex-col gap-6 custom-scrollbar ${isLight ? 'link-phase-light' : 'link-phase-dark'}`;
 
+        // Resolve root node title
+        const rootNode = (state.nodes || []).find(n => n.type === 'link-root');
+        const pageTitle = (rootNode && rootNode.title) || 'Link Space';
+
         // Header section
         const header = document.createElement('div');
-        header.className = 'link-phase-header flex flex-col gap-1 pb-4 border-b';
+        header.className = 'link-phase-header flex flex-col gap-1 pb-4 border-b items-center text-center';
         header.innerHTML = `
-            <h2 class="text-xl font-extrabold tracking-tight flex items-center gap-2">
-                <span>🔗</span> Link Space
+            <h2 class="text-xl font-extrabold tracking-tight flex items-center gap-2 justify-center">
+                <span>🔗</span> ${this.escapeHTML(pageTitle)}
             </h2>
-            <p class="text-xs link-phase-muted">Curated links with live metadata previews.</p>
         `;
         container.appendChild(header);
 
@@ -717,142 +720,250 @@ class LinkPhaseEngine extends PhaseEngineBase {
             return;
         }
 
+        // Build parent lookup from connections
+        const parentMap = {}; // nodeId → parentId
+        (state.connections || []).forEach(c => {
+            if (c.type === 'structural') {
+                parentMap[c.to] = c.from;
+            }
+        });
+
+        // Find hub nodes and organize links into groups
+        const hubNodes = (state.nodes || []).filter(n => n.type === 'hub');
+        const hubMap = {};
+        hubNodes.forEach(h => { hubMap[h.id] = h; });
+
+        // Group links: { hubId: [linkNodes], '__ungrouped__': [linkNodes] }
+        const groups = {};
+        const hubOrder = []; // Track hub order as encountered
+
+        linkNodes.forEach(node => {
+            const parentId = parentMap[node.id];
+            if (parentId && hubMap[parentId]) {
+                if (!groups[parentId]) {
+                    groups[parentId] = [];
+                    hubOrder.push(parentId);
+                }
+                groups[parentId].push(node);
+            } else {
+                if (!groups['__ungrouped__']) groups['__ungrouped__'] = [];
+                groups['__ungrouped__'].push(node);
+            }
+        });
+
+        // Render order: hub sections first, then ungrouped at the bottom
+        const sectionOrder = [];
+        hubOrder.forEach(hid => sectionOrder.push(hid));
+        if (groups['__ungrouped__'] && groups['__ungrouped__'].length > 0) {
+            sectionOrder.push('__ungrouped__');
+        }
+
         // Stack container
         const stack = document.createElement('div');
         stack.className = 'flex flex-col gap-4 max-w-2xl mx-auto w-full pb-10';
 
-        linkNodes.forEach(node => {
-            let pData = {};
-            let isJson = false;
-            try {
-                pData = JSON.parse(node.content || '{}');
-                isJson = true;
-            } catch(e) {
-                pData = { text: node.content || '', href: '' };
-            }
+        sectionOrder.forEach(groupKey => {
+            const links = groups[groupKey];
+            if (!links || links.length === 0) return;
 
-            // Resolve URL using the same logic as getWebLinkUrl on the map canvas
-            let url = (pData.href || '').trim();
-            if (!url && isJson) {
-                const candidates = [pData.text, pData.src, pData.classes].filter(Boolean);
-                for (const candidate of candidates) {
-                    const txt = candidate.trim();
-                    if (txt.match(/^(https?:\/\/|www\.)/i) || txt.match(/^[a-z0-9\-]+\.[a-z]{2,6}(\/|$)/i)) {
-                        url = txt;
-                        break;
-                    }
-                }
-            }
-            if (!url && !isJson && node.content) {
-                url = node.content.trim();
-            }
-            if (url && !/^(https?:\/\/|file:\/\/)/i.test(url) && !/^[.\/]/.test(url)) {
-                url = 'https://' + url;
-            }
-            if (url && /^[#.\/]/.test(url)) {
-                url = '';
-            }
+            // Hub group: collapsible accordion section
+            if (groupKey !== '__ungrouped__' && hubMap[groupKey]) {
+                const hub = hubMap[groupKey];
+                const isCollapsed = hub.data && hub.data.collapsed;
 
-            const nodeText = pData.text || node.title || '';
+                // Section wrapper
+                const section = document.createElement('div');
+                section.className = 'link-phase-section';
 
-            // Get cached/persisted metadata
-            const cachedMeta = this._metaCache[url] || (node.data && node.data._linkMeta) || null;
-            if (!this._metaCache[url] && cachedMeta) {
-                this._metaCache[url] = cachedMeta;
-            }
-
-            // Kick off fetch if needed
-            const META_TTL = 1000 * 60 * 60 * 24;
-            const metaTs = (node.data && node.data._linkMetaTs) || 0;
-            if (url && !cachedMeta && !this._fetchingUrls.has(url)) {
-                this.fetchMeta(url, node.id);
-            } else if (url && cachedMeta && (Date.now() - metaTs > META_TTL) && !this._fetchingUrls.has(url)) {
-                this.fetchMeta(url, node.id);
-            }
-
-            // Resolve display values
-            const title = (cachedMeta && cachedMeta.title) || nodeText || 'Untitled Link';
-            const description = (cachedMeta && cachedMeta.description) || pData.description || '';
-            const ogImage = (cachedMeta && cachedMeta.image) || pData.src || '';
-            const siteName = (cachedMeta && cachedMeta.siteName) || '';
-            const favicon = (cachedMeta && cachedMeta.favicon) || '';
-            const themeColor = (cachedMeta && cachedMeta.themeColor) || '';
-            const isFetching = url && !cachedMeta && this._fetchingUrls.has(url);
-
-            let domain = '';
-            try { domain = new URL(url).hostname.replace('www.', ''); } catch(e) {}
-
-            const card = document.createElement('div');
-            card.className = 'link-card rounded-2xl overflow-hidden transition-all duration-300 group relative cursor-pointer';
-            if (themeColor) {
-                card.style.borderLeftColor = themeColor;
-                card.style.borderLeftWidth = '3px';
-            }
-
-            // OG image banner
-            let ogImageHtml = '';
-            if (ogImage) {
-                ogImageHtml = `
-                    <div class="link-card-image w-full h-36 overflow-hidden relative">
-                        <img src="${this.escapeHTML(ogImage)}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" onerror="this.parentElement.style.display='none'" alt="">
-                        <div class="link-card-image-overlay absolute inset-0"></div>
-                    </div>
+                // Clickable header
+                const sectionHeader = document.createElement('div');
+                sectionHeader.className = 'link-phase-section-header flex items-center gap-2 py-2 cursor-pointer select-none';
+                sectionHeader.innerHTML = `
+                    <span class="text-[11px] transition-transform duration-200 ${isCollapsed ? '' : 'rotate-90'}" style="display:inline-block;">▶</span>
+                    <span class="text-base">💠</span>
+                    <span class="font-bold text-sm tracking-wide">${this.escapeHTML(hub.title || 'Untitled Hub')}</span>
+                    <span class="link-phase-muted text-[10px] ml-1">${links.length}</span>
+                    <div class="flex-1 border-b link-phase-header ml-2" style="border-style: solid;"></div>
                 `;
-            }
 
-            // Favicon
-            let faviconHtml = '';
-            if (favicon) {
-                faviconHtml = `<img src="${this.escapeHTML(favicon)}" class="w-4 h-4 rounded-sm" onerror="this.style.display='none'" alt="">`;
-            } else {
-                faviconHtml = `<span class="text-xs">🔗</span>`;
-            }
+                // Toggle collapse on click — syncs with map node
+                sectionHeader.onclick = () => {
+                    if (window.SC && window.SC.kernel) {
+                        window.SC.kernel.toggleCollapse(hub.id);
+                        window.SC.render();
+                        // Re-render this phase view to reflect the new state
+                        const container = document.getElementById('view-content');
+                        if (container && window.SC.viewMode === 'link') {
+                            this.render(container, window.SC.kernel.state);
+                        }
+                    }
+                };
 
-            // Site label
-            let siteLabel = '';
-            if (siteName) {
-                siteLabel = `<span class="link-phase-muted text-[10px] font-bold uppercase tracking-wider">${this.escapeHTML(siteName)}</span>`;
-            } else if (domain) {
-                siteLabel = `<span class="link-phase-muted text-[10px] font-bold uppercase tracking-wider">${this.escapeHTML(domain)}</span>`;
-            }
+                section.appendChild(sectionHeader);
 
-            card.innerHTML = `
-                ${ogImageHtml}
-                <div class="p-4 flex gap-3">
-                    <div class="flex-1 min-w-0 flex flex-col gap-1.5">
-                        <div class="flex items-center gap-2">
-                            ${faviconHtml}
-                            ${siteLabel}
-                            ${isFetching ? '<span class="text-[9px] text-indigo-400 animate-pulse ml-auto">Fetching...</span>' : ''}
-                        </div>
-                        <h3 class="link-card-title font-extrabold text-[15px] leading-snug group-hover:text-indigo-400 transition-colors line-clamp-2">${this.escapeHTML(title)}</h3>
-                        ${description ? `<p class="link-phase-muted text-[11px] leading-relaxed line-clamp-3">${this.escapeHTML(description)}</p>` : ''}
-                        <div class="link-card-url text-[10px] truncate mt-0.5 flex items-center gap-1">
-                            ${url ? `<span>🌐</span> ${this.escapeHTML(domain || url)}` : '<span class="link-phase-muted italic">No URL configured</span>'}
-                        </div>
-                    </div>
-                    ${url ? `
-                        <div class="flex flex-col gap-2 shrink-0 justify-center">
-                            <button onclick="event.stopPropagation(); navigator.clipboard.writeText('${this.escapeHTML(url)}').then(() => { if(window.SC) window.SC.showToast('URL copied!', 'success'); })" class="link-card-copy-btn p-2.5 rounded-xl transition-all text-xs" title="Copy URL">📋</button>
-                        </div>
-                    ` : ''}
-                </div>
-            `;
-
-            // Click opens link in new tab (or selects node if no URL)
-            card.onclick = () => {
-                if (url) {
-                    window.open(url, '_blank', 'noopener');
-                } else if (window.SC && window.SC.kernel) {
-                    window.SC.kernel.selectNode(node.id);
-                    window.SC.render();
+                // Card container (hidden when collapsed)
+                if (!isCollapsed) {
+                    const cardGroup = document.createElement('div');
+                    cardGroup.className = 'flex flex-col gap-4 mt-2';
+                    links.forEach(node => {
+                        cardGroup.appendChild(this._renderLinkCard(node, state));
+                    });
+                    section.appendChild(cardGroup);
                 }
-            };
 
-            stack.appendChild(card);
+                stack.appendChild(section);
+
+            } else {
+                // Ungrouped links — flat list with a subtle label
+                if (sectionOrder.length > 1) {
+                    // Only show label if there are also hub sections above
+                    const label = document.createElement('div');
+                    label.className = 'link-phase-muted text-[10px] uppercase font-bold tracking-widest pt-4 pb-1';
+                    label.textContent = 'Uncategorized';
+                    stack.appendChild(label);
+                }
+
+                links.forEach(node => {
+                    stack.appendChild(this._renderLinkCard(node, state));
+                });
+            }
         });
 
         container.appendChild(stack);
+    }
+
+    /**
+     * Renders a single link card element for a web-link node.
+     */
+    _renderLinkCard(node, state) {
+        let pData = {};
+        let isJson = false;
+        try {
+            pData = JSON.parse(node.content || '{}');
+            isJson = true;
+        } catch(e) {
+            pData = { text: node.content || '', href: '' };
+        }
+
+        // Resolve URL using the same logic as getWebLinkUrl on the map canvas
+        let url = (pData.href || '').trim();
+        if (!url && isJson) {
+            const candidates = [pData.text, pData.src, pData.classes].filter(Boolean);
+            for (const candidate of candidates) {
+                const txt = candidate.trim();
+                if (txt.match(/^(https?:\/\/|www\.)/i) || txt.match(/^[a-z0-9\-]+\.[a-z]{2,6}(\/|$)/i)) {
+                    url = txt;
+                    break;
+                }
+            }
+        }
+        if (!url && !isJson && node.content) {
+            url = node.content.trim();
+        }
+        if (url && !/^(https?:\/\/|file:\/\/)/i.test(url) && !/^[.\/]/.test(url)) {
+            url = 'https://' + url;
+        }
+        if (url && /^[#.\/]/.test(url)) {
+            url = '';
+        }
+
+        const nodeText = pData.text || node.title || '';
+
+        // Get cached/persisted metadata
+        const cachedMeta = this._metaCache[url] || (node.data && node.data._linkMeta) || null;
+        if (!this._metaCache[url] && cachedMeta) {
+            this._metaCache[url] = cachedMeta;
+        }
+
+        // Kick off fetch if needed
+        const META_TTL = 1000 * 60 * 60 * 24;
+        const metaTs = (node.data && node.data._linkMetaTs) || 0;
+        if (url && !cachedMeta && !this._fetchingUrls.has(url)) {
+            this.fetchMeta(url, node.id);
+        } else if (url && cachedMeta && (Date.now() - metaTs > META_TTL) && !this._fetchingUrls.has(url)) {
+            this.fetchMeta(url, node.id);
+        }
+
+        // Resolve display values
+        const title = (cachedMeta && cachedMeta.title) || nodeText || 'Untitled Link';
+        const description = (cachedMeta && cachedMeta.description) || pData.description || '';
+        const ogImage = (cachedMeta && cachedMeta.image) || pData.src || '';
+        const siteName = (cachedMeta && cachedMeta.siteName) || '';
+        const favicon = (cachedMeta && cachedMeta.favicon) || '';
+        const themeColor = (cachedMeta && cachedMeta.themeColor) || '';
+        const isFetching = url && !cachedMeta && this._fetchingUrls.has(url);
+
+        let domain = '';
+        try { domain = new URL(url).hostname.replace('www.', ''); } catch(e) {}
+
+        const card = document.createElement('div');
+        card.className = 'link-card rounded-2xl overflow-hidden transition-all duration-300 group relative cursor-pointer';
+        if (themeColor) {
+            card.style.borderLeftColor = themeColor;
+            card.style.borderLeftWidth = '3px';
+        }
+
+        // OG image banner
+        let ogImageHtml = '';
+        if (ogImage) {
+            ogImageHtml = `
+                <div class="link-card-image w-full h-36 overflow-hidden relative">
+                    <img src="${this.escapeHTML(ogImage)}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" onerror="this.parentElement.style.display='none'" alt="">
+                    <div class="link-card-image-overlay absolute inset-0"></div>
+                </div>
+            `;
+        }
+
+        // Favicon
+        let faviconHtml = '';
+        if (favicon) {
+            faviconHtml = `<img src="${this.escapeHTML(favicon)}" class="w-4 h-4 rounded-sm" onerror="this.style.display='none'" alt="">`;
+        } else {
+            faviconHtml = `<span class="text-xs">🔗</span>`;
+        }
+
+        // Site label
+        let siteLabel = '';
+        if (siteName) {
+            siteLabel = `<span class="link-phase-muted text-[10px] font-bold uppercase tracking-wider">${this.escapeHTML(siteName)}</span>`;
+        } else if (domain) {
+            siteLabel = `<span class="link-phase-muted text-[10px] font-bold uppercase tracking-wider">${this.escapeHTML(domain)}</span>`;
+        }
+
+        card.innerHTML = `
+            ${ogImageHtml}
+            <div class="p-4 flex gap-3">
+                <div class="flex-1 min-w-0 flex flex-col gap-1.5">
+                    <div class="flex items-center gap-2">
+                        ${faviconHtml}
+                        ${siteLabel}
+                        ${isFetching ? '<span class="text-[9px] text-indigo-400 animate-pulse ml-auto">Fetching...</span>' : ''}
+                    </div>
+                    <h3 class="link-card-title font-extrabold text-[15px] leading-snug group-hover:text-indigo-400 transition-colors line-clamp-2">${this.escapeHTML(title)}</h3>
+                    ${description ? `<p class="link-phase-muted text-[11px] leading-relaxed line-clamp-3">${this.escapeHTML(description)}</p>` : ''}
+                    <div class="link-card-url text-[10px] truncate mt-0.5 flex items-center gap-1">
+                        ${url ? `<span>🌐</span> ${this.escapeHTML(domain || url)}` : '<span class="link-phase-muted italic">No URL configured</span>'}
+                    </div>
+                </div>
+                ${url ? `
+                    <div class="flex flex-col gap-2 shrink-0 justify-center">
+                        <button onclick="event.stopPropagation(); navigator.clipboard.writeText('${this.escapeHTML(url)}').then(() => { if(window.SC) window.SC.showToast('URL copied!', 'success'); })" class="link-card-copy-btn p-2.5 rounded-xl transition-all text-xs" title="Copy URL">📋</button>
+                    </div>
+                ` : ''}
+            </div>
+        `;
+
+        // Click opens link in new tab (or selects node if no URL)
+        card.onclick = () => {
+            if (url) {
+                window.open(url, '_blank', 'noopener');
+            } else if (window.SC && window.SC.kernel) {
+                window.SC.kernel.selectNode(node.id);
+                window.SC.render();
+            }
+        };
+
+        return card;
     }
 
     /**

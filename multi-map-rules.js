@@ -91,7 +91,7 @@ const MultiMapSchema = {
         'flow-process': { allowed: ['flow-process', 'flow-decision', 'flow-terminal', 'note', 'portal', 'smart-portal'], default: 'flow-process', strict: false },
         'flow-decision': { allowed: ['flow-process', 'flow-decision', 'flow-terminal', 'note', 'portal', 'smart-portal'], default: 'flow-process', strict: false },
         'flow-terminal': { allowed: ['note'], default: 'note', strict: false },
-        'hub': { allowed: ['note', 'hub', 'portal', 'smart-portal', 'constellation', 'web-root', 'logic-gate', 'person-root'], default: 'note', strict: false },
+        'hub': { allowed: ['note', 'hub', 'portal', 'smart-portal', 'constellation', 'web-root', 'logic-gate', 'person-root', 'web-link'], default: 'note', strict: false },
         'person-root': { allowed: ['hub', 'portal', 'smart-portal', 'note', 'logic-gate'], default: 'note', strict: false },
         'portal': { allowed: ['note', 'hub'], default: 'note', strict: false },
         'smart-portal': { allowed: ['note', 'hub', 'logic-gate'], default: 'note', strict: false },

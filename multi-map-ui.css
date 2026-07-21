@@ -361,19 +361,19 @@ body.light-mode .no-scrollbar::-webkit-scrollbar-thumb:hover {
     }
 
     #sidebar.open {
-        height: 60vh; /* Slide up to show inspector */
+        height: 50vh; /* Inspector takes ~half the viewport */
         width: 100vw;
         max-width: 100vw;
     }
 
     #sidebar.data-manager-open {
-        height: 85vh; /* Slide up more for data manager */
+        height: 85vh;
         width: 100vw;
         max-width: 100vw;
     }
 
     #sidebar.asset-library-open {
-        height: 85vh; /* Slide up more for asset library */
+        height: 85vh;
         width: 100vw;
         max-width: 100vw;
     }
@@ -382,13 +382,36 @@ body.light-mode .no-scrollbar::-webkit-scrollbar-thumb:hover {
     #phase-selection-area {
         width: 100% !important;
         height: 56px !important;
-        flex-direction: row !important;
-        justify-content: space-around !important;
+        flex-direction: row-reverse !important; /* Right-to-left: toggles on far right */
+        justify-content: flex-start !important;
         align-items: center !important;
-        padding: 0 1rem !important;
+        padding: 0 0.5rem !important;
         border-right: none !important;
         border-top: 1px solid #1e293b !important;
         background: #020617 !important;
+    }
+
+    /* Sidebar toggles (Inspector, DM, Assets) — rightmost on mobile */
+    #sidebar-action-toggles {
+        order: -1 !important; /* First in row-reverse = rightmost */
+        flex-direction: row-reverse !important;
+        border-left: 1px solid #1e293b !important;
+        border-bottom: none !important;
+        margin-left: 0 !important;
+        padding-left: 0.25rem !important;
+        padding-right: 0 !important;
+        gap: 0.25rem !important;
+    }
+
+    /* Phase buttons — scroll area fills remaining space to the left */
+    #phase-buttons-scroll-container {
+        order: 0 !important;
+        flex: 1 !important;
+        flex-direction: row-reverse !important; /* Map rightmost, then orbital, etc. */
+        justify-content: flex-start !important;
+        overflow-x: auto !important;
+        gap: 0.25rem !important;
+        padding: 0 0.25rem !important;
     }
 
     /* Phase selector buttons inside the bottom bar */
@@ -399,7 +422,7 @@ body.light-mode .no-scrollbar::-webkit-scrollbar-thumb:hover {
     }
 
     /* Expandable panels inside the bottom bar container */
-    #sidebar-content, #sidebar-data-manager {
+    #sidebar-content, #sidebar-data-manager, #sidebar-asset-library {
         position: absolute;
         top: 0;
         bottom: 56px;
