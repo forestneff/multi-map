@@ -1216,6 +1216,11 @@ class SandboxController {
             if (isNodeRoot && !isProjDir) {
                 actions.push({ icon: '🏠', action: 'GoToDirectory', title: 'Project Directory' });
             }
+            // Add "Share / Copy Share Link" action for root nodes on non-master pages
+            if (isNodeRoot && !isMaster) {
+                const pageShared = this.kernel.state.meta?.shared && this.kernel.state.meta?.share_token;
+                actions.push({ icon: '📤', action: 'CopyOrCreateShareLink', title: pageShared ? 'Copy Share Link' : 'Share Map' });
+            }
             if (node.type === 'portal') {
                 const rootMeta = node.content ? this.kernel.getRootMetadata(node.content) : null;
                 const isPromptPortal = rootMeta && (rootMeta.portal_behavior === 'execute_prompt' || (this.kernel.hasRootType && this.kernel.hasRootType(node.content, 'prompt-root')) || (this.kernel.isPromptMap && this.kernel.isPromptMap(node.content)));
@@ -4541,6 +4546,30 @@ ${innerHtml}
     }
 
     /**
+     * Smart share action for root nodes: copies the existing share link if already shared,
+     * or triggers the full share flow (expiry picker) if not yet shared.
+     */
+    async actionCopyOrCreateShareLink() {
+        const page = this.kernel.state;
+        if (!page || !page.map_id) return;
+
+        if (page.meta?.shared && page.meta?.share_token) {
+            // Already shared — copy the link to clipboard
+            const shareUrl = `${window.location.origin}/view.html?token=${page.meta.share_token}`;
+            try {
+                await navigator.clipboard.writeText(shareUrl);
+                this.showToast('Share link copied to clipboard!', 'success');
+            } catch (err) {
+                // Fallback: show the share panel so user can copy manually
+                this.showShareLinkPanel(shareUrl, page.meta?.title || 'Untitled');
+            }
+        } else {
+            // Not yet shared — open the full share flow
+            await this.actionSharePage(page.map_id);
+        }
+    }
+
+    /**
      * Share a page by writing its full payload to shared_maps/{token}.
      * Cloud-vault only — local pages cannot be served publicly.
      */
@@ -6203,6 +6232,12 @@ ${innerHtml}
             if (isRoot && !isProjDir && !this.kernel.isReadOnly) {
                 if (!options) options = [];
                 options.push({ text: 'Project Directory 🏠', action: () => this.actionGoToDirectory(selectedNode.id) });
+                // Share / Copy Share Link option for root nodes on non-master pages
+                const isMasterPage = this.kernel.state.meta && (this.kernel.state.meta.isMaster === true || this.kernel.state.meta.title === "Project Directory");
+                if (!isMasterPage) {
+                    const isShared = this.kernel.state.meta?.shared && this.kernel.state.meta?.share_token;
+                    options.push({ text: isShared ? 'Copy Share Link 📤' : 'Share Map 📤', action: () => this.actionCopyOrCreateShareLink() });
+                }
             }
         }
 
@@ -6297,6 +6332,8 @@ ${innerHtml}
                         themeClasses = 'bg-amber-600 hover:bg-amber-500 border-amber-400 text-amber-100 hover:text-white shadow-[0_0_15px_rgba(217,119,6,0.4)]';
                     } else if (buttonText.includes('Configure Agent')) {
                         themeClasses = 'bg-rose-600 hover:bg-rose-500 border-rose-400 text-rose-100 hover:text-white shadow-[0_0_15px_rgba(225,29,72,0.4)]';
+                    } else if (buttonText.includes('Copy Share Link') || buttonText.includes('Share Map')) {
+                        themeClasses = 'bg-teal-600 hover:bg-teal-500 border-teal-400 text-teal-100 hover:text-white shadow-[0_0_15px_rgba(20,184,166,0.4)]';
                     }
                 }
             }

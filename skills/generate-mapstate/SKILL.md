@@ -29,7 +29,7 @@ STATIC / MEANINGFUL LAYOUT GUIDELINES:
 
 GUIDELINES FOR WEB-LINK NODES:
 - Use "web-link" nodes for all external links, documentation, APIs, and online resource references.
-- They are universally accessible and can be children of any node (except portal/root types).
+- They are universally accessible and can be children of any node (except portal types).
 - The "title" should be a clear descriptor (e.g. "GitHub Repository").
 - The "content" or "href" field must contain the target URL (e.g. "https://github.com"). Prefix with http/https if missing.
 
