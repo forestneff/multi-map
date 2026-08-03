@@ -860,3 +860,87 @@ body.light-mode button.bg-purple-500 {
         bottom: 5.5rem !important;
     }
 }
+
+/* Prompt Optimizer Modal Theme Rules */
+.prompt-opt-subtitle {
+    color: #cbd5e1;
+}
+.prompt-opt-option-box {
+    background-color: rgba(15, 23, 42, 0.6);
+    border-color: rgba(51, 65, 85, 0.8);
+    color: #94a3b8;
+}
+.prompt-opt-option-box label {
+    color: #e2e8f0;
+}
+.prompt-opt-option-box .subtext {
+    color: #64748b;
+}
+.prompt-opt-tip-box {
+    background-color: rgba(69, 26, 3, 0.35);
+    border-color: rgba(146, 64, 14, 0.4);
+    color: #fde68a;
+}
+.prompt-opt-tip-box strong {
+    color: #fbbf24;
+}
+.prompt-opt-tip-box code {
+    background-color: rgba(0, 0, 0, 0.3);
+    color: #fef08a;
+    padding: 1px 4px;
+    border-radius: 3px;
+}
+
+body.light-mode .prompt-opt-subtitle {
+    color: #334155 !important;
+}
+body.light-mode .prompt-opt-option-box {
+    background-color: #f1f5f9 !important;
+    border-color: #cbd5e1 !important;
+    color: #475569 !important;
+}
+body.light-mode .prompt-opt-option-box label {
+    color: #0f172a !important;
+}
+body.light-mode .prompt-opt-option-box .subtext {
+    color: #64748b !important;
+}
+body.light-mode .prompt-opt-tip-box {
+    background-color: #fffbeb !important;
+    border-color: #fde68a !important;
+    color: #78350f !important;
+}
+body.light-mode .prompt-opt-tip-box strong {
+    color: #92400e !important;
+}
+body.light-mode .prompt-opt-tip-box code {
+    background-color: #fef3c7 !important;
+    color: #92400e !important;
+    border: 1px solid #fde68a !important;
+}
+
+.prompt-opt-label {
+    color: #cbd5e1;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+.prompt-opt-warning-box {
+    background-color: rgba(69, 26, 3, 0.4);
+    border-color: rgba(217, 119, 6, 0.5);
+    color: #fde68a;
+}
+.prompt-opt-warning-box strong {
+    color: #fbbf24;
+}
+
+body.light-mode .prompt-opt-label {
+    color: #334155 !important;
+}
+body.light-mode .prompt-opt-warning-box {
+    background-color: #fff7ed !important;
+    border-color: #fed7aa !important;
+    color: #9a3412 !important;
+}
+body.light-mode .prompt-opt-warning-box strong {
+    color: #c2410c !important;
+}

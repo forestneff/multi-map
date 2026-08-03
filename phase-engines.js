@@ -55,6 +55,15 @@ class PhaseRegistrySystem {
                     else if (action === 'TRIGGER_LINKTREE_IMPORT' && id) {
                         window.SC.actionTriggerLinktreeImport(id);
                     }
+                    else if (action === 'GENERATE_PROMPT' && id) {
+                        window.SC.actionGeneratePromptMap(id);
+                    }
+                    else if (action === 'OPTIMIZE_PROMPT' && id) {
+                        window.SC.actionOptimizePromptMap(id);
+                    }
+                    else if (action === 'REBUILD_PROMPT' && id) {
+                        window.SC.actionRebuildPromptMap(id);
+                    }
                     else if (action === 'CREATE_SUBMAP_AND_LINK' && id && event.data.data) {
                         window.SC.actionSetPortalTarget(id, 'new');
                     }

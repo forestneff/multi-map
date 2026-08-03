@@ -188,7 +188,20 @@
             'web-modal': '🪟', 'web-carousel': '🎠'
         };
 
-        function getIcon(type) {
+        function getIcon(node) {
+            const type = (typeof node === 'object' && node) ? node.type : node;
+            if (typeof node === 'object' && node) {
+                const targetMapId = node.content || (node.submap && node.submap.map_id);
+                if (targetMapId && currentState && currentState.session && currentState.session.library) {
+                    const targetMap = currentState.session.library.find(p => p.map_id === targetMapId);
+                    if (targetMap && targetMap.nodes && targetMap.nodes.length > 0) {
+                        const rootNode = targetMap.nodes.find(n => n.type === 'root' || (n.type && n.type.endsWith('-root')) || (n.data && n.data.isCore)) || targetMap.nodes[0];
+                        if (rootNode && rootNode.type) {
+                            return typeIcons[rootNode.type] || typeIcons[type] || '⚪';
+                        }
+                    }
+                }
+            }
             return typeIcons[type] || '⚪';
         }
 
@@ -201,7 +214,7 @@
         function createBody(node, role) {
             const el = document.createElement('div');
             el.className = `body-node role-${role}`;
-            el.innerHTML = `<div class="node-icon">${getIcon(node.type)}</div><div class="node-title">${escapeHTML(node.title)}</div>`;
+            el.innerHTML = `<div class="node-icon">${getIcon(node)}</div><div class="node-title">${escapeHTML(node.title)}</div>`;
             el.onclick = () => {
                 window.parent.postMessage({ type: 'SELECT_NODE', id: node.id }, '*');
             };

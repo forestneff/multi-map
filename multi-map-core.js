@@ -1879,6 +1879,26 @@ class MultiMapKernel {
 
 
     getBlueprint(type) { return typeof MultiMapSchema !== 'undefined' ? MultiMapSchema.getDefinition(type) : { label: type, icon: "⚪" }; }
+    getPortalTargetRootIcon(node) {
+        if (!node) return null;
+        const targetMapId = node.content || (node.submap && node.submap.map_id);
+        if (!targetMapId || typeof targetMapId !== 'string') return null;
+
+        const lib = this.getLibrary();
+        const targetMap = lib ? lib.find(p => p.map_id === targetMapId) : null;
+        if (!targetMap || !targetMap.nodes || targetMap.nodes.length === 0) return null;
+
+        const rootNode = targetMap.nodes.find(n => n.type === 'root' || (n.type && n.type.endsWith('-root')) || (n.data && n.data.isCore)) || targetMap.nodes[0];
+        if (!rootNode) return null;
+
+        let rootType = rootNode.type;
+        if (rootType === 'root' && targetMap.meta && targetMap.meta.type && typeof MultiMapSchema !== 'undefined' && MultiMapSchema.mapTypes && MultiMapSchema.mapTypes[targetMap.meta.type]) {
+            rootType = MultiMapSchema.mapTypes[targetMap.meta.type].rootNode || rootType;
+        }
+
+        const bp = this.getBlueprint(rootType);
+        return bp ? bp.icon : null;
+    }
     getSmartChildType(pid) {
         const p = this.state.nodes.find(x => x.id === pid);
         if (p && p.data && p.data.lastSpawnedChildType) {

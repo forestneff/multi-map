@@ -143,9 +143,11 @@
                 content: node.content || '',
                 title: node.title || ''
             });
-            if (renderedNodeId === node.id && renderedNodeType === node.type && renderedMetaHash === metadataHash) {
+            if (renderedNodeId === node.id && renderedNodeType === node.type) {
                 const titleEl = container.querySelector('#edit-title');
-                if (titleEl && document.activeElement !== titleEl) titleEl.value = node.title;
+                if (titleEl && document.activeElement !== titleEl && titleEl.value !== (node.title || '')) {
+                    titleEl.value = node.title || '';
+                }
                 
                 const typeEl = container.querySelector('#edit-type');
                 if (typeEl && document.activeElement !== typeEl) typeEl.value = node.type;
@@ -709,7 +711,7 @@
                     </div>
                 `;
             } else {
-                contentAreaHtml = `<textarea id="raw-content" class="${contentClass}" oninput="notifyUpdate('${node.id}', { content: this.value })">${node.content || ''}</textarea>`;
+                contentAreaHtml = `<textarea id="raw-content" class="${contentClass}" oninput="notifyUpdate('${node.id}', { content: this.value })" onblur="notifyUpdate('${node.id}', { content: this.value })">${node.content || ''}</textarea>`;
             }
 
             let templateHtml = '';
@@ -738,7 +740,7 @@
                 <div class="p-4 flex flex-col min-h-full gap-4 relative">
                     <div class="shrink-0">
                         <label class="text-[10px] font-bold text-slate-500 uppercase block mb-1">Title</label>
-                        <textarea id="edit-title" class="${titleClass} resize-none h-[38px] min-h-[38px]" oninput="notifyUpdate('${node.id}', { title: this.value })">${escapeHTML(node.title)}</textarea>
+                        <textarea id="edit-title" class="${titleClass} resize-none h-[38px] min-h-[38px]" oninput="notifyUpdate('${node.id}', { title: this.value })" onblur="notifyUpdate('${node.id}', { title: this.value })">${escapeHTML(node.title)}</textarea>
                     </div>
                     <div class="shrink-0">
                         <label class="text-[10px] font-bold text-slate-500 uppercase block mb-1">Type</label>

@@ -3556,6 +3556,171 @@ ${innerHtml}
         return compiledMd;
     }
 
+    async actionGeneratePromptMap(rootNodeId) {
+        const rootNode = this.kernel.state.nodes.find(n => n.id === rootNodeId);
+        if (!rootNode) return;
+
+        const contentHtml = `
+            <div class="flex flex-col gap-3">
+                <p class="prompt-opt-subtitle text-xs text-slate-300">Describe what you want this prompt chain to accomplish, or paste instructions below. The AI will generate a structured prompt chain map:</p>
+                <textarea id="prompt-generate-input" placeholder="e.g. 'Create a prompt chain for a Senior Technical Writer reviewing API documentation for clarity and edge cases...'" class="w-full bg-slate-950 border border-slate-700/80 text-slate-200 p-3 rounded-lg text-xs font-mono focus:border-amber-500 outline-none resize-none shadow-inner h-48"></textarea>
+                <div class="prompt-opt-tip-box text-[10px] p-2.5 rounded border border-amber-800/40">
+                    💡 <strong>Tip:</strong> The AI will decompose your input into roles, goals, instructions, constraints, variables (e.g. <code>{{variable}}</code>), and web reference links!
+                </div>
+            </div>
+        `;
+
+        const actionsHtml = `
+            <button class="cancel-btn px-4 py-2 border border-slate-700 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg transition-colors font-bold text-[11px] uppercase tracking-wider">Cancel</button>
+            <button class="generate-submit-btn px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg transition-colors font-bold text-[11px] uppercase tracking-wider flex items-center gap-1.5 shadow-lg shadow-amber-900/30">
+                <span>✨</span> Generate Map
+            </button>
+        `;
+
+        const resultText = await this.showDialogModal({
+            title: "✨ Generate Prompt Chain Map",
+            contentHtml: contentHtml,
+            actionsHtml: actionsHtml,
+            onRender: (el, close) => {
+                const ta = el.querySelector('#prompt-generate-input');
+                if (ta) ta.focus();
+                el.querySelector('.cancel-btn').onclick = () => close(null);
+                el.querySelector('.generate-submit-btn').onclick = () => {
+                    const text = el.querySelector('#prompt-generate-input').value.trim();
+                    close(text);
+                };
+            }
+        });
+
+        if (!resultText) return;
+
+        if (window.AI && window.AI.optimizePromptMap) {
+            window.AI.optimizePromptMap(rootNodeId, resultText, 'generate');
+        } else {
+            this.showToast("AI Engine not initialized.", "error");
+        }
+    }
+
+    async actionOptimizePromptMap(rootNodeId) {
+        const rootNode = this.kernel.state.nodes.find(n => n.id === rootNodeId);
+        if (!rootNode) return;
+
+        const currentPromptText = this.compilePromptText(rootNodeId) || '';
+
+        const contentHtml = `
+            <div class="flex flex-col gap-3">
+                <p class="prompt-opt-subtitle text-xs">Review and directly edit your prompt text below, and/or provide AI edit directives to optimize the map architecture:</p>
+                
+                <div class="flex flex-col gap-1">
+                    <label for="prompt-current-text" class="prompt-opt-label">Current Prompt Text (Directly Editable):</label>
+                    <textarea id="prompt-current-text" placeholder="Current compiled prompt body..." class="w-full bg-slate-950 border border-slate-700/80 text-slate-200 p-3 rounded-lg text-xs font-mono focus:border-amber-500 outline-none resize-none shadow-inner h-36">${this.escapeHTML(currentPromptText)}</textarea>
+                </div>
+
+                <div class="flex flex-col gap-1">
+                    <label for="prompt-edit-directives" class="prompt-opt-label">AI Edit Directives & Alterations (Optional):</label>
+                    <textarea id="prompt-edit-directives" placeholder="e.g. 'Add a constraint requiring strictly valid JSON output', 'Decompose instructions into 3 distinct execution steps', 'Add a python code generation node'..." class="w-full bg-slate-950 border border-slate-700/80 text-slate-200 p-2.5 rounded-lg text-xs font-mono focus:border-amber-500 outline-none resize-none shadow-inner h-24"></textarea>
+                </div>
+
+                <div class="prompt-opt-tip-box text-[10px] p-2 rounded border border-amber-800/40">
+                    💡 <strong>Tip:</strong> You can edit the text directly in the primary area above AND type high-level AI directives in the edit area below!
+                </div>
+            </div>
+        `;
+
+        const actionsHtml = `
+            <button class="cancel-btn px-4 py-2 border border-slate-700 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg transition-colors font-bold text-[11px] uppercase tracking-wider">Cancel</button>
+            <button class="optimize-submit-btn px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg transition-colors font-bold text-[11px] uppercase tracking-wider flex items-center gap-1.5 shadow-lg shadow-amber-900/30">
+                <span>🪄</span> Apply Edits & Optimize
+            </button>
+        `;
+
+        const payload = await this.showDialogModal({
+            title: "🪄 Optimize & Edit Prompt Map",
+            contentHtml: contentHtml,
+            actionsHtml: actionsHtml,
+            onRender: (el, close) => {
+                const mainTa = el.querySelector('#prompt-edit-directives') || el.querySelector('#prompt-current-text');
+                if (mainTa) mainTa.focus();
+                el.querySelector('.cancel-btn').onclick = () => close(null);
+                el.querySelector('.optimize-submit-btn').onclick = () => {
+                    const editedBody = el.querySelector('#prompt-current-text').value.trim();
+                    const directives = el.querySelector('#prompt-edit-directives').value.trim();
+                    if (!editedBody && !directives) {
+                        close(null);
+                        return;
+                    }
+                    let combined = editedBody;
+                    if (directives) {
+                        combined = `Current Prompt Body:\n${editedBody}\n\nUser Edit Directives & Alterations:\n${directives}`;
+                    }
+                    close(combined);
+                };
+            }
+        });
+
+        if (!payload) return;
+
+        if (window.AI && window.AI.optimizePromptMap) {
+            window.AI.optimizePromptMap(rootNodeId, payload, 'optimize');
+        } else {
+            this.showToast("AI Engine not initialized.", "error");
+        }
+    }
+
+    async actionRebuildPromptMap(rootNodeId) {
+        const rootNode = this.kernel.state.nodes.find(n => n.id === rootNodeId);
+        if (!rootNode) return;
+
+        const currentPromptText = this.compilePromptText(rootNodeId) || '';
+
+        const contentHtml = `
+            <div class="flex flex-col gap-3">
+                <p class="prompt-opt-subtitle text-xs">Enter a fresh prompt below to completely rebuild this map from scratch (using your existing prompt architecture as context):</p>
+                
+                <textarea id="prompt-rebuild-input" placeholder="Type or paste fresh instructions to rebuild this prompt map architecture from scratch..." class="w-full bg-slate-950 border border-slate-700/80 text-slate-200 p-3 rounded-lg text-xs font-mono focus:border-amber-500 outline-none resize-none shadow-inner h-44"></textarea>
+
+                <details class="text-[10px] text-slate-400 cursor-pointer">
+                    <summary class="font-semibold text-slate-300 hover:text-amber-400 transition-colors">View Existing Prompt Architecture Reference</summary>
+                    <pre class="p-2.5 bg-slate-950 border border-slate-800 rounded mt-1.5 max-h-28 overflow-y-auto text-[10px] font-mono text-slate-300 whitespace-pre-wrap">${this.escapeHTML(currentPromptText)}</pre>
+                </details>
+
+                <div class="prompt-opt-warning-box text-[10px] p-2.5 rounded border">
+                    ⚠️ <strong>Warning:</strong> Rebuilding will replace all currently connected downstream nodes in this prompt map.
+                </div>
+            </div>
+        `;
+
+        const actionsHtml = `
+            <button class="cancel-btn px-4 py-2 border border-slate-700 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg transition-colors font-bold text-[11px] uppercase tracking-wider">Cancel</button>
+            <button class="rebuild-submit-btn px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg transition-colors font-bold text-[11px] uppercase tracking-wider flex items-center gap-1.5 shadow-lg shadow-amber-900/30">
+                <span>🔄</span> Rebuild Map
+            </button>
+        `;
+
+        const freshPrompt = await this.showDialogModal({
+            title: "🔄 Rebuild Prompt Map",
+            contentHtml: contentHtml,
+            actionsHtml: actionsHtml,
+            onRender: (el, close) => {
+                const ta = el.querySelector('#prompt-rebuild-input');
+                if (ta) ta.focus();
+                el.querySelector('.cancel-btn').onclick = () => close(null);
+                el.querySelector('.rebuild-submit-btn').onclick = () => {
+                    const text = el.querySelector('#prompt-rebuild-input').value.trim();
+                    close(text);
+                };
+            }
+        });
+
+        if (!freshPrompt) return;
+
+        if (window.AI && window.AI.optimizePromptMap) {
+            window.AI.optimizePromptMap(rootNodeId, freshPrompt, 'rebuild');
+        } else {
+            this.showToast("AI Engine not initialized.", "error");
+        }
+    }
+
     async actionCopyPromptAsText(nodeId) {
         const compiledMd = this.compilePromptText(nodeId);
         if (!compiledMd) {
@@ -5765,7 +5930,8 @@ ${innerHtml}
                     iconEl.innerHTML = bp.icon;
                 }
             } else {
-                iconEl.innerHTML = bp.icon;
+                const targetRootIcon = this.kernel.getPortalTargetRootIcon ? this.kernel.getPortalTargetRootIcon(node) : null;
+                iconEl.innerHTML = targetRootIcon || bp.icon;
             }
             labelEl.innerHTML = node.title;
 
@@ -5791,8 +5957,8 @@ ${innerHtml}
                     const childIcon = child.type === 'web-link' ? (() => {
                         const url = this.getWebLinkUrl(child, state);
                         const domain = url ? this.getDomain(url) : null;
-                        return domain ? `<img src="https://www.google.com/s2/favicons?domain=${domain}&sz=32" class="w-3.5 h-3.5 object-contain rounded-sm" onerror="this.src=''; this.onerror=null; this.parentNode.innerHTML='🔗';" />` : this.kernel.getBlueprint(child.type).icon;
-                    })() : this.kernel.getBlueprint(child.type).icon;
+                        return domain ? `<img src="https://www.google.com/s2/favicons?domain=${domain}&sz=32" class="w-3.5 h-3.5 object-contain rounded-sm" onerror="this.src=''; this.onerror=null; this.parentNode.innerHTML='🔗';" />` : ((this.kernel.getPortalTargetRootIcon ? this.kernel.getPortalTargetRootIcon(child) : null) || this.kernel.getBlueprint(child.type).icon);
+                    })() : ((this.kernel.getPortalTargetRootIcon ? this.kernel.getPortalTargetRootIcon(child) : null) || this.kernel.getBlueprint(child.type).icon);
                     moon.innerHTML = childIcon;
                     moon.onpointerdown = (e) => {
                         e.stopPropagation();
@@ -6165,14 +6331,27 @@ ${innerHtml}
                         { text: 'Preview Element 👁️', action: () => this.actionPreviewWebPage(selectedNode.id) }
                     ];
                 } else if (type === 'prompt-root') {
-                    action = () => this.setView('prompt');
-                    text = 'Run Chain';
-                    themeClasses = 'bg-amber-600 hover:bg-amber-500 border-amber-400 text-amber-100 hover:text-white shadow-[0_0_15px_rgba(217,119,6,0.4)]';
-                    options = [
-                        { text: 'Run Chain ⛓️', action: action },
-                        { text: 'Copy as Text ✍️', action: () => this.actionCopyPromptAsText(selectedNode.id) },
-                        { text: 'Download as .md 💾', action: () => this.actionDownloadPromptAsMd(selectedNode.id) }
-                    ];
+                    const hasDownstream = this.kernel.state.connections.some(c => c.from === selectedNode.id);
+                    if (!hasDownstream) {
+                        action = () => this.actionGeneratePromptMap(selectedNode.id);
+                        text = 'Generate';
+                        themeClasses = 'bg-amber-600 hover:bg-amber-500 border-amber-400 text-amber-100 hover:text-white shadow-[0_0_15px_rgba(217,119,6,0.4)]';
+                        options = [
+                            { text: 'Generate 🪄', action: action },
+                            { text: 'Copy as Text ✍️', action: () => this.actionCopyPromptAsText(selectedNode.id) },
+                            { text: 'Download as .md 💾', action: () => this.actionDownloadPromptAsMd(selectedNode.id) }
+                        ];
+                    } else {
+                        action = () => this.actionOptimizePromptMap(selectedNode.id);
+                        text = 'Optimize';
+                        themeClasses = 'bg-amber-600 hover:bg-amber-500 border-amber-400 text-amber-100 hover:text-white shadow-[0_0_15px_rgba(217,119,6,0.4)]';
+                        options = [
+                            { text: 'Optimize 🪄', action: action },
+                            { text: 'Rebuild 🔄', action: () => this.actionRebuildPromptMap(selectedNode.id) },
+                            { text: 'Copy as Text ✍️', action: () => this.actionCopyPromptAsText(selectedNode.id) },
+                            { text: 'Download as .md 💾', action: () => this.actionDownloadPromptAsMd(selectedNode.id) }
+                        ];
+                    }
                 } else if (type === 'agent-root') {
                     action = () => this.setView('agent');
                     text = 'Configure Agent';

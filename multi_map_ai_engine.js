@@ -1160,6 +1160,139 @@ class MultiMapAI {
         this.toggleChat();
     }
 
+    async optimizePromptMap(rootNodeId, userPrompt, mode = 'optimize') {
+        if (!rootNodeId || !userPrompt) return;
+
+        const actionToastMsg = mode === 'generate' ? "Generating prompt map with AI... ✨" : (mode === 'rebuild' ? "Rebuilding prompt map with AI... 🔄" : "Optimizing prompt map with AI... 🪄");
+        if (this.sandbox && this.sandbox.showToast) {
+            this.sandbox.showToast(actionToastMsg, "info");
+        }
+
+        try {
+            const fullPrompt = `[prompt] Optimize and build a structured prompt map for: ${userPrompt}`;
+            let contextStr = '';
+            
+            if (mode === 'optimize' || mode === 'expand') {
+                contextStr = this.buildContextString();
+            }
+
+            const aiResult = await this.geminiAPIGeneration(fullPrompt, contextStr);
+            let jsonString = (aiResult.text || '').trim();
+
+            if (jsonString.startsWith('```')) {
+                jsonString = jsonString.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+            }
+
+            let aiData = JSON.parse(jsonString);
+
+            if (!aiData || !aiData.nodes || !Array.isArray(aiData.nodes)) {
+                throw new Error("Invalid JSON prompt map returned by AI.");
+            }
+
+            const rootNode = this.kernel.state.nodes.find(n => n.id === rootNodeId);
+            if (!rootNode) return;
+
+            // Save history for undo
+            if (this.sandbox && this.sandbox.saveHistoryState) {
+                this.sandbox.saveHistoryState();
+            }
+
+            if (mode === 'generate' || mode === 'rebuild') {
+                // Clear downstream nodes from rootNodeId (preserving rootNodeId itself)
+                const downstream = this.kernel.getDownstreamNodes(rootNodeId);
+                downstream.delete(rootNodeId);
+                this.kernel.state.nodes = this.kernel.state.nodes.filter(n => !downstream.has(n.id));
+                this.kernel.state.connections = this.kernel.state.connections.filter(c => !downstream.has(c.from) && !downstream.has(c.to));
+            }
+
+            // Find AI generated prompt root if any
+            const aiRoot = aiData.nodes.find(n => n.type === 'prompt-root') || aiData.nodes[0];
+            
+            // Map IDs to avoid collisions
+            const idMap = new Map();
+            if (aiRoot) {
+                idMap.set(aiRoot.id, rootNodeId);
+                if (aiRoot.title && mode === 'rebuild') {
+                    rootNode.title = aiRoot.title;
+                }
+            }
+
+            const newNodes = [];
+            const nonRootNodes = aiData.nodes.filter(n => n !== aiRoot);
+
+            nonRootNodes.forEach((n, idx) => {
+                const newId = "p_opt_" + this.kernel.generateId() + "_" + idx;
+                idMap.set(n.id, newId);
+                
+                // Position relative to rootNode
+                const origX = (n.data && typeof n.data.x === 'number') ? n.data.x : ((idx % 2 === 0 ? -160 : 160));
+                const origY = (n.data && typeof n.data.y === 'number') ? n.data.y : Math.floor(idx / 2 + 1) * 120;
+                const posX = (rootNode.data ? rootNode.data.x : 0) + origX;
+                const posY = (rootNode.data ? rootNode.data.y : 0) + origY;
+
+                const nodeObj = {
+                    id: newId,
+                    type: n.type || 'prompt-instruction',
+                    title: n.title || 'Prompt Element',
+                    content: n.content || '',
+                    data: {
+                        x: posX,
+                        y: posY,
+                        isCore: false,
+                        collapsed: false
+                    }
+                };
+                newNodes.push(nodeObj);
+                this.kernel.state.nodes.push(nodeObj);
+            });
+
+            // Reconnect connections
+            if (aiData.connections && Array.isArray(aiData.connections)) {
+                aiData.connections.forEach(c => {
+                    const fromId = idMap.get(c.from);
+                    const toId = idMap.get(c.to);
+                    if (fromId && toId) {
+                        const connObj = {
+                            id: "c_opt_" + this.kernel.generateId(),
+                            from: fromId,
+                            to: toId,
+                            type: c.type || 'structural'
+                        };
+                        const exists = this.kernel.state.connections.some(x => x.from === fromId && x.to === toId);
+                        if (!exists) {
+                            this.kernel.state.connections.push(connObj);
+                        }
+                    }
+                });
+            }
+
+            // If any new non-root node has no structural parent, connect it to rootNodeId
+            newNodes.forEach(n => {
+                const hasParent = this.kernel.state.connections.some(c => c.to === n.id && c.type === 'structural');
+                if (!hasParent) {
+                    this.kernel.state.connections.push({
+                        id: "c_opt_" + this.kernel.generateId(),
+                        from: rootNodeId,
+                        to: n.id,
+                        type: 'structural'
+                    });
+                }
+            });
+
+            this.kernel.notify();
+            this.sandbox.render();
+
+            if (this.sandbox && this.sandbox.showToast) {
+                this.sandbox.showToast("Prompt map successfully optimized!", "success");
+            }
+        } catch (err) {
+            console.error("optimizePromptMap error:", err);
+            if (this.sandbox && this.sandbox.showToast) {
+                this.sandbox.showToast("Failed to optimize prompt: " + (err.message || "AI Error"), "error");
+            }
+        }
+    }
+
     actionUpdateSelected() {
         if (!this.pendingMapData) return;
         const targetId = this.kernel.state.session.selectedId;

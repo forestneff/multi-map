@@ -13,21 +13,223 @@
         .dashboard-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
         .card { background: #1e293b; padding: 16px; border-radius: 8px; border: 1px solid #334155; }
         .card h2 { margin-top: 0; color: #94a3b8; font-size: 1.1rem; border-bottom: 1px solid #334155; padding-bottom: 4px; }
-        .skill-item { background: #0f172a; border: 1px solid #334155; padding: 10px; border-radius: 6px; margin-bottom: 10px; }
-        .skill-item h3 { margin: 0 0 4px 0; color: #f8fafc; font-size: 1rem; }
-        .tool-badge { display: inline-block; background: #475569; color: #f8fafc; font-size: 0.75rem; padding: 2px 6px; border-radius: 4px; margin-right: 4px; margin-top: 4px; }
         .warning { color: #facc15; font-size: 0.85rem; margin-top: 4px; }
         .dry-run-box { background: #1e293b; padding: 16px; border-radius: 8px; border: 1px solid #334155; }
         .dry-run-box input { width: calc(100% - 100px); padding: 8px; background: #0f172a; border: 1px solid #334155; color: #fff; border-radius: 4px; }
         .dry-run-box button { padding: 8px 16px; background: #334155; color: #f8fafc; border: none; border-radius: 4px; cursor: pointer; }
         .dry-run-result { margin-top: 10px; padding: 10px; background: #0f172a; border-radius: 4px; font-family: monospace; font-size: 0.9rem; color: #818cf8; min-height: 40px; }
-        
+
+        /* --- Editable Item Styles --- */
+        .skill-item {
+            background: #0f172a;
+            border: 1px solid #334155;
+            padding: 10px;
+            border-radius: 6px;
+            margin-bottom: 10px;
+            position: relative;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+        .skill-item:hover {
+            border-color: #475569;
+            box-shadow: 0 0 0 1px rgba(129, 140, 248, 0.15);
+        }
+        .skill-item.editing {
+            border-color: #818cf8;
+            box-shadow: 0 0 0 2px rgba(129, 140, 248, 0.25);
+        }
+
+        /* Editable field base */
+        .editable-field {
+            cursor: pointer;
+            padding: 2px 4px;
+            border-radius: 4px;
+            border: 1px solid transparent;
+            transition: border-color 0.15s ease, background 0.15s ease;
+        }
+        .editable-field:hover {
+            border-color: #475569;
+            background: rgba(255,255,255,0.03);
+        }
+
+        /* Skill title */
+        .skill-title {
+            margin: 0 0 4px 0;
+            color: #f8fafc;
+            font-size: 1rem;
+            font-weight: bold;
+        }
+        /* Skill description */
+        .skill-desc {
+            font-size: 0.8rem;
+            margin-bottom: 8px;
+            white-space: pre-wrap;
+            min-height: 1.2em;
+        }
+
+        /* Persona title + content */
+        .persona-title {
+            color: #f8fafc;
+            font-weight: bold;
+            font-size: 1rem;
+            display: block;
+            margin-bottom: 6px;
+        }
+        .persona-content {
+            font-size: 0.9rem;
+            color: #cbd5e1;
+            white-space: pre-wrap;
+            min-height: 1.4em;
+        }
+
+        /* Guardrail items */
+        .guardrail-section { margin-top: 16px; }
+        .guardrail-section h3 { color: #facc15; font-size: 0.9rem; margin: 0 0 8px 0; }
+        .guardrail-item {
+            background: #0f172a;
+            border: 1px solid #334155;
+            padding: 8px 10px;
+            border-radius: 6px;
+            margin-bottom: 6px;
+            position: relative;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+        .guardrail-item:hover {
+            border-color: #475569;
+            box-shadow: 0 0 0 1px rgba(250, 204, 21, 0.15);
+        }
+        .guardrail-item.editing {
+            border-color: #facc15;
+            box-shadow: 0 0 0 2px rgba(250, 204, 21, 0.25);
+        }
+        .guardrail-content {
+            font-size: 0.85rem;
+            white-space: pre-wrap;
+            min-height: 1.2em;
+        }
+
+        /* Tool badges */
+        .tool-badge {
+            display: inline-block;
+            background: #475569;
+            color: #f8fafc;
+            font-size: 0.75rem;
+            padding: 2px 6px;
+            border-radius: 4px;
+            margin-right: 4px;
+            margin-top: 4px;
+            cursor: pointer;
+            transition: background 0.15s ease;
+        }
+        .tool-badge:hover {
+            background: #64748b;
+        }
+        .tool-badge-hint {
+            font-size: 0.65rem;
+            color: #64748b;
+            margin-top: 4px;
+        }
+
+        /* Editing inputs */
+        .edit-title-input {
+            width: 100%;
+            padding: 4px 6px;
+            background: #0f172a;
+            border: 1px solid #818cf8;
+            color: #f8fafc;
+            font-weight: bold;
+            font-size: 1rem;
+            font-family: inherit;
+            border-radius: 4px;
+            outline: none;
+            box-sizing: border-box;
+        }
+        .edit-title-input:focus { box-shadow: 0 0 0 2px rgba(129,140,248,0.3); }
+
+        .edit-textarea {
+            width: 100%;
+            padding: 6px;
+            background: #0f172a;
+            border: 1px solid #818cf8;
+            color: #cbd5e1;
+            font-size: inherit;
+            font-family: inherit;
+            border-radius: 4px;
+            outline: none;
+            resize: none;
+            overflow: hidden;
+            line-height: 1.5;
+            box-sizing: border-box;
+            min-height: 2.5em;
+        }
+        .edit-textarea:focus { box-shadow: 0 0 0 2px rgba(129,140,248,0.3); }
+
+        /* Card actions */
+        .card-actions {
+            display: flex;
+            gap: 4px;
+            opacity: 0;
+            transition: opacity 0.15s ease;
+            position: absolute;
+            top: 8px;
+            right: 8px;
+        }
+        .skill-item:hover .card-actions,
+        .skill-item.editing .card-actions,
+        .guardrail-item:hover .card-actions,
+        .guardrail-item.editing .card-actions {
+            opacity: 1;
+        }
+        .persona-wrapper { position: relative; }
+        .persona-wrapper:hover .card-actions { opacity: 1; }
+
+        .card-action-btn {
+            background: transparent;
+            border: 1px solid #475569;
+            color: #94a3b8;
+            font-size: 0.7rem;
+            padding: 2px 6px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.15s ease, color 0.15s ease;
+            white-space: nowrap;
+        }
+        .card-action-btn:hover {
+            background: #334155;
+            color: #f8fafc;
+        }
+
+        /* Save indicator */
+        .save-indicator {
+            font-size: 0.7rem;
+            color: #818cf8;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            margin-left: 6px;
+            display: inline-block;
+        }
+        .save-indicator.visible { opacity: 1; }
+        .save-indicator.saved { color: #10b981; }
+
+        /* ---- Light Mode ---- */
         body.light-mode { background: #fafaf9; color: #1c1917; }
         body.light-mode .card, body.light-mode .dry-run-box { background: #ffffff; border-color: #e7e5e4; box-shadow: 0 10px 15px rgba(0,0,0,0.1); }
         body.light-mode .card h2, body.light-mode h1 { color: #1c1917; border-bottom-color: #d6d3d1; }
         body.light-mode .skill-item { background: #f5f5f4; border-color: #d6d3d1; }
-        body.light-mode .skill-item h3 { color: #1c1917; }
+        body.light-mode .skill-item:hover { border-color: #a8a29e; box-shadow: 0 0 0 1px rgba(79,70,229,0.15); }
+        body.light-mode .skill-item.editing { border-color: #4f46e5; box-shadow: 0 0 0 2px rgba(79,70,229,0.2); }
+        body.light-mode .skill-title { color: #1c1917; }
+        body.light-mode .persona-title { color: #1c1917; }
+        body.light-mode .persona-content { color: #44403c; }
+        body.light-mode .editable-field:hover { border-color: #d6d3d1; background: rgba(0,0,0,0.02); }
+        body.light-mode .edit-title-input { background: #fafaf9; border-color: #4f46e5; color: #1c1917; }
+        body.light-mode .edit-textarea { background: #fafaf9; border-color: #4f46e5; color: #1c1917; }
         body.light-mode .tool-badge { background: #e7e5e4; color: #44403c; }
+        body.light-mode .tool-badge:hover { background: #d6d3d1; }
+        body.light-mode .card-action-btn { border-color: #d6d3d1; color: #78716c; }
+        body.light-mode .card-action-btn:hover { background: #e7e5e4; color: #1c1917; }
+        body.light-mode .guardrail-item { background: #f5f5f4; border-color: #d6d3d1; }
+        body.light-mode .guardrail-item:hover { border-color: #a8a29e; }
+        body.light-mode .guardrail-item.editing { border-color: #ca8a04; }
         body.light-mode .dry-run-box input { background: #ffffff; border-color: #d6d3d1; color: #1c1917; box-shadow: inset 0 2px 4px rgba(0,0,0,0.05); }
         body.light-mode .dry-run-box button { background: #d6d3d1; color: #1c1917; }
         body.light-mode .dry-run-result { background: #f5f5f4; color: #4f46e5; border: 1px solid #e7e5e4; }
@@ -62,6 +264,11 @@
         let currentState = null;
         let parsedData = null;
 
+        // --- Edit State Tracking ---
+        let editingNodeId = null;
+        let editingField = null;
+        let editOriginalValue = '';
+
         window.addEventListener('message', (event) => {
             if (event.data && event.data.type === 'STATE_UPDATE') {
                 currentState = event.data.state;
@@ -79,6 +286,42 @@
                                target.isContentEditable || 
                                target.closest('[contenteditable="true"]');
             
+            // When actively editing a section, suppress parent passthrough
+            if (isEditable && editingNodeId) {
+                if (e.key === 'Escape') {
+                    cancelEdit();
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return;
+                }
+                if (e.key === 'Enter' && target.tagName === 'INPUT') {
+                    target.blur();
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return;
+                }
+                if (e.key === 'Tab' && target.tagName === 'TEXTAREA') {
+                    e.preventDefault();
+                    const start = target.selectionStart;
+                    const end = target.selectionEnd;
+                    target.value = target.value.substring(0, start) + '\t' + target.value.substring(end);
+                    target.selectionStart = target.selectionEnd = start + 1;
+                    return;
+                }
+                e.stopPropagation();
+                return;
+            }
+
+            // Dry-run input: allow normal editing
+            if (isEditable && target.id === 'dryRunInput') {
+                if (e.key === 'Enter') {
+                    target.blur();
+                    e.preventDefault();
+                    e.stopPropagation();
+                }
+                return;
+            }
+
             if (e.key === 'Enter' && isEditable) {
                 if (target.tagName === 'INPUT') {
                     target.blur();
@@ -106,11 +349,148 @@
             }
         });
 
+        // --- Edit Lifecycle ---
+        function enterEditMode(nodeId, field) {
+            if (editingNodeId && (editingNodeId !== nodeId || editingField !== field)) {
+                commitCurrentEdit();
+            }
+
+            const node = currentState.nodes.find(n => n.id === nodeId);
+            if (!node) return;
+
+            editingNodeId = nodeId;
+            editingField = field;
+            editOriginalValue = field === 'title' ? (node.title || '') : (node.content || '');
+
+            // Find the container element for this node
+            const container = document.querySelector(`[data-node-id="${nodeId}"]`);
+            if (!container) return;
+            container.classList.add('editing');
+
+            if (field === 'title') {
+                const titleEl = container.querySelector('.editable-field.skill-title, .editable-field.persona-title');
+                if (!titleEl) return;
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.className = 'edit-title-input';
+                input.value = editOriginalValue;
+                input.addEventListener('blur', () => commitEdit(nodeId, 'title', input.value));
+                titleEl.replaceWith(input);
+                input.focus();
+                input.select();
+            } else {
+                const contentEl = container.querySelector('.editable-field.skill-desc, .editable-field.persona-content, .editable-field.guardrail-content');
+                if (!contentEl) return;
+                const textarea = document.createElement('textarea');
+                textarea.className = 'edit-textarea';
+                textarea.value = editOriginalValue;
+                textarea.addEventListener('blur', () => commitEdit(nodeId, 'content', textarea.value));
+                textarea.addEventListener('input', () => autoResizeTextarea(textarea));
+                contentEl.replaceWith(textarea);
+                autoResizeTextarea(textarea);
+                textarea.focus();
+            }
+        }
+
+        function commitEdit(nodeId, field, newValue) {
+            if (!editingNodeId || editingNodeId !== nodeId) return;
+
+            const changed = newValue !== editOriginalValue;
+
+            editingNodeId = null;
+            editingField = null;
+            editOriginalValue = '';
+
+            if (changed) {
+                const node = currentState.nodes.find(n => n.id === nodeId);
+                if (node) {
+                    node[field] = newValue;
+                }
+
+                const data = {};
+                data[field] = newValue;
+                window.parent.postMessage({ type: 'UPDATE_NODE', id: nodeId, data: data }, '*');
+
+                showSaveIndicator(nodeId);
+            }
+
+            render();
+        }
+
+        function commitCurrentEdit() {
+            if (!editingNodeId) return;
+            const container = document.querySelector(`[data-node-id="${editingNodeId}"]`);
+            if (!container) {
+                editingNodeId = null;
+                editingField = null;
+                editOriginalValue = '';
+                return;
+            }
+
+            if (editingField === 'title') {
+                const input = container.querySelector('.edit-title-input');
+                if (input) commitEdit(editingNodeId, 'title', input.value);
+            } else {
+                const textarea = container.querySelector('.edit-textarea');
+                if (textarea) commitEdit(editingNodeId, 'content', textarea.value);
+            }
+        }
+
+        function cancelEdit() {
+            if (!editingNodeId) return;
+            editingNodeId = null;
+            editingField = null;
+            editOriginalValue = '';
+            render();
+        }
+
+        function autoResizeTextarea(textarea) {
+            textarea.style.height = 'auto';
+            textarea.style.height = textarea.scrollHeight + 'px';
+        }
+
+        function showSaveIndicator(nodeId) {
+            // Brief delay to let render() finish
+            setTimeout(() => {
+                const container = document.querySelector(`[data-node-id="${nodeId}"]`);
+                if (!container) return;
+                const indicator = container.querySelector('.save-indicator');
+                if (!indicator) return;
+                indicator.textContent = '✓ Saved';
+                indicator.classList.add('visible', 'saved');
+                setTimeout(() => {
+                    indicator.classList.remove('visible', 'saved');
+                }, 1500);
+            }, 50);
+        }
+
+        function selectOnMap(nodeId) {
+            window.parent.postMessage({ type: 'SELECT_NODE', id: nodeId }, '*');
+        }
+
+        function escapeHTML(str) {
+            const d = document.createElement('div');
+            d.textContent = str;
+            return d.innerHTML;
+        }
+
+        // --- Render ---
         function render() {
             if (!currentState) return;
+
+            // If actively editing, don't re-render
+            if (editingNodeId) {
+                const stillExists = currentState.nodes.find(n => n.id === editingNodeId);
+                if (stillExists) return;
+                editingNodeId = null;
+                editingField = null;
+                editOriginalValue = '';
+            }
+
             const agentRoot = currentState.nodes.find(n => n.type === 'agent-root');
             if (!agentRoot) {
-                document.getElementById('container').innerHTML = '<i>No agent-root found in this map.</i>';
+                document.getElementById('persona-content').innerHTML = '<i>No agent-root found in this map.</i>';
+                document.getElementById('skills-content').innerHTML = '';
                 return;
             }
 
@@ -127,19 +507,103 @@
             const nodesArr = Array.from(descendants);
             const persona = nodesArr.find(n => n.type === 'agent-persona');
             const skills = nodesArr.filter(n => n.type === 'agent-skill');
-            const routers = nodesArr.filter(n => n.type === 'agent-router');
+
+            // Identify global guardrails (not nested under a skill)
+            const skillDescendants = new Set();
+            skills.forEach(s => {
+                const gatherSkill = (node) => {
+                    if (!node || skillDescendants.has(node)) return;
+                    skillDescendants.add(node);
+                    getChildren(node.id).forEach(gatherSkill);
+                };
+                getChildren(s.id).forEach(gatherSkill);
+            });
+            const globalGuardrails = nodesArr.filter(n => n.type === 'agent-guardrail' && !skillDescendants.has(n));
 
             parsedData = { root: agentRoot, persona, skills, getChildren, nodesArr };
 
-            // Render Persona
+            // --- Render Persona ---
             const personaEl = document.getElementById('persona-content');
+            personaEl.innerHTML = '';
+
             if (persona) {
-                personaEl.innerHTML = `<strong>${persona.title}</strong><p style="font-size:0.9rem; color:#cbd5e1;">${persona.content}</p>`;
+                const wrapper = document.createElement('div');
+                wrapper.className = 'persona-wrapper';
+                wrapper.dataset.nodeId = persona.id;
+
+                // Actions
+                const actions = document.createElement('div');
+                actions.className = 'card-actions';
+                const selectBtn = document.createElement('button');
+                selectBtn.className = 'card-action-btn';
+                selectBtn.textContent = '🎯 Map';
+                selectBtn.title = 'Select on spatial map';
+                selectBtn.addEventListener('click', (e) => { e.stopPropagation(); selectOnMap(persona.id); });
+                actions.appendChild(selectBtn);
+                wrapper.appendChild(actions);
+
+                // Title
+                const titleEl = document.createElement('span');
+                titleEl.className = 'editable-field persona-title';
+                titleEl.textContent = persona.title;
+                titleEl.addEventListener('click', (e) => { e.stopPropagation(); enterEditMode(persona.id, 'title'); });
+                wrapper.appendChild(titleEl);
+
+                const saveInd = document.createElement('span');
+                saveInd.className = 'save-indicator';
+                wrapper.appendChild(saveInd);
+
+                // Content
+                const contentEl = document.createElement('div');
+                contentEl.className = 'editable-field persona-content';
+                contentEl.textContent = persona.content || '(click to add persona description)';
+                contentEl.addEventListener('click', (e) => { e.stopPropagation(); enterEditMode(persona.id, 'content'); });
+                wrapper.appendChild(contentEl);
+
+                personaEl.appendChild(wrapper);
             } else {
                 personaEl.innerHTML = `<span class="warning">⚠️ No agent-persona node detected.</span>`;
             }
 
-            // Render Skills
+            // --- Render Global Guardrails ---
+            if (globalGuardrails.length > 0) {
+                const guardrailSection = document.createElement('div');
+                guardrailSection.className = 'guardrail-section';
+                guardrailSection.innerHTML = '<h3>🛡️ Global Guardrails</h3>';
+
+                globalGuardrails.forEach(g => {
+                    const item = document.createElement('div');
+                    item.className = 'guardrail-item';
+                    item.dataset.nodeId = g.id;
+
+                    const actions = document.createElement('div');
+                    actions.className = 'card-actions';
+                    const selectBtn = document.createElement('button');
+                    selectBtn.className = 'card-action-btn';
+                    selectBtn.textContent = '🎯 Map';
+                    selectBtn.title = 'Select on spatial map';
+                    selectBtn.addEventListener('click', (e) => { e.stopPropagation(); selectOnMap(g.id); });
+                    actions.appendChild(selectBtn);
+                    item.appendChild(actions);
+
+                    const saveInd = document.createElement('span');
+                    saveInd.className = 'save-indicator';
+                    saveInd.style.display = 'block';
+                    item.appendChild(saveInd);
+
+                    const contentEl = document.createElement('div');
+                    contentEl.className = 'editable-field guardrail-content';
+                    contentEl.textContent = g.content || '(click to add guardrail rule)';
+                    contentEl.addEventListener('click', (e) => { e.stopPropagation(); enterEditMode(g.id, 'content'); });
+                    item.appendChild(contentEl);
+
+                    guardrailSection.appendChild(item);
+                });
+
+                personaEl.appendChild(guardrailSection);
+            }
+
+            // --- Render Skills ---
             const skillsEl = document.getElementById('skills-content');
             skillsEl.innerHTML = '';
             if (skills.length === 0) {
@@ -155,17 +619,98 @@
                     getChildren(s.id).forEach(gatherSkillChildren);
                     
                     const tools = Array.from(skillChildren).filter(n => n.type === 'agent-tool');
-                    const toolHtml = tools.length > 0 
-                        ? tools.map(t => `<span class="tool-badge">${t.title}</span>`).join('') 
-                        : '<div class="warning">⚠️ No tools attached to this skill.</div>';
+                    const skillGuardrails = Array.from(skillChildren).filter(n => n.type === 'agent-guardrail');
 
-                    skillsEl.innerHTML += `
-                        <div class="skill-item">
-                            <h3>${s.title}</h3>
-                            <div style="font-size:0.8rem; margin-bottom:8px;">${s.content}</div>
-                            <div>${toolHtml}</div>
-                        </div>
-                    `;
+                    const item = document.createElement('div');
+                    item.className = 'skill-item';
+                    item.dataset.nodeId = s.id;
+
+                    // Actions
+                    const actions = document.createElement('div');
+                    actions.className = 'card-actions';
+                    const selectBtn = document.createElement('button');
+                    selectBtn.className = 'card-action-btn';
+                    selectBtn.textContent = '🎯 Map';
+                    selectBtn.title = 'Select on spatial map';
+                    selectBtn.addEventListener('click', (e) => { e.stopPropagation(); selectOnMap(s.id); });
+                    actions.appendChild(selectBtn);
+                    item.appendChild(actions);
+
+                    // Title
+                    const titleEl = document.createElement('h3');
+                    titleEl.className = 'editable-field skill-title';
+                    titleEl.textContent = s.title;
+                    titleEl.addEventListener('click', (e) => { e.stopPropagation(); enterEditMode(s.id, 'title'); });
+                    item.appendChild(titleEl);
+
+                    const saveInd = document.createElement('span');
+                    saveInd.className = 'save-indicator';
+                    item.appendChild(saveInd);
+
+                    // Description
+                    const descEl = document.createElement('div');
+                    descEl.className = 'editable-field skill-desc';
+                    descEl.textContent = s.content || '(click to add skill description)';
+                    descEl.addEventListener('click', (e) => { e.stopPropagation(); enterEditMode(s.id, 'content'); });
+                    item.appendChild(descEl);
+
+                    // Tools
+                    const toolsDiv = document.createElement('div');
+                    if (tools.length > 0) {
+                        tools.forEach(t => {
+                            const badge = document.createElement('span');
+                            badge.className = 'tool-badge';
+                            badge.textContent = t.title;
+                            badge.title = 'Click to select on map (edit in Inspector)';
+                            badge.addEventListener('click', (e) => { e.stopPropagation(); selectOnMap(t.id); });
+                            toolsDiv.appendChild(badge);
+                        });
+                        const hint = document.createElement('div');
+                        hint.className = 'tool-badge-hint';
+                        hint.textContent = 'Click a tool to edit in Inspector';
+                        toolsDiv.appendChild(hint);
+                    } else {
+                        toolsDiv.innerHTML = '<div class="warning">⚠️ No tools attached to this skill.</div>';
+                    }
+                    item.appendChild(toolsDiv);
+
+                    // Skill-level guardrails
+                    if (skillGuardrails.length > 0) {
+                        const grDiv = document.createElement('div');
+                        grDiv.style.marginTop = '8px';
+                        grDiv.innerHTML = '<div style="font-size:0.75rem; color:#facc15; margin-bottom:4px;">🛡️ Skill Guardrails:</div>';
+                        skillGuardrails.forEach(g => {
+                            const grItem = document.createElement('div');
+                            grItem.className = 'guardrail-item';
+                            grItem.dataset.nodeId = g.id;
+                            grItem.style.marginBottom = '4px';
+
+                            const grActions = document.createElement('div');
+                            grActions.className = 'card-actions';
+                            const grSelectBtn = document.createElement('button');
+                            grSelectBtn.className = 'card-action-btn';
+                            grSelectBtn.textContent = '🎯 Map';
+                            grSelectBtn.addEventListener('click', (e) => { e.stopPropagation(); selectOnMap(g.id); });
+                            grActions.appendChild(grSelectBtn);
+                            grItem.appendChild(grActions);
+
+                            const grSaveInd = document.createElement('span');
+                            grSaveInd.className = 'save-indicator';
+                            grSaveInd.style.display = 'block';
+                            grItem.appendChild(grSaveInd);
+
+                            const grContent = document.createElement('div');
+                            grContent.className = 'editable-field guardrail-content';
+                            grContent.textContent = g.content || '(click to add guardrail rule)';
+                            grContent.addEventListener('click', (e) => { e.stopPropagation(); enterEditMode(g.id, 'content'); });
+                            grItem.appendChild(grContent);
+
+                            grDiv.appendChild(grItem);
+                        });
+                        item.appendChild(grDiv);
+                    }
+
+                    skillsEl.appendChild(item);
                 });
             }
         }
@@ -184,8 +729,8 @@
             });
 
             if (matchedSkill) {
-                resEl.innerHTML = `✅ <strong>Router selected skill:</strong> ${matchedSkill.title}<br>Tools invoked: ` + 
-                    parsedData.getChildren(matchedSkill.id).filter(n => n.type === 'agent-tool').map(t => t.title).join(', ');
+                resEl.innerHTML = `✅ <strong>Router selected skill:</strong> ${escapeHTML(matchedSkill.title)}<br>Tools invoked: ` + 
+                    parsedData.getChildren(matchedSkill.id).filter(n => n.type === 'agent-tool').map(t => escapeHTML(t.title)).join(', ');
             } else {
                 resEl.innerHTML = `❌ No matching skills found. Agent would fallback to general persona reasoning.`;
             }

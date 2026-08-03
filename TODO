@@ -40,7 +40,7 @@
   - Build a corresponding phase engine (engines/file-explorer.html) and register it in phase-engines.js. It should provide a specialized viewport for viewing, organizing, and executing basic file operations.
   - *Cross-Reference:* Establishes the baseline for external file mapping to be expanded in Task 4.
 
-### [ ] 4. Third-Party Cloud Storage Integrations & Cloud Sync
+### [x] 4. Third-Party Cloud Storage Integrations & Cloud Sync
 - Intent: Extend the file system mapping capabilities to interact with external cloud drives and enable per-page/per-project cloud syncing.
 - Specification: feature-specs/third-party-cloud-spec.md
 - Details:
@@ -59,7 +59,7 @@
   - `Terminal` = flow-io-root map with sub-types for building UI in/out or data/metadata pass (e.g., text entry, file download, yes/no). Calls a modal for user interaction and returns to the flow.
   - Generate a new `Flow-Phase-Engine` with play/pause/stop/skip controls to visually walk through the flowchart, auto-expanding connections and calling map logic/payloads as it traverses.
 
-### [ ] 6. Sectional Text Editing in Prompt/Agent Engines
+### [/] 6. Sectional Text Editing in Prompt/Agent Engines
 - Intent: Improve the text-editing experience for prompt and agent maptypes directly inside their phase engine views.
 - Details:
   - Allow sectional text editing with dynamic updating directly in the prompt and agent phase engine views.

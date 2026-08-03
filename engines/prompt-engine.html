@@ -11,9 +11,6 @@
         .btn:hover { background: #7dd3fc; }
         .section { margin-bottom: 24px; }
         .section h2 { color: #94a3b8; font-size: 1.1rem; border-bottom: 1px solid #334155; padding-bottom: 4px; margin-bottom: 12px; }
-        .node-card { background: #1e293b; padding: 12px; border-radius: 8px; border: 1px solid #334155; margin-bottom: 8px; }
-        .node-card strong { color: #f8fafc; display: block; margin-bottom: 6px; }
-        .node-card pre { white-space: pre-wrap; margin: 0; font-family: inherit; font-size: 0.95rem; }
         .variables-panel { background: #1e293b; border: 1px solid #fbbf24; border-radius: 8px; padding: 12px; margin-bottom: 20px; }
         .variables-panel h3 { margin-top: 0; color: #fbbf24; font-size: 1rem; margin-bottom: 10px; }
         .var-input { display: flex; flex-direction: column; margin-bottom: 8px; }
@@ -21,24 +18,206 @@
         .var-input input { padding: 6px; background: #0f172a; border: 1px solid #334155; color: #fff; border-radius: 4px; }
         .btn-copy { background: #10b981; color: #0f172a; }
         .btn-copy:hover { background: #34d399; }
-        
+
+        /* --- Editable Node Card Styles --- */
+        .node-card {
+            background: #1e293b;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid #334155;
+            margin-bottom: 8px;
+            position: relative;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+        .node-card:hover {
+            border-color: #475569;
+            box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.15);
+        }
+        .node-card.editing {
+            border-color: #f59e0b;
+            box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.25);
+        }
+
+        /* Card header row */
+        .card-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 6px;
+        }
+        .card-title {
+            color: #f8fafc;
+            font-weight: bold;
+            font-size: 0.95rem;
+            flex: 1;
+            cursor: pointer;
+            padding: 2px 4px;
+            border-radius: 4px;
+            border: 1px solid transparent;
+            transition: border-color 0.15s ease, background 0.15s ease;
+        }
+        .card-title:hover {
+            border-color: #475569;
+            background: rgba(255,255,255,0.03);
+        }
+
+        /* Card content (display mode) */
+        .card-content {
+            white-space: pre-wrap;
+            margin: 0;
+            font-family: inherit;
+            font-size: 0.95rem;
+            cursor: pointer;
+            padding: 6px 4px;
+            border-radius: 4px;
+            border: 1px solid transparent;
+            transition: border-color 0.15s ease, background 0.15s ease;
+            min-height: 1.4em;
+        }
+        .card-content:hover {
+            border-color: #475569;
+            background: rgba(255,255,255,0.03);
+        }
+
+        /* Editing inputs */
+        .edit-title-input {
+            width: 100%;
+            flex: 1;
+            padding: 4px 6px;
+            background: #0f172a;
+            border: 1px solid #f59e0b;
+            color: #f8fafc;
+            font-weight: bold;
+            font-size: 0.95rem;
+            font-family: inherit;
+            border-radius: 4px;
+            outline: none;
+            box-sizing: border-box;
+        }
+        .edit-title-input:focus { box-shadow: 0 0 0 2px rgba(245,158,11,0.3); }
+
+        .edit-textarea {
+            width: 100%;
+            padding: 6px;
+            background: #0f172a;
+            border: 1px solid #f59e0b;
+            color: #cbd5e1;
+            font-size: 0.95rem;
+            font-family: inherit;
+            border-radius: 4px;
+            outline: none;
+            resize: none;
+            overflow: hidden;
+            line-height: 1.5;
+            box-sizing: border-box;
+            min-height: 2.5em;
+        }
+        .edit-textarea:focus { box-shadow: 0 0 0 2px rgba(245,158,11,0.3); }
+
+        /* Card action buttons */
+        .card-actions {
+            display: flex;
+            gap: 4px;
+            opacity: 0;
+            transition: opacity 0.15s ease;
+        }
+        .node-card:hover .card-actions,
+        .node-card.editing .card-actions {
+            opacity: 1;
+        }
+        .card-action-btn {
+            background: transparent;
+            border: 1px solid #475569;
+            color: #94a3b8;
+            font-size: 0.7rem;
+            padding: 2px 6px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.15s ease, color 0.15s ease;
+            white-space: nowrap;
+        }
+        .card-action-btn:hover {
+            background: #334155;
+            color: #f8fafc;
+        }
+
+        /* Save indicator */
+        .save-indicator {
+            font-size: 0.7rem;
+            color: #f59e0b;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            margin-left: 6px;
+        }
+        .save-indicator.visible { opacity: 1; }
+        .save-indicator.saved { color: #10b981; }
+
+        /* ---- Light Mode ---- */
         body.light-mode { background: #fafaf9; color: #1c1917; }
         body.light-mode .section h2 { color: #059669; border-bottom-color: #d6d3d1; }
-        body.light-mode .node-card { background: #ffffff; border-color: #e7e5e4; box-shadow: 0 10px 15px rgba(0,0,0,0.1); }
-        body.light-mode .node-card strong { color: #1c1917; }
-        body.light-mode .node-card .type { background: #f5f5f4; color: #78716c; border-color: #d6d3d1; }
-        body.light-mode .var-input { background: #ffffff; border-color: #d6d3d1; color: #1c1917; box-shadow: inset 0 2px 4px rgba(0,0,0,0.05); }
         body.light-mode h1 { color: #1c1917; }
+        body.light-mode .node-card { background: #ffffff; border-color: #e7e5e4; box-shadow: 0 10px 15px rgba(0,0,0,0.1); }
+        body.light-mode .node-card:hover { border-color: #d6d3d1; box-shadow: 0 10px 15px rgba(0,0,0,0.1), 0 0 0 1px rgba(217,119,6,0.15); }
+        body.light-mode .node-card.editing { border-color: #d97706; box-shadow: 0 0 0 2px rgba(217,119,6,0.2); }
+        body.light-mode .card-title { color: #1c1917; }
+        body.light-mode .card-title:hover { border-color: #d6d3d1; background: rgba(0,0,0,0.02); }
+        body.light-mode .card-content { color: #44403c; }
+        body.light-mode .card-content:hover { border-color: #d6d3d1; background: rgba(0,0,0,0.02); }
+        body.light-mode .edit-title-input { background: #fafaf9; border-color: #d97706; color: #1c1917; }
+        body.light-mode .edit-textarea { background: #fafaf9; border-color: #d97706; color: #1c1917; }
+        body.light-mode .card-action-btn { border-color: #d6d3d1; color: #78716c; }
+        body.light-mode .card-action-btn:hover { background: #e7e5e4; color: #1c1917; }
+        body.light-mode .variables-panel { background: #ffffff; border-color: #f59e0b; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
+        body.light-mode .variables-panel h3 { color: #d97706; }
+        body.light-mode .var-input label { color: #475569; font-weight: 600; }
+        body.light-mode .var-input input { background: #fafaf9; border-color: #d6d3d1; color: #1c1917; }
+        body.light-mode .var-input input:focus { border-color: #d97706; outline: none; }
+
+        /* Child attachments inside cards */
+        .card-children-list {
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px dashed #334155;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .card-child-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.75rem;
+            background: rgba(15, 23, 42, 0.5);
+            border: 1px solid #334155;
+            padding: 4px 8px;
+            border-radius: 4px;
+            color: #cbd5e1;
+            cursor: pointer;
+            transition: background 0.15s ease, border-color 0.15s ease;
+        }
+        .card-child-item:hover {
+            background: rgba(30, 41, 59, 0.8);
+            border-color: #38bdf8;
+        }
+        .child-icon { font-size: 0.8rem; }
+        .child-title { font-weight: 600; color: #38bdf8; }
+        .child-link { color: #38bdf8; text-decoration: underline; word-break: break-all; }
+        .child-link:hover { color: #7dd3fc; }
+        .child-text { color: #94a3b8; }
+
+        body.light-mode .card-children-list { border-top-color: #e2e8f0; }
+        body.light-mode .card-child-item { background: #f8fafc; border-color: #cbd5e1; color: #334155; }
+        body.light-mode .card-child-item:hover { background: #f1f5f9; border-color: #0284c7; }
+        body.light-mode .child-title { color: #0284c7; }
+        body.light-mode .child-link { color: #0284c7; }
+        body.light-mode .child-text { color: #64748b; }
     </style>
 </head>
 <body>
     <div id="container">
         <h1>
             Prompt Engine
-            <div style="display: flex; gap: 8px;">
-                <button id="copyBtn" class="btn btn-copy">Copy as Text</button>
-                <button id="exportBtn" class="btn">Export Prompt (.md)</button>
-            </div>
+            <div id="headerActions" style="display: flex; gap: 8px;"></div>
         </h1>
         <div id="variables" style="display:none;"></div>
         <div id="content"></div>
@@ -46,6 +225,11 @@
     <script>
         let currentState = null;
         let varValues = {};
+
+        // --- Edit State Tracking ---
+        let editingNodeId = null;   // ID of the node currently being edited
+        let editingField = null;    // 'title' or 'content'
+        let editOriginalValue = ''; // Original value for cancel
 
         window.addEventListener('message', (event) => {
             if (event.data && event.data.type === 'STATE_UPDATE') {
@@ -64,6 +248,37 @@
                                target.isContentEditable || 
                                target.closest('[contenteditable="true"]');
             
+            // When actively editing a section, suppress parent passthrough
+            if (isEditable && (editingNodeId || target.closest('.var-input'))) {
+                if (e.key === 'Escape') {
+                    // Cancel edit on Escape
+                    if (editingNodeId) {
+                        cancelEdit();
+                    }
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return;
+                }
+                if (e.key === 'Enter' && target.tagName === 'INPUT') {
+                    target.blur(); // Commit title edit on Enter
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return;
+                }
+                if (e.key === 'Tab' && target.tagName === 'TEXTAREA') {
+                    // Insert tab in textarea instead of switching focus
+                    e.preventDefault();
+                    const start = target.selectionStart;
+                    const end = target.selectionEnd;
+                    target.value = target.value.substring(0, start) + '\t' + target.value.substring(end);
+                    target.selectionStart = target.selectionEnd = start + 1;
+                    return;
+                }
+                // Let all other keys flow normally inside the editor
+                e.stopPropagation();
+                return;
+            }
+
             if (e.key === 'Enter' && isEditable) {
                 if (target.tagName === 'INPUT') {
                     target.blur();
@@ -96,8 +311,148 @@
             render();
         }
 
+        // --- Edit Lifecycle ---
+        function enterEditMode(nodeId, field) {
+            // If already editing something else, commit it first
+            if (editingNodeId && (editingNodeId !== nodeId || editingField !== field)) {
+                commitCurrentEdit();
+            }
+
+            const node = currentState.nodes.find(n => n.id === nodeId);
+            if (!node) return;
+
+            editingNodeId = nodeId;
+            editingField = field;
+            editOriginalValue = field === 'title' ? (node.title || '') : (node.content || '');
+
+            const card = document.querySelector(`.node-card[data-node-id="${nodeId}"]`);
+            if (!card) return;
+            card.classList.add('editing');
+
+            if (field === 'title') {
+                const titleEl = card.querySelector('.card-title');
+                if (!titleEl) return;
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.className = 'edit-title-input';
+                input.value = editOriginalValue;
+                input.addEventListener('blur', () => commitEdit(nodeId, 'title', input.value));
+                titleEl.replaceWith(input);
+                input.focus();
+                input.select();
+            } else {
+                const contentEl = card.querySelector('.card-content');
+                if (!contentEl) return;
+                const textarea = document.createElement('textarea');
+                textarea.className = 'edit-textarea';
+                textarea.value = editOriginalValue;
+                textarea.addEventListener('blur', () => commitEdit(nodeId, 'content', textarea.value));
+                textarea.addEventListener('input', () => autoResizeTextarea(textarea));
+                contentEl.replaceWith(textarea);
+                autoResizeTextarea(textarea);
+                textarea.focus();
+            }
+        }
+
+        function commitEdit(nodeId, field, newValue) {
+            if (!editingNodeId || editingNodeId !== nodeId) return;
+
+            const trimmed = newValue;
+            const changed = trimmed !== editOriginalValue;
+
+            // Clear editing state
+            editingNodeId = null;
+            editingField = null;
+            editOriginalValue = '';
+
+            if (changed) {
+                // Optimistic local update
+                const node = currentState.nodes.find(n => n.id === nodeId);
+                if (node) {
+                    node[field] = trimmed;
+                }
+
+                // Send to parent kernel
+                const data = {};
+                data[field] = trimmed;
+                window.parent.postMessage({ type: 'UPDATE_NODE', id: nodeId, data: data }, '*');
+
+                // Flash save indicator
+                showSaveIndicator(nodeId);
+            }
+
+            // Re-render to restore display mode
+            render();
+        }
+
+        function commitCurrentEdit() {
+            if (!editingNodeId) return;
+            const card = document.querySelector(`.node-card[data-node-id="${editingNodeId}"]`);
+            if (!card) {
+                editingNodeId = null;
+                editingField = null;
+                editOriginalValue = '';
+                return;
+            }
+
+            if (editingField === 'title') {
+                const input = card.querySelector('.edit-title-input');
+                if (input) commitEdit(editingNodeId, 'title', input.value);
+            } else {
+                const textarea = card.querySelector('.edit-textarea');
+                if (textarea) commitEdit(editingNodeId, 'content', textarea.value);
+            }
+        }
+
+        function cancelEdit() {
+            if (!editingNodeId) return;
+            editingNodeId = null;
+            editingField = null;
+            editOriginalValue = '';
+            render();
+        }
+
+        function autoResizeTextarea(textarea) {
+            textarea.style.height = 'auto';
+            textarea.style.height = textarea.scrollHeight + 'px';
+        }
+
+        function showSaveIndicator(nodeId) {
+            const card = document.querySelector(`.node-card[data-node-id="${nodeId}"]`);
+            if (!card) return;
+            const indicator = card.querySelector('.save-indicator');
+            if (!indicator) return;
+            indicator.textContent = '✓ Saved';
+            indicator.classList.add('visible', 'saved');
+            setTimeout(() => {
+                indicator.classList.remove('visible', 'saved');
+            }, 1500);
+        }
+
+        function selectOnMap(nodeId) {
+            window.parent.postMessage({ type: 'SELECT_NODE', id: nodeId }, '*');
+        }
+
+        function escapeHTML(str) {
+            const d = document.createElement('div');
+            d.textContent = str;
+            return d.innerHTML;
+        }
+
+        // --- Render ---
         function render() {
             if (!currentState) return;
+
+            // If we're actively editing, don't re-render (prevents cursor loss)
+            if (editingNodeId) {
+                const stillExists = currentState.nodes.find(n => n.id === editingNodeId);
+                if (stillExists) return;
+                // Node was deleted while editing; force clear
+                editingNodeId = null;
+                editingField = null;
+                editOriginalValue = '';
+            }
+
             const container = document.getElementById('content');
             const varsContainer = document.getElementById('variables');
             container.innerHTML = '';
@@ -118,7 +473,12 @@
             };
             currentState.connections.filter(c => c.from === promptRoot.id).forEach(c => gather(c.to));
             
-            const order = ['prompt-role', 'prompt-context', 'prompt-goal', 'prompt-instruction', 'prompt-constraint', 'prompt-example', 'prompt-image', 'prompt-data-analytic', 'prompt-text-to-text', 'prompt-code-gen', 'prompt-chain'];
+            const order = [
+                'prompt-role', 'prompt-context', 'prompt-goal', 'prompt-instruction', 
+                'prompt-constraint', 'prompt-example', 'prompt-image', 'prompt-data-analytic', 
+                'prompt-text-to-text', 'prompt-code-gen', 'prompt-chain', 'web-link', 
+                'web-root', 'file-document', 'note', 'hub', 'portal', 'smart-portal'
+            ];
             const grouped = {};
             order.forEach(o => grouped[o] = []);
             const variables = [];
@@ -128,16 +488,17 @@
                 if (n.type === 'prompt-variable') variables.push(n);
             });
             
+            // Variables panel
             if (variables.length > 0) {
                 varsContainer.style.display = 'block';
-                varsContainer.innerHTML = '<div class="variables-panel"><h3>Variables</h3><div id="var-list"></div></div>';
+                varsContainer.innerHTML = '<div class="section"><h2>Variables</h2><div class="variables-panel"><div id="var-list"></div></div></div>';
                 const varList = document.getElementById('var-list');
                 variables.forEach(v => {
                     const key = v.title.replace(/[^a-zA-Z0-9_]/g, '');
                     if (varValues[key] === undefined) varValues[key] = '';
                     const div = document.createElement('div');
                     div.className = 'var-input';
-                    div.innerHTML = `<label>{{${key}}}</label><input type="text" data-key="${key}" value="${varValues[key]}" placeholder="Enter value for ${key}...">`;
+                    div.innerHTML = `<label>{{${key}}}</label><input type="text" data-key="${key}" value="${escapeHTML(varValues[key])}" placeholder="Enter value for ${key}...">`;
                     varList.appendChild(div);
                 });
                 document.querySelectorAll('.var-input input').forEach(inp => inp.addEventListener('input', handleVarChange));
@@ -156,56 +517,186 @@
             };
 
             let compiledMd = "";
-            let htmlPreview = "";
 
             order.forEach(type => {
-                if (grouped[type].length > 0) {
-                    const sectionName = type.split('-')[1].toUpperCase();
+                if (grouped[type] && grouped[type].length > 0) {
+                    let sectionName = type.split('-').slice(1).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+                    if (type === 'web-link') sectionName = 'Web References';
+                    else if (type === 'web-root') sectionName = 'Web Architecture';
+                    else if (type === 'file-document') sectionName = 'Document References';
+                    else if (type === 'note') sectionName = 'Notes & Attachments';
+
                     compiledMd += `### ${sectionName}\n\n`;
-                    htmlPreview += `<div class="section"><h2>${sectionName}</h2>`;
+
+                    const sectionDiv = document.createElement('div');
+                    sectionDiv.className = 'section';
+                    sectionDiv.innerHTML = `<h2>${escapeHTML(sectionName)}</h2>`;
                     
                     grouped[type].forEach(n => {
-                        const content = injectVars(n.content || n.title);
-                        compiledMd += `${content}\n\n`;
-                        htmlPreview += `<div class="node-card"><strong>${n.title}</strong><pre>${content}</pre></div>`;
+                        const displayContent = injectVars(n.content || n.title);
+                        compiledMd += `${displayContent}\n\n`;
+
+                        const card = document.createElement('div');
+                        card.className = 'node-card';
+                        card.dataset.nodeId = n.id;
+
+                        // Header row: title + actions
+                        const header = document.createElement('div');
+                        header.className = 'card-header';
+
+                        const titleSpan = document.createElement('span');
+                        titleSpan.className = 'card-title';
+                        titleSpan.textContent = n.title;
+                        titleSpan.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            enterEditMode(n.id, 'title');
+                        });
+
+                        const saveInd = document.createElement('span');
+                        saveInd.className = 'save-indicator';
+
+                        const actions = document.createElement('div');
+                        actions.className = 'card-actions';
+
+                        const selectBtn = document.createElement('button');
+                        selectBtn.className = 'card-action-btn';
+                        selectBtn.textContent = '🎯 Map';
+                        selectBtn.title = 'Select this node on the spatial map';
+                        selectBtn.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            selectOnMap(n.id);
+                        });
+                        actions.appendChild(selectBtn);
+
+                        header.appendChild(titleSpan);
+                        header.appendChild(saveInd);
+                        header.appendChild(actions);
+
+                        // Content display
+                        const contentDiv = document.createElement('div');
+                        contentDiv.className = 'card-content';
+                        contentDiv.textContent = displayContent;
+                        contentDiv.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            enterEditMode(n.id, 'content');
+                        });
+
+                        card.appendChild(header);
+                        card.appendChild(contentDiv);
+
+                        // Render attached child nodes (e.g. web-links, sub-notes attached directly to this node)
+                        const childConns = currentState.connections.filter(c => c.from === n.id);
+                        if (childConns.length > 0) {
+                            const childListDiv = document.createElement('div');
+                            childListDiv.className = 'card-children-list';
+                            childConns.forEach(c => {
+                                const childNode = currentState.nodes.find(x => x.id === c.to);
+                                if (!childNode) return;
+                                
+                                const childDiv = document.createElement('div');
+                                childDiv.className = 'card-child-item';
+                                childDiv.dataset.nodeId = childNode.id;
+                                
+                                if (childNode.type === 'web-link') {
+                                    const url = childNode.content || '#';
+                                    const displayUrl = url.length > 60 ? url.substring(0, 57) + '...' : url;
+                                    childDiv.innerHTML = `
+                                        <span class="child-icon">🔗</span>
+                                        <span class="child-title">${escapeHTML(childNode.title)}:</span>
+                                        <a href="${escapeHTML(url)}" target="_blank" class="child-link" onclick="event.stopPropagation()">${escapeHTML(displayUrl)}</a>
+                                    `;
+                                } else {
+                                    const childIcon = childNode.type === 'note' ? '📝' : (childNode.type === 'file-document' ? '📄' : '📌');
+                                    const childText = injectVars(childNode.content || childNode.title);
+                                    childDiv.innerHTML = `
+                                        <span class="child-icon">${childIcon}</span>
+                                        <span class="child-title">${escapeHTML(childNode.title)}:</span>
+                                        <span class="child-text">${escapeHTML(childText)}</span>
+                                    `;
+                                }
+                                
+                                childDiv.addEventListener('click', (e) => {
+                                    e.stopPropagation();
+                                    selectOnMap(childNode.id);
+                                });
+                                
+                                childListDiv.appendChild(childDiv);
+                            });
+                            card.appendChild(childListDiv);
+                        }
+
+                        sectionDiv.appendChild(card);
                     });
-                    htmlPreview += `</div>`;
+
+                    container.appendChild(sectionDiv);
                 }
             });
 
-            container.innerHTML = htmlPreview;
             window.currentCompiledMd = compiledMd;
-        }
 
-        document.getElementById('copyBtn').addEventListener('click', () => {
-            if (!window.currentCompiledMd) return;
+            const actionsContainer = document.getElementById('headerActions');
+            const hasDownstream = (descendants && descendants.size > 0) || variables.length > 0;
             
-            // Post message to parent so it copies text and displays toast notification
-            window.parent.postMessage({
-                type: 'mm-copy-text',
-                text: window.currentCompiledMd
-            }, '*');
-
-            const copyBtn = document.getElementById('copyBtn');
-            const originalText = copyBtn.textContent;
-            copyBtn.textContent = "Copied!";
-            copyBtn.style.background = "#059669";
-            setTimeout(() => {
-                copyBtn.textContent = originalText;
-                copyBtn.style.background = "#10b981";
-            }, 2000);
-        });
-
-        document.getElementById('exportBtn').addEventListener('click', () => {
-            if (!window.currentCompiledMd) return;
-            const blob = new Blob([window.currentCompiledMd], { type: 'text/markdown' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'prompt.md';
-            a.click();
-            URL.revokeObjectURL(url);
-        });
+            if (actionsContainer) {
+                if (!hasDownstream) {
+                    actionsContainer.innerHTML = `
+                        <button id="generateBtn" class="btn btn-optimize">Generate 🪄</button>
+                        <button id="copyBtn" class="btn btn-copy">Copy as Text</button>
+                        <button id="exportBtn" class="btn">Export Prompt (.md)</button>
+                    `;
+                } else {
+                    actionsContainer.innerHTML = `
+                        <button id="optimizeBtn" class="btn btn-optimize">Optimize 🪄</button>
+                        <button id="rebuildBtn" class="btn btn-rebuild">Rebuild 🔄</button>
+                        <button id="copyBtn" class="btn btn-copy">Copy as Text</button>
+                        <button id="exportBtn" class="btn">Export Prompt (.md)</button>
+                    `;
+                }
+                
+                const genBtn = document.getElementById('generateBtn');
+                if (genBtn) {
+                    genBtn.onclick = () => {
+                        window.parent.postMessage({ type: 'ACTION', action: 'GENERATE_PROMPT', id: promptRoot.id }, '*');
+                    };
+                }
+                const optBtn = document.getElementById('optimizeBtn');
+                if (optBtn) {
+                    optBtn.onclick = () => {
+                        window.parent.postMessage({ type: 'ACTION', action: 'OPTIMIZE_PROMPT', id: promptRoot.id }, '*');
+                    };
+                }
+                const rebBtn = document.getElementById('rebuildBtn');
+                if (rebBtn) {
+                    rebBtn.onclick = () => {
+                        window.parent.postMessage({ type: 'ACTION', action: 'REBUILD_PROMPT', id: promptRoot.id }, '*');
+                    };
+                }
+                const copyBtn = document.getElementById('copyBtn');
+                if (copyBtn) {
+                    copyBtn.onclick = () => {
+                        if (!window.currentCompiledMd) return;
+                        window.parent.postMessage({ type: 'mm-copy-text', text: window.currentCompiledMd }, '*');
+                        const origText = copyBtn.textContent;
+                        copyBtn.textContent = "Copied!";
+                        copyBtn.style.background = "#059669";
+                        setTimeout(() => { copyBtn.textContent = origText; copyBtn.style.background = "#10b981"; }, 2000);
+                    };
+                }
+                const expBtn = document.getElementById('exportBtn');
+                if (expBtn) {
+                    expBtn.onclick = () => {
+                        if (!window.currentCompiledMd) return;
+                        const blob = new Blob([window.currentCompiledMd], { type: 'text/markdown' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = 'prompt.md';
+                        a.click();
+                        URL.revokeObjectURL(url);
+                    };
+                }
+            }
+        }
     </script>
 </body>
 </html>
