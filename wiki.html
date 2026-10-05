@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Multi-Map | Comprehensive Wiki v14.11</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="multi-map-formatter.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
         @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600&display=swap');
@@ -162,6 +163,7 @@
             <a href="#physics" class="nav-link pl-8">11. Force-Directed Physics</a>
             <a href="#library-engine" class="nav-link pl-8">12. Serverless Library Engine</a>
             <a href="#roadmap" class="nav-link pl-8">13. Federation Roadmap</a>
+            <a href="#ecosystem-api" class="nav-link pl-8 text-sky-400">14. Ecosystem API & Sharing</a>
         </nav>
 
         <div class="p-4 border-t border-slate-800 bg-slate-900 sticky bottom-0">
@@ -895,8 +897,665 @@
                 </div>
             </section>
 
+            <!-- 14. Ecosystem API & Link Sharing Engine -->
+            <section id="ecosystem-api" class="mb-20 pt-8 border-t border-slate-800/50 scroll-mt-24 md:scroll-mt-10">
+                <div class="flex flex-wrap items-center justify-between gap-4 mb-4">
+                    <h3 class="text-2xl font-black flex items-center gap-3 text-white">
+                        <span>14. Ecosystem API & Link Sharing Engine</span>
+                        <span class="text-xs px-2.5 py-0.5 rounded-full bg-sky-500/20 text-sky-400 border border-sky-500/30 font-semibold tracking-wide uppercase">REST &amp; SDK v1.0</span>
+                    </h3>
+                    <a href="#api-tester" class="text-xs font-bold text-sky-400 hover:text-sky-300 bg-sky-950/60 hover:bg-sky-900/60 border border-sky-800/80 px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5">
+                        <span>⚡</span> Jump to Live API Tester
+                    </a>
+                </div>
+
+                <p class="text-slate-400 leading-relaxed mb-6">
+                    Multi-Map exposes a unified HTTP API endpoint that accepts JSON payloads from external web applications, companion tools, and automation bots. The endpoint either validates pre-formatted mapstates, deterministically adapts simple trees/lists into maps, or delegates unstructured data to our Gemini AI engine. Once processed, the map is persisted to Cloud Firestore (<code>shared_maps</code>) and returns an instant public view URL (<code>/view.html?token=...</code>) compatible with our link-sharing and real-time viewers.
+                </p>
+
+                <!-- Architecture Overview Diagram -->
+                <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 mb-8">
+                    <h4 class="text-xs font-black uppercase text-slate-400 tracking-widest mb-4">Request Flow &amp; Dual-Mode Architecture</h4>
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 text-center">
+                        <div class="bg-slate-950 border border-slate-800 p-4 rounded-lg flex flex-col items-center justify-center">
+                            <span class="text-2xl mb-1">🔌</span>
+                            <span class="font-bold text-xs text-white">External App</span>
+                            <span class="text-[10px] text-slate-400 mt-1">Sends JSON with X-API-Key</span>
+                        </div>
+                        <div class="bg-slate-950 border border-slate-800 p-4 rounded-lg flex flex-col items-center justify-center">
+                            <span class="text-2xl mb-1">🔀</span>
+                            <span class="font-bold text-xs text-sky-400">POST /api/share</span>
+                            <span class="text-[10px] text-slate-400 mt-1">Direct · Adapter · AI</span>
+                        </div>
+                        <div class="bg-slate-950 border border-slate-800 p-4 rounded-lg flex flex-col items-center justify-center">
+                            <span class="text-2xl mb-1">☁️</span>
+                            <span class="font-bold text-xs text-emerald-400">shared_maps/{token}</span>
+                            <span class="text-[10px] text-slate-400 mt-1">Firestore UUID Document</span>
+                        </div>
+                        <div class="bg-slate-950 border border-slate-800 p-4 rounded-lg flex flex-col items-center justify-center">
+                            <span class="text-2xl mb-1">🗺️</span>
+                            <span class="font-bold text-xs text-purple-400">/view.html?token=...</span>
+                            <span class="text-[10px] text-slate-400 mt-1">Immediate Viewable URL</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 1. Authentication & API Keys -->
+                <div class="mb-10">
+                    <h4 class="text-lg font-bold text-sky-400 mb-3 flex items-center gap-2">
+                        <span>14.1 Authentication &amp; Getting an API Key</span>
+                    </h4>
+                    <p class="text-sm text-slate-300 leading-relaxed mb-4">
+                        All requests to <code>/api/share</code> must be authenticated. The API supports two authentication mechanisms:
+                    </p>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                        <!-- Service API Key -->
+                        <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
+                            <div class="flex items-center justify-between mb-2">
+                                <h5 class="font-bold text-white text-sm">A. Service API Key (Recommended for Apps)</h5>
+                                <span class="text-[10px] font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded">Machine-to-Machine</span>
+                            </div>
+                            <p class="text-xs text-slate-400 leading-relaxed mb-3">
+                                Pass your assigned ecosystem key via the <code>X-API-Key</code> request header. Service callers receive a high-capacity rate limit (10,000 requests/day).
+                            </p>
+                            <div class="bg-slate-950 border border-slate-800/80 rounded p-2.5 text-xs font-mono text-emerald-300 flex items-center justify-between">
+                                <span>X-API-Key: mm_sec_dev_ecosystem_key_2026</span>
+                                <button onclick="navigator.clipboard.writeText('mm_sec_dev_ecosystem_key_2026'); alert('Copied Development Key to clipboard!');" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-200 px-2 py-1 rounded transition-colors font-sans">Copy Key</button>
+                            </div>
+                            <p class="text-[11px] text-slate-500 mt-2">
+                                <strong>Default Dev Key:</strong> <code>mm_sec_dev_ecosystem_key_2026</code> is active for local testing and emulator environments.
+                            </p>
+                        </div>
+
+                        <!-- Firebase Auth Bearer -->
+                        <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
+                            <div class="flex items-center justify-between mb-2">
+                                <h5 class="font-bold text-white text-sm">B. Firebase Auth Bearer Token</h5>
+                                <span class="text-[10px] font-bold uppercase tracking-wider bg-sky-500/20 text-sky-400 border border-sky-500/30 px-2 py-0.5 rounded">User Context</span>
+                            </div>
+                            <p class="text-xs text-slate-400 leading-relaxed mb-3">
+                                Pass a Firebase User ID token via the standard <code>Authorization: Bearer &lt;token&gt;</code> header. Map ownership is automatically attributed to the authenticated user's UID.
+                            </p>
+                            <div class="bg-slate-950 border border-slate-800/80 rounded p-2.5 text-xs font-mono text-sky-300">
+                                Authorization: Bearer eyJhbGciOiJSUzI1...
+                            </div>
+                            <p class="text-[11px] text-slate-500 mt-2">
+                                Ideal for single-page applications or users signed in through Firebase Auth.
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- How to configure keys -->
+                    <div class="bg-slate-900/60 border border-slate-800 rounded-xl p-5">
+                        <h5 class="font-bold text-slate-200 text-xs uppercase tracking-wider mb-2">How Administrators Configure / Rotate Keys</h5>
+                        <p class="text-xs text-slate-400 leading-relaxed mb-2">
+                            To configure custom production keys for partner applications:
+                        </p>
+                        <ol class="list-decimal pl-5 text-xs text-slate-300 space-y-1.5">
+                            <li>Open <code>functions/.env</code> in your project repository.</li>
+                            <li>Set or append <code>ECOSYSTEM_API_KEY = "your-custom-production-secret"</code>.</li>
+                            <li>Deploy the cloud function updates via <code>firebase deploy --only functions</code>.</li>
+                            <li>To grant keys to partner apps, share this secret securely. The middleware also accepts any key prefixed with <code>dev-</code> when running in non-production emulator environments.</li>
+                        </ol>
+                    </div>
+                </div>
+
+                <!-- 2. Endpoint Specification -->
+                <div class="mb-10">
+                    <h4 class="text-lg font-bold text-sky-400 mb-3 flex items-center gap-2">
+                        <span>14.2 Endpoint Specification</span>
+                    </h4>
+
+                    <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden mb-6">
+                        <div class="bg-slate-800/60 px-5 py-3 border-b border-slate-700/60 flex flex-wrap items-center justify-between gap-2">
+                            <div class="flex items-center gap-3">
+                                <span class="px-2 py-0.5 bg-emerald-600 text-white font-mono font-bold text-xs rounded">POST</span>
+                                <code class="text-white font-bold text-sm bg-transparent p-0">/api/share</code>
+                                <span class="text-slate-400 text-xs">(also aliased to <code>/share</code>)</span>
+                            </div>
+                            <span class="text-xs text-slate-400 font-mono">Content-Type: application/json</span>
+                        </div>
+
+                        <div class="p-5">
+                            <h5 class="text-xs font-black uppercase text-slate-400 tracking-wider mb-3">Request Body Parameters</h5>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left text-xs text-slate-300 border-collapse">
+                                    <thead>
+                                        <tr class="table-header">
+                                            <th class="p-2.5">Field</th>
+                                            <th class="p-2.5">Type</th>
+                                            <th class="p-2.5">Default</th>
+                                            <th class="p-2.5">Description</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr class="table-row">
+                                            <td class="p-2.5 font-bold text-white font-mono">payload</td>
+                                            <td class="p-2.5 text-sky-400 font-mono">Object | Array | String</td>
+                                            <td class="p-2.5 text-slate-500 italic">Required</td>
+                                            <td class="p-2.5">The map data. Can be a full Multi-Map MapState, a tree hierarchy, a list, a dictionary, or text.</td>
+                                        </tr>
+                                        <tr class="table-row">
+                                            <td class="p-2.5 font-bold text-white font-mono">title</td>
+                                            <td class="p-2.5 text-sky-400 font-mono">String</td>
+                                            <td class="p-2.5 text-slate-400 font-mono">null</td>
+                                            <td class="p-2.5">Optional map title override. If omitted, inferred from payload or defaults to "Untitled Map".</td>
+                                        </tr>
+                                        <tr class="table-row">
+                                            <td class="p-2.5 font-bold text-white font-mono">mode</td>
+                                            <td class="p-2.5 text-sky-400 font-mono">String</td>
+                                            <td class="p-2.5 text-emerald-400 font-mono">"auto"</td>
+                                            <td class="p-2.5"><code>"auto"</code> | <code>"direct"</code> | <code>"adapter"</code> | <code>"ai"</code>. Governs how payload is parsed.</td>
+                                        </tr>
+                                        <tr class="table-row">
+                                            <td class="p-2.5 font-bold text-white font-mono">expiresInDays</td>
+                                            <td class="p-2.5 text-sky-400 font-mono">Number | null</td>
+                                            <td class="p-2.5 text-slate-400 font-mono">30</td>
+                                            <td class="p-2.5">Days until public link expires. Set to <code>null</code> or <code>0</code> for permanent links.</td>
+                                        </tr>
+                                        <tr class="table-row">
+                                            <td class="p-2.5 font-bold text-white font-mono">prompt</td>
+                                            <td class="p-2.5 text-sky-400 font-mono">String</td>
+                                            <td class="p-2.5 text-slate-400 font-mono">null</td>
+                                            <td class="p-2.5">Instructions for Gemini AI (e.g. <em>"Turn this outline into an interactive flowchart"</em>).</td>
+                                        </tr>
+                                        <tr class="table-row">
+                                            <td class="p-2.5 font-bold text-white font-mono">mapType</td>
+                                            <td class="p-2.5 text-sky-400 font-mono">String</td>
+                                            <td class="p-2.5 text-slate-400 font-mono">"generic"</td>
+                                            <td class="p-2.5">Phase engine/root hint: <code>"generic"</code>, <code>"link"</code>, <code>"web"</code>, <code>"flow"</code>, <code>"prompt"</code>, <code>"agent"</code>.</td>
+                                        </tr>
+                                        <tr class="table-row">
+                                            <td class="p-2.5 font-bold text-white font-mono">author</td>
+                                            <td class="p-2.5 text-sky-400 font-mono">String</td>
+                                            <td class="p-2.5 text-slate-400 font-mono">"API Integration"</td>
+                                            <td class="p-2.5">Creator or application display name displayed in the view banner.</td>
+                                        </tr>
+                                        <tr class="table-row">
+                                            <td class="p-2.5 font-bold text-white font-mono">includeMapState</td>
+                                            <td class="p-2.5 text-sky-400 font-mono">Boolean</td>
+                                            <td class="p-2.5 text-slate-400 font-mono">false</td>
+                                            <td class="p-2.5">If <code>true</code>, echoes back the full synthesized MapState object in the response.</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <h5 class="text-xs font-black uppercase text-slate-400 tracking-wider mt-6 mb-3">Response Schema (200 OK)</h5>
+                            <pre><code>{
+  "success": true,
+  "shareUrl": "https://multi-map-app/view.html?token=9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+  "token": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+  "mapId": "map_m8k1p2_abc123",
+  "title": "Engineering Roadmap",
+  "expiresAt": "2026-11-04T18:37:00.000Z",  // null if permanent
+  "mode": "adapter",                        // "direct" | "adapter" | "ai"
+  "mapState": { ... }                       // Included only if includeMapState=true
+}</code></pre>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3. Four Processing Modes -->
+                <div class="mb-10">
+                    <h4 class="text-lg font-bold text-sky-400 mb-3 flex items-center gap-2">
+                        <span>14.3 The Four Processing Modes</span>
+                    </h4>
+                    <p class="text-sm text-slate-300 leading-relaxed mb-4">
+                        Choose the right mode depending on whether your data is already structured or needs smart transformation:
+                    </p>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <!-- Direct Mode -->
+                        <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
+                            <h5 class="font-bold text-white text-sm mb-2 flex items-center gap-2">
+                                <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                                Direct Mode (<code>mode: "direct"</code>)
+                            </h5>
+                            <p class="text-xs text-slate-400 leading-relaxed mb-3">
+                                For applications already producing Multi-Map schema JSON (with <code>nodes</code> and <code>connections</code>). The server validates constraints, enforces schema integrity, and immediately publishes.
+                            </p>
+                            <pre class="text-[11px]"><code>{
+  "nodes": [{ "id": "r1", "type": "root", "title": "Root" }],
+  "connections": []
+}</code></pre>
+                        </div>
+
+                        <!-- Adapter Mode -->
+                        <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
+                            <h5 class="font-bold text-white text-sm mb-2 flex items-center gap-2">
+                                <span class="w-2 h-2 rounded-full bg-sky-400"></span>
+                                Adapter Mode (<code>mode: "adapter"</code>)
+                            </h5>
+                            <p class="text-xs text-slate-400 leading-relaxed mb-3">
+                                Instant, deterministic conversion of common lightweight data shapes without AI latency:
+                            </p>
+                            <ul class="text-xs text-slate-300 list-disc pl-4 space-y-1 mb-2">
+                                <li><strong>Nested Trees:</strong> <code>{ title, children: [...] }</code></li>
+                                <li><strong>Arrays / Lists:</strong> <code>["Item A", "https://link.com"]</code></li>
+                                <li><strong>Categories:</strong> <code>{ "Group A": ["1", "2"] }</code></li>
+                            </ul>
+                        </div>
+
+                        <!-- AI Mode -->
+                        <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
+                            <h5 class="font-bold text-white text-sm mb-2 flex items-center gap-2">
+                                <span class="w-2 h-2 rounded-full bg-purple-400"></span>
+                                AI Engine Mode (<code>mode: "ai"</code>)
+                            </h5>
+                            <p class="text-xs text-slate-400 leading-relaxed mb-3">
+                                Pipes unstructured text, messy JSON, or raw markdown through Gemini with the <code>generate-mapstate</code> skill prompt to architect structured mind-maps, flowcharts, or link hubs.
+                            </p>
+                            <pre class="text-[11px]"><code>{
+  "prompt": "Create a flowchart of our user onboarding",
+  "payload": "User signs up -> verifies email -> onboarding modal..."
+}</code></pre>
+                        </div>
+
+                        <!-- Auto Mode -->
+                        <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
+                            <h5 class="font-bold text-white text-sm mb-2 flex items-center gap-2">
+                                <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+                                Auto Sniffing (<code>mode: "auto"</code>)
+                            </h5>
+                            <p class="text-xs text-slate-400 leading-relaxed mb-3">
+                                The recommended default. Checks if payload is already valid mapstate (Direct); if not, checks if it matches a tree, list, or dictionary (Adapter); otherwise forwards to AI.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 4. Client SDK -->
+                <div class="mb-10">
+                    <h4 class="text-lg font-bold text-sky-400 mb-3 flex items-center gap-2">
+                        <span>14.4 Client SDK (<code>multi-map-formatter.js</code>)</span>
+                    </h4>
+                    <p class="text-sm text-slate-300 leading-relaxed mb-4">
+                        We provide a universal client-side library hosted right at <code>/multi-map-formatter.js</code>. You can load it via script tag or copy it directly into any web application or Node.js service.
+                    </p>
+
+                    <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 mb-4">
+                        <h5 class="text-xs font-bold text-white uppercase tracking-wider mb-2">Browser Script Include</h5>
+                        <pre><code>&lt;script src="https://&lt;your-domain&gt;/multi-map-formatter.js"&gt;&lt;/script&gt;
+&lt;script&gt;
+  // 1. Convert simple tree hierarchy to valid MapState
+  const mapState = MultiMapFormatter.fromTree({
+    title: "Project Alpha",
+    children: [
+      { title: "Frontend", children: [{ title: "Components" }] },
+      { title: "Backend", children: [{ title: "Database" }] }
+    ]
+  });
+
+  // 2. Or build and share in one single call!
+  const result = await MultiMapFormatter.shareMap('/api/share', {
+    title: "Quick Share",
+    children: [{ title: "Node 1" }, { title: "Node 2" }]
+  }, {
+    apiKey: "mm_sec_dev_ecosystem_key_2026",
+    expiresInDays: 30
+  });
+
+  console.log("View link:", result.shareUrl);
+&lt;/script&gt;</code></pre>
+                    </div>
+                </div>
+
+                <!-- 5. Code Recipes -->
+                <div class="mb-10">
+                    <h4 class="text-lg font-bold text-sky-400 mb-3 flex items-center gap-2">
+                        <span>14.5 Copy-and-Paste Code Recipes</span>
+                    </h4>
+
+                    <div class="space-y-4">
+                        <!-- cURL -->
+                        <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
+                            <h5 class="font-bold text-white text-xs uppercase tracking-wider mb-2 flex items-center justify-between">
+                                <span>cURL (Adapter Mode — Tree)</span>
+                                <button onclick="navigator.clipboard.writeText(document.getElementById('curl-code').innerText); alert('cURL copied!');" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2.5 py-1 rounded">Copy</button>
+                            </h5>
+                            <pre><code id="curl-code">curl -X POST https://&lt;your-domain&gt;/api/share \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: mm_sec_dev_ecosystem_key_2026" \
+  -d '{
+    "title": "API Tree Demo",
+    "mode": "adapter",
+    "expiresInDays": 30,
+    "payload": {
+      "title": "Root Task",
+      "children": [
+        { "title": "Subtask 1", "content": "Details here" },
+        { "title": "Documentation", "url": "https://example.com" }
+      ]
+    }
+  }'</code></pre>
+                        </div>
+
+                        <!-- JavaScript Fetch -->
+                        <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
+                            <h5 class="font-bold text-white text-xs uppercase tracking-wider mb-2">JavaScript (Fetch API)</h5>
+                            <pre><code>async function createSharedMap(treeData) {
+  const response = await fetch('/api/share', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-API-Key': 'mm_sec_dev_ecosystem_key_2026'
+    },
+    body: JSON.stringify({
+      title: "Shared Workspace Map",
+      payload: treeData,
+      mode: "auto",
+      expiresInDays: 30
+    })
+  });
+
+  const data = await response.json();
+  if (data.success) {
+    window.open(data.shareUrl, '_blank');
+  }
+}</code></pre>
+                        </div>
+
+                        <!-- Python -->
+                        <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
+                            <h5 class="font-bold text-white text-xs uppercase tracking-wider mb-2">Python (requests)</h5>
+                            <pre><code>import requests
+
+url = "https://&lt;your-domain&gt;/api/share"
+headers = {
+    "Content-Type": "application/json",
+    "X-API-Key": "mm_sec_dev_ecosystem_key_2026"
+}
+payload = {
+    "title": "Python Generated Map",
+    "mode": "adapter",
+    "expiresInDays": 14,
+    "payload": {
+        "title": "Machine Learning Pipeline",
+        "children": [
+            {"title": "Data Ingestion"},
+            {"title": "Model Training", "children": [{"title": "Hyperparameter Tuning"}]},
+            {"title": "Deployment", "url": "https://ml.example.com"}
+        ]
+    }
+}
+
+res = requests.post(url, json=payload, headers=headers)
+data = res.json()
+print("Interactive Map URL:", data.get("shareUrl"))</code></pre>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 6. Live Interactive API Tester Console -->
+                <div id="api-tester" class="bg-slate-900 border-2 border-sky-500/40 rounded-2xl p-6 shadow-2xl relative scroll-mt-24">
+                    <div class="flex flex-wrap items-center justify-between gap-2 mb-4 pb-4 border-b border-slate-800">
+                        <div>
+                            <h4 class="text-xl font-black text-white flex items-center gap-2">
+                                <span>⚡ Live API Tester Workbench</span>
+                            </h4>
+                            <p class="text-xs text-slate-400 mt-1">
+                                Test the live API endpoint right from this documentation page and generate an actual shared map view link.
+                            </p>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-[11px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-1 rounded">Status: Ready</span>
+                        </div>
+                    </div>
+
+                    <!-- Presets Bar -->
+                    <div class="flex flex-wrap items-center gap-2 mb-4">
+                        <span class="text-xs font-bold text-slate-400">Load Preset:</span>
+                        <button type="button" onclick="loadTesterPreset('tree')" class="text-xs bg-slate-800 hover:bg-slate-700 text-sky-300 px-3 py-1 rounded-lg border border-slate-700 transition-colors">Hierarchy Tree</button>
+                        <button type="button" onclick="loadTesterPreset('list')" class="text-xs bg-slate-800 hover:bg-slate-700 text-sky-300 px-3 py-1 rounded-lg border border-slate-700 transition-colors">Resource Links</button>
+                        <button type="button" onclick="loadTesterPreset('categories')" class="text-xs bg-slate-800 hover:bg-slate-700 text-sky-300 px-3 py-1 rounded-lg border border-slate-700 transition-colors">Tech Hubs</button>
+                        <button type="button" onclick="loadTesterPreset('ai')" class="text-xs bg-slate-800 hover:bg-slate-700 text-purple-300 px-3 py-1 rounded-lg border border-slate-700 transition-colors">AI Outline Prompt</button>
+                        <button type="button" onclick="loadTesterPreset('direct')" class="text-xs bg-slate-800 hover:bg-slate-700 text-emerald-300 px-3 py-1 rounded-lg border border-slate-700 transition-colors">Direct MapState</button>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-300 mb-1">Endpoint URL</label>
+                            <input type="text" id="tester-url" value="/api/share" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white font-mono outline-none focus:border-sky-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-300 mb-1">X-API-Key</label>
+                            <input type="text" id="tester-key" value="mm_sec_dev_ecosystem_key_2026" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-emerald-400 font-mono outline-none focus:border-sky-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-300 mb-1">Processing Mode</label>
+                            <select id="tester-mode" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 outline-none focus:border-sky-500">
+                                <option value="auto">auto (Detects Schema, Adapter, or AI)</option>
+                                <option value="adapter">adapter (Tree, List, Categories)</option>
+                                <option value="direct">direct (Multi-Map Schema)</option>
+                                <option value="ai">ai (Gemini Synthesis)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-300 mb-1">Map Title</label>
+                            <input type="text" id="tester-title" value="Ecosystem Project Plan" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-sky-500">
+                        </div>
+                        <div class="flex gap-4">
+                            <div class="flex-1">
+                                <label class="block text-xs font-bold text-slate-300 mb-1">Expires In (Days)</label>
+                                <input type="number" id="tester-expires" value="30" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-sky-500">
+                            </div>
+                            <div class="flex-1">
+                                <label class="block text-xs font-bold text-slate-300 mb-1">Map Type</label>
+                                <select id="tester-maptype" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 outline-none focus:border-sky-500">
+                                    <option value="generic">generic (Mind Map)</option>
+                                    <option value="link">link (Link Tree / Hub)</option>
+                                    <option value="web">web (Web Layout)</option>
+                                    <option value="flow">flow (Flowchart)</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="block text-xs font-bold text-slate-300 mb-1">JSON Payload or Prompt Text</label>
+                        <textarea id="tester-payload" rows="8" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-xs font-mono text-sky-300 outline-none focus:border-sky-500"></textarea>
+                    </div>
+
+                    <div class="flex items-center gap-3 mb-6">
+                        <button type="button" id="tester-btn" onclick="executeApiTest()" class="px-5 py-2.5 bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-lg text-xs transition-all shadow-lg hover:shadow-sky-500/20 flex items-center gap-2">
+                            <span>🚀</span> Execute API Request
+                        </button>
+                        <span id="tester-status" class="text-xs text-slate-400"></span>
+                    </div>
+
+                    <!-- Output Console -->
+                    <div id="tester-output-box" class="hidden bg-slate-950 border border-slate-800 rounded-xl p-4">
+                        <div class="flex items-center justify-between mb-3 pb-2 border-b border-slate-800">
+                            <span class="text-xs font-bold text-white flex items-center gap-2">
+                                <span id="tester-badge" class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">200 OK</span>
+                                <span>Response Payload</span>
+                            </span>
+                            <a id="tester-link-btn" href="#" target="_blank" class="hidden text-xs bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1.5 shadow">
+                                <span>🗺️</span> Open Shared Map View →
+                            </a>
+                        </div>
+                        <pre id="tester-response" class="max-h-64 overflow-y-auto custom-scrollbar font-mono text-xs text-slate-300 m-0"></pre>
+                    </div>
+                </div>
+            </section>
         </div>
     </main>
+
+    <!-- Interactive Tester Script -->
+    <script>
+        const testerPresets = {
+            tree: {
+                title: "Engineering Roadmap",
+                mode: "adapter",
+                mapType: "generic",
+                payload: {
+                    title: "Engineering Goals",
+                    children: [
+                        {
+                            title: "Frontend Architecture",
+                            children: [
+                                { title: "Phase Engine Optimizations" },
+                                { title: "Touch Gesture Handler" }
+                            ]
+                        },
+                        {
+                            title: "Cloud Vault Services",
+                            children: [
+                                { title: "Ecosystem Sharing API" },
+                                { title: "Automated Daily Pruning" }
+                            ]
+                        }
+                    ]
+                }
+            },
+            list: {
+                title: "Useful Developer Links",
+                mode: "adapter",
+                mapType: "link",
+                payload: [
+                    "https://github.com",
+                    "https://developer.mozilla.org",
+                    { title: "Firebase Console", url: "https://console.firebase.google.com" },
+                    { title: "Tailwind Documentation", url: "https://tailwindcss.com/docs" }
+                ]
+            },
+            categories: {
+                title: "Technology Stack",
+                mode: "adapter",
+                mapType: "generic",
+                payload: {
+                    "Frontend": ["Vanilla JavaScript", "Tailwind CSS", "HTML5 Canvas"],
+                    "Backend": ["Firebase Functions", "Cloud Firestore", "Node.js 24"],
+                    "AI Services": ["Google Gemini 2.5", "Skill Prompting"]
+                }
+            },
+            ai: {
+                title: "SaaS Product Onboarding Flow",
+                mode: "ai",
+                mapType: "flow",
+                payload: "Create an interactive flowchart showing how a new enterprise customer signs up, verifies email, assigns team seats, and completes their first map."
+            },
+            direct: {
+                title: "Pre-formatted Constellation",
+                mode: "direct",
+                mapType: "generic",
+                payload: {
+                    map_id: "demo_constellation",
+                    meta: { title: "Pre-formatted Constellation", type: "generic" },
+                    nodes: [
+                        { id: "root_1", type: "root", title: "Central Galaxy", data: { x: 0, y: 0, isCore: true } },
+                        { id: "n_1", type: "hub", title: "Star Cluster A", data: { x: 220, y: -80 } },
+                        { id: "n_2", type: "note", title: "Planetary Node", data: { x: 220, y: 80 } }
+                    ],
+                    connections: [
+                        { id: "c1", from: "root_1", to: "n_1", type: "structural" },
+                        { id: "c2", from: "root_1", to: "n_2", type: "structural" }
+                    ]
+                }
+            }
+        };
+
+        function loadTesterPreset(key) {
+            const preset = testerPresets[key];
+            if (!preset) return;
+            document.getElementById('tester-title').value = preset.title;
+            document.getElementById('tester-mode').value = preset.mode;
+            document.getElementById('tester-maptype').value = preset.mapType;
+            document.getElementById('tester-payload').value = typeof preset.payload === 'string'
+                ? preset.payload
+                : JSON.stringify(preset.payload, null, 2);
+        }
+
+        // Initialize default preset
+        document.addEventListener('DOMContentLoaded', () => {
+            loadTesterPreset('tree');
+        });
+
+        async function executeApiTest() {
+            const btn = document.getElementById('tester-btn');
+            const statusEl = document.getElementById('tester-status');
+            const outputBox = document.getElementById('tester-output-box');
+            const badgeEl = document.getElementById('tester-badge');
+            const responseEl = document.getElementById('tester-response');
+            const linkBtn = document.getElementById('tester-link-btn');
+
+            const url = document.getElementById('tester-url').value.trim() || '/api/share';
+            const apiKey = document.getElementById('tester-key').value.trim();
+            const mode = document.getElementById('tester-mode').value;
+            const title = document.getElementById('tester-title').value.trim();
+            const expiresIn = parseInt(document.getElementById('tester-expires').value) || 30;
+            const mapType = document.getElementById('tester-maptype').value;
+            const rawPayloadStr = document.getElementById('tester-payload').value.trim();
+
+            let payloadObj;
+            try {
+                payloadObj = JSON.parse(rawPayloadStr);
+            } catch (e) {
+                // If not valid JSON, treat as raw text prompt
+                payloadObj = rawPayloadStr;
+            }
+
+            btn.disabled = true;
+            btn.innerHTML = '<span>⏳</span> Sending Request...';
+            statusEl.textContent = 'Calling API endpoint...';
+            outputBox.classList.remove('hidden');
+            linkBtn.classList.add('hidden');
+
+            const startTime = Date.now();
+            try {
+                const headers = { 'Content-Type': 'application/json' };
+                if (apiKey) headers['X-API-Key'] = apiKey;
+
+                const body = {
+                    title: title || undefined,
+                    mode,
+                    mapType,
+                    expiresInDays: expiresIn,
+                    payload: payloadObj,
+                    includeMapState: true
+                };
+
+                const res = await fetch(url, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify(body)
+                });
+
+                const latency = Date.now() - startTime;
+                const data = await res.json().catch(() => ({}));
+
+                badgeEl.textContent = `${res.status} ${res.statusText || (res.ok ? 'OK' : 'Error')}`;
+                if (res.ok) {
+                    badgeEl.className = "px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30";
+                    statusEl.textContent = `Completed in ${latency}ms`;
+                    if (data.shareUrl) {
+                        linkBtn.href = data.shareUrl;
+                        linkBtn.classList.remove('hidden');
+                    }
+                } else {
+                    badgeEl.className = "px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30";
+                    statusEl.textContent = `Failed (${latency}ms)`;
+                }
+
+                responseEl.textContent = JSON.stringify(data, null, 2);
+
+            } catch (err) {
+                const latency = Date.now() - startTime;
+                badgeEl.textContent = 'Network Error';
+                badgeEl.className = "px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30";
+                statusEl.textContent = `Error (${latency}ms)`;
+                responseEl.textContent = String(err.message || err);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<span>🚀</span> Execute API Request';
+            }
+        }
+    </script>
 
     <!-- Interactive Sidebar Logic -->
     <script>
