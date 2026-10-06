@@ -291,6 +291,17 @@ window.Auth = {
                     </div>
                 </div>
 
+                <!-- Personal Developer API Key -->
+                <div class="border-t border-slate-800 pt-3 flex flex-col gap-2">
+                    <div class="flex items-center justify-between">
+                        <h4 class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">🔑 Personal API Key</h4>
+                        <span class="text-[9px] text-emerald-400 font-bold bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded">30 calls / day</span>
+                    </div>
+                    <div id="profile-apikey-container" class="flex flex-col gap-2 bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+                        <div class="text-[10px] text-slate-500">Checking API key...</div>
+                    </div>
+                </div>
+
                 ${isAdmin ? `
                 <a href="admin.html" class="w-full py-2 bg-amber-900/40 hover:bg-amber-800/60 text-amber-300 text-xs font-bold rounded transition-colors border border-amber-700/60 text-center flex items-center justify-center gap-2">
                     <span>⚙️</span> Admin Console
@@ -298,6 +309,7 @@ window.Auth = {
                 <button onclick="window.Auth.logout()" class="w-full py-2 bg-slate-800 hover:bg-red-600 text-white text-xs font-bold rounded transition-colors border border-slate-700 mt-2">Logout</button>
             </div>
             `;
+            setTimeout(() => this.loadUserApiKey(), 60);
         } else if (this.currentView === 'forgot_password') {
             html += `
             <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow flex flex-col gap-4">
@@ -531,5 +543,141 @@ window.Auth = {
         localStorage.setItem('mm_theme', isLight ? 'light' : 'dark');
         this.renderProfile(document.getElementById('profile-content'));
         if (window.SC) window.SC.render();
+    },
+
+    getApiEndpoint: function(path) {
+        const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        if (isLocal) {
+            return `http://${window.location.hostname}:5001/mm-multi-map/us-central1/generateMapState${path}`;
+        }
+        return path;
+    },
+
+    loadUserApiKey: async function() {
+        const container = document.getElementById('profile-apikey-container');
+        if (!container || !auth.currentUser) return;
+
+        try {
+            const token = await auth.currentUser.getIdToken();
+            const res = await fetch(this.getApiEndpoint('/api/keys/my-key'), {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
+            if (!res.ok) {
+                container.innerHTML = `<div class="text-[10px] text-rose-400">Failed to load API key status.</div>`;
+                return;
+            }
+
+            const data = await res.json();
+            if (data.hasKey) {
+                container.innerHTML = `
+                    <div class="flex items-center justify-between">
+                        <span class="text-[11px] font-mono font-bold text-indigo-300">${data.keyPrefix}</span>
+                        <span class="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-bold">Active</span>
+                    </div>
+                    <div class="flex items-center justify-between text-[10px] text-slate-400">
+                        <span>Today's usage:</span>
+                        <span class="font-mono text-slate-300 font-bold">${data.callsUsedToday || 0} / ${data.dailyLimit || 30} calls</span>
+                    </div>
+                    <div class="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden">
+                        <div class="bg-indigo-500 h-full rounded-full transition-all" style="width: ${Math.min(100, Math.round(((data.callsUsedToday || 0) / (data.dailyLimit || 30)) * 100))}%"></div>
+                    </div>
+                    <div class="flex items-center gap-2 pt-1 border-t border-slate-900 mt-1">
+                        <a href="wiki.html" target="_blank" class="text-[10px] text-indigo-400 hover:underline">API Docs</a>
+                        <span class="text-slate-600 text-[10px]">•</span>
+                        <button onclick="window.Auth.revokeUserApiKey()" class="text-[10px] text-rose-400 hover:text-rose-300 hover:underline cursor-pointer ml-auto">Revoke Key</button>
+                    </div>
+                `;
+            } else {
+                container.innerHTML = `
+                    <p class="text-[10px] text-slate-400 leading-normal">
+                        Generate a developer key to programmatically create and share Mind Maps from external tools.
+                    </p>
+                    <button onclick="window.Auth.requestUserApiKey()" class="w-full py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-bold rounded transition-colors shadow flex items-center justify-center gap-1.5 cursor-pointer">
+                        <span>✨</span> Request API Key
+                    </button>
+                `;
+            }
+        } catch (err) {
+            console.error('Failed to load user API key:', err);
+            if (container) container.innerHTML = `<div class="text-[10px] text-slate-500">API key service unavailable.</div>`;
+        }
+    },
+
+    requestUserApiKey: async function() {
+        const container = document.getElementById('profile-apikey-container');
+        if (!container || !auth.currentUser) return;
+
+        container.innerHTML = `<div class="text-[10px] text-indigo-400 animate-pulse">Generating your API key...</div>`;
+
+        try {
+            const token = await auth.currentUser.getIdToken();
+            const res = await fetch(this.getApiEndpoint('/api/keys/request'), {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ name: 'Personal API Key' })
+            });
+
+            const data = await res.json();
+            if (!res.ok) {
+                container.innerHTML = `
+                    <div class="text-[10px] text-rose-400 mb-1">${data.error || 'Failed to request API key.'}</div>
+                    <button onclick="window.Auth.loadUserApiKey()" class="text-[10px] text-slate-400 hover:underline">Retry</button>
+                `;
+                return;
+            }
+
+            container.innerHTML = `
+                <div class="p-2 bg-emerald-950/40 border border-emerald-500/30 rounded flex flex-col gap-1.5">
+                    <div class="text-[10px] font-bold text-emerald-400">Key Created Successfully!</div>
+                    <div class="text-[9px] text-amber-300 font-semibold leading-tight">⚠️ Copy this key now! For security, it will not be shown again.</div>
+                    <div class="flex items-center gap-1 bg-slate-900 p-1.5 rounded border border-slate-700">
+                        <input type="text" readonly value="${data.key}" id="new-user-api-key-val" class="flex-1 bg-transparent text-[10px] font-mono text-emerald-300 outline-none select-all">
+                        <button onclick="navigator.clipboard.writeText('${data.key}').then(() => alert('API Key copied to clipboard!'))" class="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-500 text-white text-[9px] font-bold rounded">Copy</button>
+                    </div>
+                    <div class="flex items-center justify-between text-[9px] text-slate-400 mt-1">
+                        <span>Limit: 30 calls / day</span>
+                        <button onclick="window.Auth.loadUserApiKey()" class="text-indigo-400 hover:underline">Done</button>
+                    </div>
+                </div>
+            `;
+        } catch (err) {
+            console.error('Failed to request API key:', err);
+            container.innerHTML = `<div class="text-[10px] text-rose-400">Network error while creating key.</div>`;
+        }
+    },
+
+    revokeUserApiKey: async function() {
+        if (!confirm('Are you sure you want to revoke your API key? Any applications using it will immediately stop working.')) {
+            return;
+        }
+
+        const container = document.getElementById('profile-apikey-container');
+        if (container) container.innerHTML = `<div class="text-[10px] text-slate-400 animate-pulse">Revoking key...</div>`;
+
+        try {
+            const token = await auth.currentUser.getIdToken();
+            const res = await fetch(this.getApiEndpoint('/api/keys/revoke'), {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
+            if (!res.ok) {
+                const data = await res.json();
+                alert(data.error || 'Failed to revoke API key.');
+            }
+        } catch (err) {
+            console.error('Failed to revoke API key:', err);
+            alert('Error revoking API key.');
+        } finally {
+            this.loadUserApiKey();
+        }
     }
 };

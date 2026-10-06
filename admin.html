@@ -83,6 +83,7 @@
         <div class="flex gap-4 border-b border-slate-800/80 pb-2 shrink-0">
             <button id="tab-btn-ai" onclick="switchMainDashboardTab('ai')" class="text-xs font-black uppercase tracking-wider pb-2 border-b-2 border-indigo-500 text-indigo-400 cursor-pointer bg-transparent border-none">AI Prompt Audits</button>
             <button id="tab-btn-telemetry" onclick="switchMainDashboardTab('telemetry')" class="text-xs font-black uppercase tracking-wider pb-2 border-b-2 border-transparent text-slate-400 hover:text-slate-300 cursor-pointer bg-transparent border-none">Telemetry & Feedback</button>
+            <button id="tab-btn-apikeys" onclick="switchMainDashboardTab('apikeys')" class="text-xs font-black uppercase tracking-wider pb-2 border-b-2 border-transparent text-slate-400 hover:text-slate-300 cursor-pointer bg-transparent border-none">API Keys & Ecosystem</button>
         </div>
 
         <!-- AI Tab Content -->
@@ -308,6 +309,101 @@
                 </section>
             </div>
         </div>
+
+        <!-- API Keys Tab Content -->
+        <div id="apikeys-tab-content" class="flex flex-col flex-1 gap-6 min-h-0 hidden">
+            <!-- Header & Generator Section -->
+            <section class="glass p-6 rounded-2xl flex flex-col gap-4 shadow-xl">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-slate-800 pb-3">
+                    <div>
+                        <h2 class="text-lg font-black text-white flex items-center gap-2">
+                            <span>🔑</span> Generic & Service API Key Generator
+                        </h2>
+                        <p class="text-xs text-slate-400 mt-0.5">
+                            Issue scoped ecosystem, service, partner, or admin keys with custom daily quotas.
+                        </p>
+                    </div>
+                    <span class="text-[10px] font-mono bg-indigo-500/10 text-indigo-400 border border-indigo-500/30 px-2 py-1 rounded">
+                        SHA-256 Hashed • Zero Plaintext Stored
+                    </span>
+                </div>
+
+                <!-- Generator Form -->
+                <div class="grid grid-cols-1 sm:grid-cols-4 gap-4 items-end">
+                    <div class="flex flex-col gap-1">
+                        <label class="text-[10px] text-slate-400 uppercase font-black tracking-wider">Key Name / Client</label>
+                        <input type="text" id="admin-key-name" placeholder="e.g. Ecosystem Webhook Bot" class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs outline-none focus:border-indigo-500">
+                    </div>
+                    <div class="flex flex-col gap-1">
+                        <label class="text-[10px] text-slate-400 uppercase font-black tracking-wider">Role / Type</label>
+                        <select id="admin-key-role" class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs outline-none focus:border-indigo-500">
+                            <option value="service" selected>Service (mm_svc_...)</option>
+                            <option value="partner">Partner (mm_live_...)</option>
+                            <option value="admin">Administrator (mm_admin_...)</option>
+                            <option value="user">User (mm_live_...)</option>
+                        </select>
+                    </div>
+                    <div class="flex flex-col gap-1">
+                        <label class="text-[10px] text-slate-400 uppercase font-black tracking-wider">Daily Call Limit</label>
+                        <input type="number" id="admin-key-limit" value="1000" min="1" max="100000" class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs outline-none focus:border-indigo-500">
+                    </div>
+                    <div>
+                        <button onclick="generateAdminApiKey()" class="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold transition-all shadow-[0_0_15px_rgba(79,70,229,0.4)] flex items-center justify-center gap-2 cursor-pointer">
+                            <span>✨</span> Generate Key
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Newly Generated Key Alert Box (Hidden by default) -->
+                <div id="admin-new-key-box" class="hidden p-4 bg-emerald-950/40 border border-emerald-500/40 rounded-xl flex flex-col gap-2 transition-all">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                            <span>✅</span> Key Created Successfully!
+                        </span>
+                        <span class="text-[10px] font-bold text-amber-300">⚠️ Copy now — it will never be displayed again!</span>
+                    </div>
+                    <div class="flex items-center gap-2 bg-slate-950 p-2 rounded-lg border border-slate-800">
+                        <input type="text" id="admin-new-key-value" readonly class="flex-1 bg-transparent font-mono text-xs text-emerald-300 outline-none select-all">
+                        <button id="admin-copy-key-btn" onclick="copyGeneratedAdminKey()" class="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded cursor-pointer">
+                            Copy
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Inventory Table Section -->
+            <section class="glass flex-1 rounded-2xl overflow-hidden flex flex-col shadow-xl">
+                <div class="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-950/40">
+                    <h3 class="text-xs font-black text-slate-300 uppercase tracking-widest flex items-center gap-2">
+                        <span>📋</span> Active & Historical API Keys
+                    </h3>
+                    <button onclick="loadAdminApiKeys()" class="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 cursor-pointer">
+                        <span>🔄</span> Refresh Keys
+                    </button>
+                </div>
+                <div class="flex-1 overflow-auto">
+                    <table class="w-full text-left border-collapse min-w-[800px]">
+                        <thead class="sticky top-0 bg-slate-950/80 backdrop-blur-md border-b border-slate-800/80 z-10">
+                            <tr class="text-[10px] text-slate-400 uppercase font-bold tracking-wider">
+                                <th class="p-4">Key Name</th>
+                                <th class="p-4">Prefix</th>
+                                <th class="p-4">Role</th>
+                                <th class="p-4">Daily Quota</th>
+                                <th class="p-4">Created</th>
+                                <th class="p-4">Last Used</th>
+                                <th class="p-4 text-center">Status</th>
+                                <th class="p-4 text-center">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="admin-apikeys-body">
+                            <tr>
+                                <td colspan="8" class="p-8 text-center text-slate-500 text-xs italic">Loading API keys...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </div>
     </div>
 
     <!-- Script layer -->
@@ -353,28 +449,185 @@
             return source === 'Local' ? localUrl : prodUrl;
         };
 
+        const getPrimaryAdminBaseUrl = () => {
+            const endpoints = getEndpoints();
+            return endpoints.length > 0 ? endpoints[0].url : "https://us-central1-mm-multi-map.cloudfunctions.net/generateMapState";
+        };
+
         function switchMainDashboardTab(tab) {
             const aiTab = document.getElementById('ai-tab-content');
             const telTab = document.getElementById('telemetry-tab-content');
+            const keyTab = document.getElementById('apikeys-tab-content');
             const aiBtn = document.getElementById('tab-btn-ai');
             const telBtn = document.getElementById('tab-btn-telemetry');
+            const keyBtn = document.getElementById('tab-btn-apikeys');
+
+            [aiTab, telTab, keyTab].forEach(t => t && t.classList.add('hidden'));
+            [aiBtn, telBtn, keyBtn].forEach(b => {
+                if (b) {
+                    b.classList.remove('border-indigo-500', 'text-indigo-400');
+                    b.classList.add('border-transparent', 'text-slate-400');
+                }
+            });
 
             if (tab === 'ai') {
-                aiTab.classList.remove('hidden');
-                telTab.classList.add('hidden');
-                aiBtn.classList.add('border-indigo-500', 'text-indigo-400');
-                aiBtn.classList.remove('border-transparent', 'text-slate-400');
-                telBtn.classList.add('border-transparent', 'text-slate-400');
-                telBtn.classList.remove('border-indigo-500', 'text-indigo-400');
+                aiTab?.classList.remove('hidden');
+                aiBtn?.classList.add('border-indigo-500', 'text-indigo-400');
+                aiBtn?.classList.remove('border-transparent', 'text-slate-400');
                 loadLogs();
-            } else {
-                aiTab.classList.add('hidden');
-                telTab.classList.remove('hidden');
-                telBtn.classList.add('border-indigo-500', 'text-indigo-400');
-                telBtn.classList.remove('border-transparent', 'text-slate-400');
-                aiBtn.classList.add('border-transparent', 'text-slate-400');
-                aiBtn.classList.remove('border-indigo-500', 'text-indigo-400');
+            } else if (tab === 'telemetry') {
+                telTab?.classList.remove('hidden');
+                telBtn?.classList.add('border-indigo-500', 'text-indigo-400');
+                telBtn?.classList.remove('border-transparent', 'text-slate-400');
                 loadTelemetryLogs();
+            } else if (tab === 'apikeys') {
+                keyTab?.classList.remove('hidden');
+                keyBtn?.classList.add('border-indigo-500', 'text-indigo-400');
+                keyBtn?.classList.remove('border-transparent', 'text-slate-400');
+                loadAdminApiKeys();
+            }
+        }
+
+        // --- Admin API Keys Management ---
+        let currentAdminApiKeys = [];
+
+        async function loadAdminApiKeys() {
+            const tbody = document.getElementById('admin-apikeys-body');
+            if (!tbody) return;
+
+            tbody.innerHTML = `<tr><td colspan="8" class="p-8 text-center text-slate-500 text-xs italic">Loading API keys...</td></tr>`;
+
+            try {
+                const baseUrl = getPrimaryAdminBaseUrl();
+                const res = await fetch(`${baseUrl}/admin/api-keys`);
+                if (!res.ok) {
+                    throw new Error(`Failed to load keys: HTTP ${res.status}`);
+                }
+                const data = await res.json();
+                currentAdminApiKeys = data.keys || [];
+
+                if (currentAdminApiKeys.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="8" class="p-8 text-center text-slate-500 text-xs italic">No API keys issued yet. Generate your first key above.</td></tr>`;
+                    return;
+                }
+
+                tbody.innerHTML = currentAdminApiKeys.map(k => {
+                    const isRevoked = !!k.revoked;
+                    const statusBadge = isRevoked
+                        ? `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/30">Revoked</span>`
+                        : `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Active</span>`;
+
+                    let roleBadge = `<span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-800 text-slate-300 uppercase">${k.role || 'user'}</span>`;
+                    if (k.role === 'admin') {
+                        roleBadge = `<span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-500/10 text-purple-300 border border-purple-500/30 uppercase">Admin</span>`;
+                    } else if (k.role === 'service') {
+                        roleBadge = `<span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-500/10 text-indigo-300 border border-indigo-500/30 uppercase">Service</span>`;
+                    } else if (k.role === 'partner') {
+                        roleBadge = `<span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-cyan-500/10 text-cyan-300 border border-cyan-500/30 uppercase">Partner</span>`;
+                    }
+
+                    const actionBtn = isRevoked
+                        ? `<span class="text-[10px] text-slate-600 italic">None</span>`
+                        : `<button onclick="revokeAdminApiKey('${k.id}')" class="px-2 py-1 bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white rounded text-[10px] font-bold transition-colors border border-rose-500/30 cursor-pointer">Revoke</button>`;
+
+                    return `
+                        <tr class="border-b border-slate-800/60 hover:bg-slate-900/40 transition-colors">
+                            <td class="p-4 font-semibold text-xs text-white">
+                                <div>${escapeHtml(k.name || 'API Key')}</div>
+                                <div class="text-[10px] text-slate-500 font-mono">${k.email || k.uid || ''}</div>
+                            </td>
+                            <td class="p-4 font-mono text-xs text-indigo-300">${k.key_prefix || '---'}</td>
+                            <td class="p-4">${roleBadge}</td>
+                            <td class="p-4 font-mono text-xs text-slate-300">${k.daily_limit ? `${k.daily_limit.toLocaleString()} / day` : 'Unlimited'}</td>
+                            <td class="p-4 text-xs text-slate-400">${formatRelativeTime(k.created_at)}</td>
+                            <td class="p-4 text-xs text-slate-400">${formatRelativeTime(k.last_used_at)}</td>
+                            <td class="p-4 text-center">${statusBadge}</td>
+                            <td class="p-4 text-center">${actionBtn}</td>
+                        </tr>
+                    `;
+                }).join('');
+
+            } catch (err) {
+                console.error('Failed to load admin API keys:', err);
+                tbody.innerHTML = `<tr><td colspan="8" class="p-8 text-center text-rose-400 text-xs">Failed to load API keys: ${escapeHtml(err.message)}</td></tr>`;
+            }
+        }
+
+        async function generateAdminApiKey() {
+            const nameInput = document.getElementById('admin-key-name');
+            const roleSelect = document.getElementById('admin-key-role');
+            const limitInput = document.getElementById('admin-key-limit');
+            const keyBox = document.getElementById('admin-new-key-box');
+            const keyVal = document.getElementById('admin-new-key-value');
+
+            const name = (nameInput?.value || '').trim() || 'Generic API Key';
+            const role = roleSelect?.value || 'service';
+            const dailyLimit = Number(limitInput?.value) || 1000;
+
+            try {
+                const baseUrl = getPrimaryAdminBaseUrl();
+                const res = await fetch(`${baseUrl}/admin/api-keys/create`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, role, dailyLimit })
+                });
+
+                const data = await res.json();
+                if (!res.ok) {
+                    alert(data.error || 'Failed to generate key.');
+                    return;
+                }
+
+                if (keyBox && keyVal) {
+                    keyVal.value = data.key;
+                    keyBox.classList.remove('hidden');
+                }
+
+                if (nameInput) nameInput.value = '';
+                loadAdminApiKeys();
+            } catch (err) {
+                console.error('Failed to generate admin API key:', err);
+                alert(`Error: ${err.message}`);
+            }
+        }
+
+        function copyGeneratedAdminKey() {
+            const keyVal = document.getElementById('admin-new-key-value');
+            const copyBtn = document.getElementById('admin-copy-key-btn');
+            if (!keyVal || !keyVal.value) return;
+
+            navigator.clipboard.writeText(keyVal.value).then(() => {
+                if (copyBtn) {
+                    const orig = copyBtn.innerText;
+                    copyBtn.innerText = 'Copied!';
+                    setTimeout(() => { copyBtn.innerText = orig; }, 2000);
+                }
+            });
+        }
+
+        async function revokeAdminApiKey(keyId) {
+            if (!confirm('Are you sure you want to revoke this API key? This action takes effect immediately and any callers using it will be denied.')) {
+                return;
+            }
+
+            try {
+                const baseUrl = getPrimaryAdminBaseUrl();
+                const res = await fetch(`${baseUrl}/admin/api-keys/revoke`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ keyId })
+                });
+
+                const data = await res.json();
+                if (!res.ok) {
+                    alert(data.error || 'Failed to revoke key.');
+                    return;
+                }
+
+                loadAdminApiKeys();
+            } catch (err) {
+                console.error('Failed to revoke key:', err);
+                alert(`Error: ${err.message}`);
             }
         }
 
