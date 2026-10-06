@@ -4910,6 +4910,18 @@ ${innerHtml}
                 }
             }
 
+            // Immediately switch to the forked map as focal map
+            await this.kernel.loadMapState(cloned);
+            this.setView('map');
+            if (this.kernel.state.nodes && this.kernel.state.nodes.length > 0) {
+                const rootNode = this.kernel.state.nodes.find(n => n.type === 'root' || n.type === 'file-root') || this.kernel.state.nodes[0];
+                if (rootNode) {
+                    this.kernel.selectNode(rootNode.id);
+                }
+            }
+            this.userHasPanned = false;
+            this.render();
+
             alert(`"${cloned.meta.title}" forked to your workspace!`);
         } catch (e) {
             console.error(e);

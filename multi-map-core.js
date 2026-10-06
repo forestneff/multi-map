@@ -245,6 +245,26 @@ class MultiMapKernel {
             localStorage.setItem("mm_active_project_id", this.activeProjectId);
         }
 
+        const savedHistory = localStorage.getItem("mm_portal_history");
+        if (savedHistory) {
+            try { this.portalHistory = JSON.parse(savedHistory); } catch(e) {}
+        }
+
+        const urlParams = typeof window !== 'undefined' && window.location ? new URLSearchParams(window.location.search) : null;
+        const urlProj = urlParams ? urlParams.get('project') : null;
+        const urlMap = urlParams ? urlParams.get('map') : null;
+
+        if (urlMap && this.state && this.state.map_id !== urlMap) {
+            const lib = this.getLibrary();
+            const targetMap = lib.find(m => m.map_id === urlMap);
+            if (targetMap) {
+                this.state = this.ensureSchema(targetMap);
+                if (urlProj) this.activeProjectId = urlProj;
+                localStorage.setItem("mm_core_state", JSON.stringify(this.state));
+                localStorage.setItem("mm_active_project_id", this.activeProjectId);
+            }
+        }
+
         if (window.FirebaseAuth && window.FirebaseAuth.currentUser && !window.FirebaseAuth.currentUser.isAnonymous) {
             this.syncWithFirestore(window.FirebaseAuth.currentUser.uid);
         }
@@ -3686,6 +3706,7 @@ class MultiMapKernel {
     enterPortal(mapData) {
         this.saveCurrentMapToLibrary();
         this.portalHistory.push(JSON.parse(JSON.stringify(this.state)));
+        try { localStorage.setItem("mm_portal_history", JSON.stringify(this.portalHistory)); } catch(e) {}
         this.history = []; // Clear undo history for new map
         this.state = this.ensureSchema(mapData);
         this.notify();
@@ -3747,6 +3768,7 @@ class MultiMapKernel {
                 this.saveCurrentMapToLibrary(); // Persist submap edits before leaving
             }
             const oldState = this.portalHistory.pop();
+            try { localStorage.setItem("mm_portal_history", JSON.stringify(this.portalHistory)); } catch(e) {}
             const lib = this.getLibrary();
             const latestState = lib.find(p => p.map_id === oldState.map_id);
             this.state = this.ensureSchema(latestState || oldState);
@@ -4166,22 +4188,27 @@ class MultiMapKernel {
                 await Promise.all(pagePromises);
             }
             
+            const urlParams = typeof window !== 'undefined' && window.location ? new URLSearchParams(window.location.search) : null;
+            const urlProj = urlParams ? urlParams.get('project') : null;
+            const urlMap = urlParams ? urlParams.get('map') : null;
+
             const sessionRef = window.Firestore.doc(window.FirebaseDb, "users", uid, "sessions", "active");
             const sessionSnap = await window.Firestore.getDoc(sessionRef);
             
-            let activeProjectId = "default_project";
-            let activeMapId = null;
+            let activeProjectId = urlProj || "default_project";
+            let activeMapId = urlMap || null;
             let portalHistory = [];
             
             if (sessionSnap.exists()) {
                 const sessionData = sessionSnap.data();
-                activeProjectId = sessionData.activeProjectId || "default_project";
-                activeMapId = sessionData.activeMapId;
+                if (!urlProj) activeProjectId = sessionData.activeProjectId || "default_project";
+                if (!urlMap) activeMapId = sessionData.activeMapId;
                 portalHistory = sessionData.portalHistory || [];
             }
             
             if (this.isUsingCloudVault()) {
                 this.activeProjectId = activeProjectId;
+                localStorage.setItem("mm_active_project_id", this.activeProjectId);
                 
                 let activePage = null;
                 if (activeMapId && this.firestorePagesByProject[activeProjectId]) {
@@ -4204,14 +4231,30 @@ class MultiMapKernel {
                     this.state = this.ensureSchema(activePage);
                     this.portalHistory = portalHistory;
                     this.lastSaveState = JSON.stringify(this.state);
-                    
-                    if (!sessionSnap.exists()) {
-                        await window.Firestore.setDoc(sessionRef, {
-                            activeProjectId: this.activeProjectId,
-                            activeMapId: activePage.map_id,
-                            portalHistory: []
-                        });
+
+                    // Ensure root or focal node is selected
+                    if (this.state && this.state.nodes && this.state.nodes.length > 0) {
+                        const hasValidSelected = this.state.session && this.state.session.selectedId && 
+                            this.state.nodes.some(n => n.id === this.state.session.selectedId);
+                        if (!hasValidSelected) {
+                            const rootNode = this.state.nodes.find(n => n.type === 'root' || n.type === 'file-root') || this.state.nodes[0];
+                            if (rootNode) {
+                                if (!this.state.session) this.state.session = {};
+                                this.state.session.selectedId = rootNode.id;
+                            }
+                        }
                     }
+
+                    localStorage.setItem("mm_core_state", JSON.stringify(this.state));
+                    if (this.portalHistory) {
+                        try { localStorage.setItem("mm_portal_history", JSON.stringify(this.portalHistory)); } catch(e) {}
+                    }
+                    
+                    await window.Firestore.setDoc(sessionRef, {
+                        activeProjectId: this.activeProjectId,
+                        activeMapId: activePage.map_id,
+                        portalHistory: this.portalHistory || []
+                    }, { merge: true });
                 } else {
                     console.warn("Active page not found after sync. Initializing empty state.");
                     this.state = this.getEmptyState();
@@ -4220,6 +4263,10 @@ class MultiMapKernel {
                 }
                 
                 this.notify();
+                if (window.SC) {
+                    window.SC.userHasPanned = false;
+                    window.SC.render();
+                }
                 console.log("Firestore sync complete.");
                 this.syncCloudTemplates().catch(e => console.error("Failed to sync cloud templates on login:", e));
                 

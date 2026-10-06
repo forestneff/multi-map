@@ -291,13 +291,37 @@
                 const Registry = new PhaseRegistrySystem();
                 Registry.init(Kernel);
 
-                if (!Kernel.state.session.selectedId && Kernel.state.nodes.length > 0) {
-                    Kernel.selectNode(Kernel.state.nodes[0].id);
+                const urlParams = new URLSearchParams(window.location.search);
+                const urlMap = urlParams.get('map');
+                const urlProj = urlParams.get('project');
+
+                if (urlMap && Kernel.state.map_id !== urlMap) {
+                    const lib = Kernel.getLibrary();
+                    const map = lib.find(m => m.map_id === urlMap);
+                    if (map) {
+                        Kernel.loadMapState(map, false);
+                    }
+                }
+
+                if (Kernel.state.nodes && Kernel.state.nodes.length > 0) {
+                    const hasValidSelected = Kernel.state.session && Kernel.state.session.selectedId && 
+                        Kernel.state.nodes.some(n => n.id === Kernel.state.session.selectedId);
+                    if (!hasValidSelected) {
+                        const rootNode = Kernel.state.nodes.find(n => n.type === 'root' || n.type === 'file-root') || Kernel.state.nodes[0];
+                        if (rootNode) {
+                            Kernel.selectNode(rootNode.id);
+                        }
+                    }
                 }
 
                 const Controller = new SandboxController(Kernel, Registry);
                 window.Kernel = Kernel;
                 window.SC = Controller;
+
+                if (urlMap || urlProj) {
+                    Controller.userHasPanned = false;
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                }
 
                 // INITIATE AI ENGINE
                 window.AI = new MultiMapAI(Kernel, Controller);

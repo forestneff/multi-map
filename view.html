@@ -318,6 +318,15 @@
                 page_assignments: {}
             };
 
+            // Ensure root/focal node is selected in forkData
+            if (!forkData.session) forkData.session = {};
+            const rootNode = (forkData.nodes && forkData.nodes.length > 0)
+                ? (forkData.nodes.find(n => n.type === 'root' || n.type === 'file-root') || forkData.nodes[0])
+                : null;
+            if (rootNode) {
+                forkData.session.selectedId = rootNode.id;
+            }
+
             try {
                 if (isAuthenticated) {
                     // Save to Firestore collections
@@ -332,12 +341,12 @@
                     const pageRef = doc(db, "users", user.uid, "projects", newProjectId, "pages", newPageId);
                     await setDoc(pageRef, forkData);
 
-                    // Configure active session state
+                    // Configure active session state - focal map is the forked map
                     const sessionRef = doc(db, "users", user.uid, "sessions", "active");
                     await setDoc(sessionRef, {
                         activeProjectId: newProjectId,
-                        activeMapId: masterPageId,
-                        portalHistory: []
+                        activeMapId: newPageId,
+                        portalHistory: masterPageData ? [masterPageData] : []
                     });
                 } else {
                     // Save to localStorage (Guest mode)
@@ -350,16 +359,18 @@
                     lib.push(forkData);
                     localStorage.setItem("mm_constellation_lib", JSON.stringify(lib));
 
-                    // Set current active state
-                    localStorage.setItem("mm_core_state", JSON.stringify(masterPageData || forkData));
+                    // Set current active state to the forked map
+                    localStorage.setItem("mm_active_project_id", newProjectId);
+                    localStorage.setItem("mm_core_state", JSON.stringify(forkData));
+                    localStorage.setItem("mm_portal_history", JSON.stringify(masterPageData ? [masterPageData] : []));
                 }
 
                 forkBtn.innerHTML = '<span>✅</span> <span class="hidden md:inline">Forked!</span>';
                 forkBtn.style.backgroundColor = '#16a34a';
 
                 setTimeout(() => {
-                    window.location.href = '/sandbox.html';
-                }, 1000);
+                    window.location.href = `/sandbox.html?project=${encodeURIComponent(newProjectId)}&map=${encodeURIComponent(newPageId)}`;
+                }, 500);
 
             } catch (err) {
                 console.error(err);
