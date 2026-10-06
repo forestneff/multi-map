@@ -488,6 +488,15 @@
      * @returns {Promise<{ success: boolean, shareUrl: string, token: string, mapId: string, title: string, expiresAt: string|null, mode: string, mapState?: Object }>}
      */
     async function shareMap(endpointUrl, payload, options = {}) {
+        let targetUrl = endpointUrl;
+        if (!targetUrl) {
+            targetUrl = (typeof window !== 'undefined' && (window.location.hostname.endsWith('web.app') || window.location.hostname.endsWith('firebaseapp.com')))
+                ? '/api/share'
+                : 'https://us-central1-mm-multi-map.cloudfunctions.net/generateMapState/api/share';
+        } else if (typeof window !== 'undefined' && targetUrl.startsWith('/') && !window.location.hostname.endsWith('web.app') && !window.location.hostname.endsWith('firebaseapp.com') && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+            targetUrl = `https://us-central1-mm-multi-map.cloudfunctions.net/generateMapState${targetUrl}`;
+        }
+
         const headers = {
             'Content-Type': 'application/json'
         };
@@ -509,7 +518,7 @@
             includeMapState: Boolean(options.includeMapState)
         };
 
-        const res = await fetch(endpointUrl, {
+        const res = await fetch(targetUrl, {
             method: 'POST',
             headers,
             body: JSON.stringify(body)

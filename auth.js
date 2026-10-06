@@ -552,7 +552,11 @@ window.Auth = {
         if (isLocal) {
             return `http://${window.location.hostname}:5001/mm-multi-map/us-central1/generateMapState${path}`;
         }
-        return path;
+        const isFirebaseHosting = window.location.hostname.endsWith('web.app') || window.location.hostname.endsWith('firebaseapp.com');
+        if (isFirebaseHosting) {
+            return path;
+        }
+        return `https://us-central1-mm-multi-map.cloudfunctions.net/generateMapState${path}`;
     },
 
     loadUserApiKey: async function() {

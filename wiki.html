@@ -1011,9 +1011,13 @@
                             <div class="flex items-center gap-3">
                                 <span class="px-2 py-0.5 bg-emerald-600 text-white font-mono font-bold text-xs rounded">POST</span>
                                 <code class="text-white font-bold text-sm bg-transparent p-0">/api/share</code>
-                                <span class="text-slate-400 text-xs">(also aliased to <code>/share</code>)</span>
+                                <span class="text-slate-400 text-xs">(aliased to <code>/share</code>)</span>
                             </div>
                             <span class="text-xs text-slate-400 font-mono">Content-Type: application/json</span>
+                        </div>
+                        <div class="bg-slate-950/60 px-5 py-2.5 border-b border-slate-800 text-[11px] text-slate-400 flex flex-col gap-1">
+                            <div><strong>Universal Endpoint:</strong> <code class="text-sky-300 font-mono">https://us-central1-mm-multi-map.cloudfunctions.net/generateMapState/api/share</code> <span class="text-slate-500">(CORS enabled; use from external apps, curl, Python, or DreamHost)</span></div>
+                            <div><strong>Firebase Hosting Alias:</strong> <code class="text-sky-300 font-mono">/api/share</code> <span class="text-slate-500">(available on mm-multi-map.web.app)</span></div>
                         </div>
 
                         <div class="p-5">
@@ -1214,9 +1218,9 @@
                                 <span>cURL (Adapter Mode — Tree)</span>
                                 <button onclick="navigator.clipboard.writeText(document.getElementById('curl-code').innerText); alert('cURL copied!');" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2.5 py-1 rounded">Copy</button>
                             </h5>
-                            <pre><code id="curl-code">curl -X POST https://&lt;your-domain&gt;/api/share \
+                            <pre><code id="curl-code">curl -X POST https://us-central1-mm-multi-map.cloudfunctions.net/generateMapState/api/share \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: YOUR_ECOSYSTEM_API_KEY" \
+  -H "X-API-Key: YOUR_API_KEY" \
   -d '{
     "title": "API Tree Demo",
     "mode": "adapter",
@@ -1235,11 +1239,13 @@
                         <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
                             <h5 class="font-bold text-white text-xs uppercase tracking-wider mb-2">JavaScript (Fetch API)</h5>
                             <pre><code>async function createSharedMap(treeData) {
-  const response = await fetch('/api/share', {
+  // Use universal endpoint across all environments, or '/api/share' if on Firebase Hosting
+  const endpoint = 'https://us-central1-mm-multi-map.cloudfunctions.net/generateMapState/api/share';
+  const response = await fetch(endpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-API-Key': 'YOUR_ECOSYSTEM_API_KEY'
+      'X-API-Key': 'YOUR_API_KEY'
     },
     body: JSON.stringify({
       title: "Shared Workspace Map",
@@ -1261,10 +1267,11 @@
                             <h5 class="font-bold text-white text-xs uppercase tracking-wider mb-2">Python (requests)</h5>
                             <pre><code>import requests
 
-url = "https://&lt;your-domain&gt;/api/share"
+# Universal endpoint (works from any server, notebook, or script)
+url = "https://us-central1-mm-multi-map.cloudfunctions.net/generateMapState/api/share"
 headers = {
     "Content-Type": "application/json",
-    "X-API-Key": "YOUR_ECOSYSTEM_API_KEY"
+    "X-API-Key": "YOUR_API_KEY"
 }
 payload = {
     "title": "Python Generated Map",
@@ -1317,6 +1324,7 @@ print("Interactive Map URL:", data.get("shareUrl"))</code></pre>
                         <div>
                             <label class="block text-xs font-bold text-slate-300 mb-1">Endpoint URL</label>
                             <input type="text" id="tester-url" value="/api/share" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white font-mono outline-none focus:border-sky-500">
+                            <span class="text-[10px] text-slate-400 mt-1 block">Auto-routes to Cloud Function or local emulator</span>
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-slate-300 mb-1">X-API-Key</label>
@@ -1470,12 +1478,28 @@ print("Interactive Map URL:", data.get("shareUrl"))</code></pre>
                 : JSON.stringify(preset.payload, null, 2);
         }
 
-        // Initialize default preset
+        function getTesterDefaultUrl() {
+            const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+            if (isLocal) {
+                return `http://${window.location.hostname}:5001/mm-multi-map/us-central1/generateMapState/api/share`;
+            }
+            const isFirebaseHosting = window.location.hostname.endsWith('web.app') || window.location.hostname.endsWith('firebaseapp.com');
+            if (isFirebaseHosting) {
+                return '/api/share';
+            }
+            return 'https://us-central1-mm-multi-map.cloudfunctions.net/generateMapState/api/share';
+        }
+
+        // Initialize default preset and endpoint URL
         document.addEventListener('DOMContentLoaded', () => {
             loadTesterPreset('tree');
             const savedKey = sessionStorage.getItem('mm_api_key');
             if (savedKey) {
                 document.getElementById('tester-key').value = savedKey;
+            }
+            const urlInput = document.getElementById('tester-url');
+            if (urlInput) {
+                urlInput.value = getTesterDefaultUrl();
             }
         });
 
@@ -1487,7 +1511,13 @@ print("Interactive Map URL:", data.get("shareUrl"))</code></pre>
             const responseEl = document.getElementById('tester-response');
             const linkBtn = document.getElementById('tester-link-btn');
 
-            const url = document.getElementById('tester-url').value.trim() || '/api/share';
+            let rawUrl = document.getElementById('tester-url').value.trim() || getTesterDefaultUrl();
+            let targetUrl = rawUrl;
+            // If the user specified a relative path like "/api/share" but is browsing from DreamHost (mm.forestneff.com) or external host:
+            if (targetUrl.startsWith('/') && !window.location.hostname.endsWith('web.app') && !window.location.hostname.endsWith('firebaseapp.com') && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+                targetUrl = `https://us-central1-mm-multi-map.cloudfunctions.net/generateMapState${targetUrl}`;
+            }
+
             const apiKey = document.getElementById('tester-key').value.trim();
             const mode = document.getElementById('tester-mode').value;
             const title = document.getElementById('tester-title').value.trim();
@@ -1526,7 +1556,7 @@ print("Interactive Map URL:", data.get("shareUrl"))</code></pre>
                     includeMapState: true
                 };
 
-                const res = await fetch(url, {
+                const res = await fetch(targetUrl, {
                     method: 'POST',
                     headers,
                     body: JSON.stringify(body)
