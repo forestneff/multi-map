@@ -15,8 +15,8 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-const isProduction = location.hostname === "mm.forestneff.com";
-if (!isProduction) {
+const isLocal = location.hostname === "localhost" || location.hostname === "127.0.0.1" || location.hostname.endsWith(".local");
+if (isLocal) {
     const devHost = location.hostname || "127.0.0.1";
     const cleanHost = (devHost === "0.0.0.0" || devHost === "[::1]" || !devHost) ? "127.0.0.1" : devHost;
     connectAuthEmulator(auth, `http://${cleanHost}:9099`);
@@ -348,17 +348,19 @@ window.Auth = {
                     <div class="flex-grow border-t border-slate-700"></div>
                 </div>
 
-                <input type="email" id="auth-email" placeholder="Email" class="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-xs text-slate-300 outline-none focus:border-indigo-500">
-                <input type="password" id="auth-pass" placeholder="Password" class="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-xs text-slate-300 outline-none focus:border-indigo-500">
-                
-                <div class="flex items-center justify-end">
-                    <button onclick="window.Auth.setView('forgot_password')" class="text-[11px] text-slate-400 hover:text-indigo-400 transition-colors">Forgot password?</button>
-                </div>
+                <form onsubmit="event.preventDefault(); window.Auth.login();" class="flex flex-col gap-3">
+                    <input type="email" id="auth-email" placeholder="Email" autocomplete="username" class="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-xs text-slate-300 outline-none focus:border-indigo-500">
+                    <input type="password" id="auth-pass" placeholder="Password" autocomplete="current-password" class="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-xs text-slate-300 outline-none focus:border-indigo-500">
+                    
+                    <div class="flex items-center justify-end">
+                        <button type="button" onclick="window.Auth.setView('forgot_password')" class="text-[11px] text-slate-400 hover:text-indigo-400 transition-colors">Forgot password?</button>
+                    </div>
 
-                <div class="flex gap-2">
-                    <button onclick="window.Auth.login()" class="flex-1 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded transition-colors shadow">Login</button>
-                    <button onclick="window.Auth.signup()" class="flex-1 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white text-xs font-bold rounded transition-colors shadow">Sign Up</button>
-                </div>
+                    <div class="flex gap-2">
+                        <button type="submit" class="flex-1 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded transition-colors shadow">Login</button>
+                        <button type="button" onclick="window.Auth.signup()" class="flex-1 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white text-xs font-bold rounded transition-colors shadow">Sign Up</button>
+                    </div>
+                </form>
                 
                 <div class="bg-amber-950/20 border border-amber-900/60 rounded-xl p-3 shadow-md flex gap-2.5 mt-2">
                     <span class="text-sm text-amber-500 shrink-0">⚠️</span>
