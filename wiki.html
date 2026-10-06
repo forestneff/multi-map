@@ -959,12 +959,11 @@
                             <p class="text-xs text-slate-400 leading-relaxed mb-3">
                                 Pass your assigned ecosystem key via the <code>X-API-Key</code> request header. Service callers receive a high-capacity rate limit (10,000 requests/day).
                             </p>
-                            <div class="bg-slate-950 border border-slate-800/80 rounded p-2.5 text-xs font-mono text-emerald-300 flex items-center justify-between">
-                                <span>X-API-Key: mm_sec_dev_ecosystem_key_2026</span>
-                                <button onclick="navigator.clipboard.writeText('mm_sec_dev_ecosystem_key_2026'); alert('Copied Development Key to clipboard!');" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-200 px-2 py-1 rounded transition-colors font-sans">Copy Key</button>
+                            <div class="bg-slate-950 border border-slate-800/80 rounded p-2.5 text-xs font-mono text-emerald-300">
+                                <span>X-API-Key: &lt;YOUR_ECOSYSTEM_API_KEY&gt;</span>
                             </div>
                             <p class="text-[11px] text-slate-500 mt-2">
-                                <strong>Default Dev Key:</strong> <code>mm_sec_dev_ecosystem_key_2026</code> is active for local testing and emulator environments.
+                                <strong>Secure Storage:</strong> Keys are stored in <code>functions/.env</code> or Google Cloud Secret Manager (e.g. <code>ECOSYSTEM_API_KEY</code>) alongside your other service credentials.
                             </p>
                         </div>
 
@@ -1193,12 +1192,12 @@
     title: "Quick Share",
     children: [{ title: "Node 1" }, { title: "Node 2" }]
   }, {
-    apiKey: "mm_sec_dev_ecosystem_key_2026",
+    apiKey: "YOUR_ECOSYSTEM_API_KEY",
     expiresInDays: 30
   });
 
   console.log("View link:", result.shareUrl);
-&lt;/script&gt;</code></pre>
+</script></code></pre>
                     </div>
                 </div>
 
@@ -1217,7 +1216,7 @@
                             </h5>
                             <pre><code id="curl-code">curl -X POST https://&lt;your-domain&gt;/api/share \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: mm_sec_dev_ecosystem_key_2026" \
+  -H "X-API-Key: YOUR_ECOSYSTEM_API_KEY" \
   -d '{
     "title": "API Tree Demo",
     "mode": "adapter",
@@ -1240,7 +1239,7 @@
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-API-Key': 'mm_sec_dev_ecosystem_key_2026'
+      'X-API-Key': 'YOUR_ECOSYSTEM_API_KEY'
     },
     body: JSON.stringify({
       title: "Shared Workspace Map",
@@ -1265,7 +1264,7 @@
 url = "https://&lt;your-domain&gt;/api/share"
 headers = {
     "Content-Type": "application/json",
-    "X-API-Key": "mm_sec_dev_ecosystem_key_2026"
+    "X-API-Key": "YOUR_ECOSYSTEM_API_KEY"
 }
 payload = {
     "title": "Python Generated Map",
@@ -1321,7 +1320,7 @@ print("Interactive Map URL:", data.get("shareUrl"))</code></pre>
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-slate-300 mb-1">X-API-Key</label>
-                            <input type="text" id="tester-key" value="mm_sec_dev_ecosystem_key_2026" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-emerald-400 font-mono outline-none focus:border-sky-500">
+                            <input type="password" id="tester-key" placeholder="Paste ECOSYSTEM_API_KEY here" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-emerald-400 font-mono outline-none focus:border-sky-500">
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-slate-300 mb-1">Processing Mode</label>
@@ -1474,6 +1473,10 @@ print("Interactive Map URL:", data.get("shareUrl"))</code></pre>
         // Initialize default preset
         document.addEventListener('DOMContentLoaded', () => {
             loadTesterPreset('tree');
+            const savedKey = sessionStorage.getItem('mm_api_key');
+            if (savedKey) {
+                document.getElementById('tester-key').value = savedKey;
+            }
         });
 
         async function executeApiTest() {
@@ -1508,6 +1511,9 @@ print("Interactive Map URL:", data.get("shareUrl"))</code></pre>
 
             const startTime = Date.now();
             try {
+                if (apiKey) {
+                    sessionStorage.setItem('mm_api_key', apiKey);
+                }
                 const headers = { 'Content-Type': 'application/json' };
                 if (apiKey) headers['X-API-Key'] = apiKey;
 
